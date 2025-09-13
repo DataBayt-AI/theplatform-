@@ -15,19 +15,45 @@ import {
   Brain,
   Target
 } from "lucide-react";
-import sampleData from "@/assets/sample-data.jpg";
+// Translation data will be inline
 
 const AnnotationWorkspace = () => {
   const [currentSample, setCurrentSample] = useState(1);
   const [annotations, setAnnotations] = useState<string[]>([]);
   const [aiSuggestions] = useState([
-    { label: "Data Visualization", confidence: 0.95, type: "primary" },
-    { label: "Dashboard Chart", confidence: 0.89, type: "secondary" },
-    { label: "Analytics UI", confidence: 0.76, type: "tertiary" }
+    { label: "Accurate Translation", confidence: 0.95, type: "primary" },
+    { label: "Grammar Correct", confidence: 0.91, type: "secondary" },
+    { label: "Context Appropriate", confidence: 0.84, type: "tertiary" }
   ]);
 
-  const totalSamples = 247;
-  const completedSamples = 85;
+  const [translationPairs] = useState([
+    {
+      id: 1,
+      english: "The weather is beautiful today.",
+      arabic: "الطقس جميل اليوم.",
+      aiUpdated: true,
+      confidence: 0.95
+    },
+    {
+      id: 2, 
+      english: "I would like to book a table for two people.",
+      arabic: "أريد أن أحجز طاولة لشخصين.",
+      aiUpdated: false,
+      confidence: 0.87
+    },
+    {
+      id: 3,
+      english: "Technology is changing our world rapidly.",
+      arabic: "التكنولوجيا تغير عالمنا بسرعة.",
+      aiUpdated: true,
+      confidence: 0.92
+    }
+  ]);
+
+  const currentTranslation = translationPairs[currentSample - 1] || translationPairs[0];
+
+  const totalSamples = translationPairs.length;
+  const completedSamples = 2;
   const progress = (completedSamples / totalSamples) * 100;
 
   const handleAddAnnotation = (label: string) => {
@@ -66,8 +92,8 @@ const AnnotationWorkspace = () => {
                 <Target className="w-4 h-4 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold text-foreground">DataAnnotate AI</h1>
-                <p className="text-sm text-muted-foreground">Sample {currentSample} of {totalSamples}</p>
+                <h1 className="text-xl font-semibold text-foreground">DataBayt AI</h1>
+                <p className="text-sm text-muted-foreground">Translation {currentSample} of {totalSamples}</p>
               </div>
             </div>
             <div className="flex items-center gap-4">
@@ -100,15 +126,72 @@ const AnnotationWorkspace = () => {
 
         {/* Workspace */}
         <div className="flex-1 flex">
-          {/* Data Viewer */}
+          {/* Translation Viewer */}
           <div className="flex-1 p-6 overflow-auto">
-            <Card className="h-full flex items-center justify-center bg-gradient-subtle shadow-elegant">
-              <div className="w-full max-w-4xl">
-                <img 
-                  src={sampleData} 
-                  alt="Data sample for annotation"
-                  className="w-full h-auto rounded-lg shadow-lg border border-border"
-                />
+            <Card className="h-full bg-gradient-subtle shadow-elegant">
+              <div className="p-8 space-y-8">
+                {/* English Text */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">English</Badge>
+                    {currentTranslation.aiUpdated && (
+                      <Badge className="text-xs bg-success/10 text-success border-success/20">
+                        AI Updated
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="bg-card rounded-lg p-6 border border-border shadow-sm">
+                    <p className="text-lg leading-relaxed text-foreground">
+                      {currentTranslation.english}
+                    </p>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Arabic Translation */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">Arabic Translation</Badge>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-success"></div>
+                      <span className="text-xs text-muted-foreground">
+                        {Math.round(currentTranslation.confidence * 100)}% confidence
+                      </span>
+                    </div>
+                  </div>
+                  <div className={`bg-card rounded-lg p-6 border shadow-sm transition-all duration-300 ${
+                    currentTranslation.aiUpdated 
+                      ? 'border-success/50 bg-success/5 shadow-lg' 
+                      : 'border-border'
+                  }`}>
+                    <p className="text-lg leading-relaxed text-foreground text-right" dir="rtl">
+                      {currentTranslation.arabic}
+                    </p>
+                  </div>
+                  {currentTranslation.aiUpdated && (
+                    <div className="flex items-center gap-2 text-xs text-success">
+                      <Sparkles className="w-3 h-3" />
+                      <span>Translation improved by AI</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quality Indicators */}
+                <div className="grid grid-cols-3 gap-4 pt-4">
+                  <Card className="p-3 text-center">
+                    <div className="text-sm font-medium text-success">Grammar</div>
+                    <div className="text-xs text-muted-foreground">Excellent</div>
+                  </Card>
+                  <Card className="p-3 text-center">
+                    <div className="text-sm font-medium text-success">Context</div>
+                    <div className="text-xs text-muted-foreground">Accurate</div>
+                  </Card>
+                  <Card className="p-3 text-center">
+                    <div className="text-sm font-medium text-warning">Fluency</div>
+                    <div className="text-xs text-muted-foreground">Good</div>
+                  </Card>
+                </div>
               </div>
             </Card>
           </div>

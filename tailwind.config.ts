@@ -52,7 +52,10 @@ export default {
           primary: "hsl(var(--ai-primary))",
           secondary: "hsl(var(--ai-secondary))",
         },
-        success: "hsl(var(--success))",
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          light: "hsl(var(--success-light))",
+        },
         warning: "hsl(var(--warning))",
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
