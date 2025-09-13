@@ -13,7 +13,8 @@ import {
   RotateCcw,
   Zap,
   Brain,
-  Target
+  Target,
+  Edit3
 } from "lucide-react";
 // Translation data will be inline
 
@@ -160,14 +161,21 @@ const AnnotationWorkspace = () => {
                       </span>
                     </div>
                   </div>
-                  <div className={`bg-card rounded-lg p-6 border shadow-sm transition-all duration-300 ${
+                  <div className={`bg-card rounded-lg p-6 border shadow-sm transition-all duration-300 relative group ${
                     currentTranslation.aiUpdated 
                       ? 'border-success/50 bg-success/5 shadow-lg' 
                       : 'border-border'
                   }`}>
-                    <p className="text-lg leading-relaxed text-foreground text-right" dir="rtl">
+                    <p className="text-lg leading-relaxed text-foreground text-right pr-12" dir="rtl">
                       {currentTranslation.arabic}
                     </p>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="absolute top-4 left-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-primary/10"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </Button>
                   </div>
                   {currentTranslation.aiUpdated && (
                     <div className="flex items-center gap-2 text-xs text-success">
