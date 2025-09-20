@@ -14,7 +14,142 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      annotation_projects: {
+        Row: {
+          ai_model: string
+          ai_provider: Database["public"]["Enums"]["ai_provider"]
+          completed_items: number | null
+          created_at: string
+          file_id: string
+          id: string
+          project_name: string
+          prompt_template: string | null
+          total_items: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_model: string
+          ai_provider: Database["public"]["Enums"]["ai_provider"]
+          completed_items?: number | null
+          created_at?: string
+          file_id: string
+          id?: string
+          project_name: string
+          prompt_template?: string | null
+          total_items?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_model?: string
+          ai_provider?: Database["public"]["Enums"]["ai_provider"]
+          completed_items?: number | null
+          created_at?: string
+          file_id?: string
+          id?: string
+          project_name?: string
+          prompt_template?: string | null
+          total_items?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "annotation_projects_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      annotations: {
+        Row: {
+          ai_annotation: string | null
+          confidence_score: number | null
+          created_at: string
+          final_annotation: string | null
+          human_annotation: string | null
+          id: string
+          item_index: number
+          metadata: Json | null
+          original_text: string
+          project_id: string
+          status: Database["public"]["Enums"]["annotation_status"]
+          updated_at: string
+        }
+        Insert: {
+          ai_annotation?: string | null
+          confidence_score?: number | null
+          created_at?: string
+          final_annotation?: string | null
+          human_annotation?: string | null
+          id?: string
+          item_index: number
+          metadata?: Json | null
+          original_text: string
+          project_id: string
+          status?: Database["public"]["Enums"]["annotation_status"]
+          updated_at?: string
+        }
+        Update: {
+          ai_annotation?: string | null
+          confidence_score?: number | null
+          created_at?: string
+          final_annotation?: string | null
+          human_annotation?: string | null
+          id?: string
+          item_index?: number
+          metadata?: Json | null
+          original_text?: string
+          project_id?: string
+          status?: Database["public"]["Enums"]["annotation_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "annotations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "annotation_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      uploaded_files: {
+        Row: {
+          created_at: string
+          file_size: number
+          file_type: string
+          filename: string
+          id: string
+          storage_path: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_size: number
+          file_type: string
+          filename: string
+          id?: string
+          storage_path: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          file_size?: number
+          file_type?: string
+          filename?: string
+          id?: string
+          storage_path?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +158,13 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      ai_provider: "openai" | "anthropic" | "google"
+      annotation_status:
+        | "pending"
+        | "ai_generated"
+        | "human_reviewed"
+        | "approved"
+        | "rejected"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +291,15 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      ai_provider: ["openai", "anthropic", "google"],
+      annotation_status: [
+        "pending",
+        "ai_generated",
+        "human_reviewed",
+        "approved",
+        "rejected",
+      ],
+    },
   },
 } as const
