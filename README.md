@@ -17,31 +17,21 @@ A powerful, modern data annotation tool that leverages AI to accelerate the data
 
 ### Prerequisites
 
-1. **Conda Environment**: Make sure you have the `databaytai` conda environment activated:
-   ```bash
-   conda activate databaytai
-   ```
-
-2. **Node.js**: Ensure you have Node.js 18+ installed
+- **Node.js**: Ensure you have Node.js 18+ installed
 
 ### Installation
 
-1. Navigate to the project directory:
-   ```bash
-   cd annotate-ai-muse
-   ```
-
-2. Install dependencies:
+1. Install dependencies:
    ```bash
    npm install
    ```
 
-3. Start the development server:
+2. Start the development server:
    ```bash
    npm run dev
    ```
 
-4. Open your browser and navigate to the displayed local URL (usually `http://localhost:5173`)
+3. Open your browser and navigate to the displayed local URL (usually `http://localhost:5173`)
 
 ## 🔑 API Key Configuration
 
