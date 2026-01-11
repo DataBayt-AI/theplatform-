@@ -1,0 +1,20 @@
+[
+    {
+        "content": "/sample_images/nature.jpg",
+        "type": "image",
+        "prompt": "Describe the landscape in this image.",
+        "label": "Nature"
+    },
+    {
+        "content": "/sample_images/city.jpg",
+        "type": "image",
+        "prompt": "What time of day is it in this city?",
+        "label": "City"
+    },
+    {
+        "content": "/sample_images/cat.jpg",
+        "type": "image",
+        "prompt": "What is the animal doing?",
+        "label": "Animal"
+    }
+]

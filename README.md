@@ -1,73 +1,232 @@
-# Welcome to your Lovable project
+# DataBayt AI Labeler
 
-## Project info
+A powerful, modern data annotation tool that leverages AI to accelerate the data labeling process. Upload your data, choose an AI provider, and efficiently review and refine annotations.
 
-**URL**: https://lovable.dev/projects/8606a9ff-a9e3-46d8-960f-a478ca4c9c30
+## 🚀 Features
 
-## How can I edit this code?
+- **Multi-format File Support**: Upload JSON, CSV, or TXT files containing your data
+- **AI-Powered Labeling**: Integration with OpenAI GPT, Anthropic Claude, and local models
+- **Custom Prompts**: Add optional custom instructions for the AI to follow
+- **Interactive Review**: Accept, edit, or completely change AI-generated annotations
+- **Progress Tracking**: Visual progress indicators and completion statistics
+- **Export Results**: Download your annotated data in JSON format
+- **Keyboard Shortcuts**: Efficient navigation and workflow
+- **Modern UI**: Clean, responsive interface built with shadcn/ui
 
-There are several ways of editing your application.
+## 🛠️ Setup
 
-**Use Lovable**
+### Prerequisites
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/8606a9ff-a9e3-46d8-960f-a478ca4c9c30) and start prompting.
+1. **Conda Environment**: Make sure you have the `databaytai` conda environment activated:
+   ```bash
+   conda activate databaytai
+   ```
 
-Changes made via Lovable will be committed automatically to this repo.
+2. **Node.js**: Ensure you have Node.js 18+ installed
 
-**Use your preferred IDE**
+### Installation
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+1. Navigate to the project directory:
+   ```bash
+   cd annotate-ai-muse
+   ```
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-Follow these steps:
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+4. Open your browser and navigate to the displayed local URL (usually `http://localhost:5173`)
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+## 🔑 API Key Configuration
 
-# Step 3: Install the necessary dependencies.
-npm i
+### OpenAI API Key
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+1. Click the Settings button (gear icon) in the top-right corner
+2. Select "OpenAI GPT" as your model provider
+3. Enter your OpenAI API key in the provided field
+4. Your API key is stored locally in your browser and never sent to our servers
+
+### Getting an OpenAI API Key
+
+1. Visit [OpenAI's website](https://platform.openai.com/)
+2. Sign in or create an account
+3. Navigate to the API section
+4. Generate a new API key
+5. Copy and paste it into the DataBayt AI Labeler settings
+
+**Important**: Your API key should start with `sk-` and is sensitive information. Keep it secure!
+
+## 📁 Data Format Support
+
+### JSON Format
+```json
+[
+  {
+    "text": "Your text content here",
+    "annotation": "Optional existing label"
+  },
+  {
+    "content": "Alternative content field name",
+    "label": "Alternative label field name"
+  }
+]
 ```
 
-**Edit a file directly in GitHub**
+### CSV Format
+```csv
+text,label
+"Your text content here","Optional existing label"
+"Another text sample","Another label"
+```
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### TXT Format
+```
+Each line represents a separate data point
+This is another data point
+And this is a third one
+```
 
-**Use GitHub Codespaces**
+## 📖 Usage Guide
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### 1. Upload Your Data
 
-## What technologies are used for this project?
+- Click the upload button (📁) in the top toolbar
+- Select a JSON, CSV, or TXT file containing your data
+- The app will automatically parse and load your data points
 
-This project is built with:
+### 2. Configure AI Provider
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- Click the Settings button (⚙️)
+- Choose your preferred model provider:
+  - **OpenAI GPT**: Most accurate, requires API key
+  - **Anthropic Claude**: Alternative AI provider (placeholder implementation)
+  - **Local Model**: Simple rule-based model for testing
 
-## How can I deploy this project?
+### 3. Add Custom Prompt (Optional)
 
-Simply open [Lovable](https://lovable.dev/projects/8606a9ff-a9e3-46d8-960f-a478ca4c9c30) and click on Share -> Publish.
+In the settings dialog, you can add a custom prompt that will be sent to the AI along with each data point:
 
-## Can I connect a custom domain to my Lovable project?
+```
+Please classify the following text as positive, negative, or neutral sentiment.
+Provide a brief explanation for your classification.
+```
 
-Yes, you can!
+### 4. Process with AI
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+- Click "Process All with AI" to send all data points to your chosen AI provider
+- The AI will generate suggested annotations for each data point
+- You'll see confidence scores for each suggestion
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+### 5. Review and Refine
+
+For each data point, you can:
+- **Accept**: Use the AI's suggestion as-is
+- **Edit**: Modify the AI's suggestion
+- **Reject & Reset**: Discard the AI suggestion and start over
+
+### 6. Navigate and Track Progress
+
+- Use the arrow buttons or keyboard shortcuts (← →) to navigate between data points
+- Monitor your progress with the visual progress bar
+- View completion statistics in the actions panel
+
+### 7. Export Results
+
+- Click the download button (💾) to export your annotated data
+- Results are saved as a JSON file containing:
+  - Original content
+  - Original annotations (if any)
+  - AI suggestions
+  - Final annotations
+  - Status and confidence scores
+
+## ⌨️ Keyboard Shortcuts
+
+- `←` / `→`: Navigate between data points
+- `E`: Toggle edit mode
+- `S`: Save current annotation
+- `?`: Show keyboard shortcuts help
+
+## 📂 Sample Data
+
+The project includes sample data files in the `public` folder:
+
+- `sample-data.json`: JSON format with text and annotations
+- `sample-csv.csv`: CSV format with text and labels
+- `sample-text.txt`: Plain text format
+
+You can download and use these files to test the application.
+
+## 🔧 Technical Details
+
+### Built With
+
+- **React 18**: Modern React with hooks
+- **TypeScript**: Type-safe development
+- **Vite**: Fast build tool and dev server
+- **Tailwind CSS**: Utility-first CSS framework
+- **shadcn/ui**: High-quality UI components
+- **OpenAI SDK**: Official OpenAI API integration
+- **Lucide React**: Beautiful icons
+
+### Project Structure
+
+```
+src/
+├── components/
+│   ├── ui/                     # shadcn/ui components
+│   └── DataLabelingWorkspace.tsx  # Main application component
+├── services/
+│   └── aiProviders.ts          # AI provider integrations
+├── pages/
+│   └── Index.tsx              # Main page
+└── lib/
+    └── utils.ts               # Utility functions
+```
+
+## 🚨 Security Notes
+
+- API keys are stored in browser localStorage only
+- No data is sent to our servers
+- All AI processing happens directly between your browser and the chosen AI provider
+- For production use, consider implementing a backend proxy for API calls
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+1. **"OpenAI API key is required" error**
+   - Make sure you've entered a valid API key starting with `sk-`
+   - Check that you've saved the settings after entering the key
+
+2. **File upload fails**
+   - Ensure your file is in JSON, CSV, or TXT format
+   - Check that JSON files contain a valid array structure
+   - Verify CSV files have appropriate column headers
+
+3. **AI processing fails**
+   - Verify your API key is correct and has sufficient credits
+   - Check your internet connection
+   - Try with a smaller dataset first
+
+### Getting Help
+
+If you encounter issues:
+1. Check the browser console for error messages
+2. Verify your API key and internet connection
+3. Try with the provided sample data files
+4. Ensure you're using a supported file format
+
+## 📄 License
+
+This project is part of the DataBayt AI suite. Please refer to your license agreement for terms of use.
+
+---
+
+**DataBayt AI Labeler** - Accelerating data annotation with AI-powered assistance.# theplatform-

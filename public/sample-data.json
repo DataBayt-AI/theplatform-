@@ -1,0 +1,42 @@
+[
+  {
+    "text": "The new smartphone features an amazing camera and long-lasting battery life.",
+    "annotation": "Product Review - Positive"
+  },
+  {
+    "text": "I'm disappointed with the customer service. They were unhelpful and rude.",
+    "annotation": "Customer Service - Negative"
+  },
+  {
+    "text": "The delivery was on time and the package was well-protected.",
+    "annotation": "Shipping - Positive"
+  },
+  {
+    "text": "This restaurant serves the best pizza in town! Highly recommended.",
+    "annotation": "Restaurant Review - Positive"
+  },
+  {
+    "text": "The software crashed multiple times during my presentation.",
+    "annotation": "Software Issue - Negative"
+  },
+  {
+    "text": "I love the new park that opened near my house. It's perfect for morning walks.",
+    "annotation": "Public Facility - Positive"
+  },
+  {
+    "text": "The movie was boring and too long. I fell asleep halfway through.",
+    "annotation": "Entertainment - Negative"
+  },
+  {
+    "text": "The weather forecast shows sunny skies for the weekend.",
+    "annotation": "Weather Information - Neutral"
+  },
+  {
+    "text": "My flight was delayed by 3 hours without any explanation.",
+    "annotation": "Travel - Negative"
+  },
+  {
+    "text": "The new library has excellent study spaces and helpful staff.",
+    "annotation": "Public Service - Positive"
+  }
+]

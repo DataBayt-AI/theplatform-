@@ -1,7 +1,7 @@
-import AnnotationWorkspace from "@/components/AnnotationWorkspace";
+import DataLabelingWorkspace from "@/components/DataLabelingWorkspace";
 
 const Index = () => {
-  return <AnnotationWorkspace />;
+  return <DataLabelingWorkspace />;
 };
 
 export default Index;
