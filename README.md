@@ -26,12 +26,12 @@ A powerful, modern data annotation tool that leverages AI to accelerate the data
    npm install
    ```
 
-2. Start the development server:
+2. Start the development server (runs both frontend and backend):
    ```bash
-   npm run dev
+   npm run dev:all
    ```
 
-3. Open your browser and navigate to the displayed local URL (usually `http://localhost:5173`)
+3. Open your browser and navigate to the displayed local URL (usually `http://localhost:8080`)
 
 ## 🔑 API Key Configuration
 
@@ -178,14 +178,16 @@ src/
 │   └── Index.tsx              # Main page
 └── lib/
     └── utils.ts               # Utility functions
+server/
+└── index.js                   # Backend proxy server
 ```
 
 ## 🚨 Security Notes
 
-- API keys are stored in browser localStorage only
-- No data is sent to our servers
-- All AI processing happens directly between your browser and the chosen AI provider
-- For production use, consider implementing a backend proxy for API calls
+- API keys are stored in browser localStorage and sent to your **local** server proxy
+- No data is sent to external servers other than the chosen AI provider
+- Requests are routed through the local server (`server/index.js`) to handle CORS and security
+- **Production**: When deploying, you must deploy the server component to handle these API requests
 
 ## 🐛 Troubleshooting
 
