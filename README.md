@@ -6,10 +6,12 @@ A powerful, modern data annotation tool that leverages AI to accelerate the data
 
 - **Multi-format File Support**: Upload JSON, CSV, or TXT files containing your data
 - **AI-Powered Labeling**: Integration with OpenAI GPT, Anthropic Claude, and local models
+- **Custom Annotation Fields**: Create custom forms with XML configuration
+- **In-App XML Editor**: Customize your annotation interface directly in the app
 - **Custom Prompts**: Add optional custom instructions for the AI to follow
 - **Interactive Review**: Accept, edit, or completely change AI-generated annotations
 - **Progress Tracking**: Visual progress indicators and completion statistics
-- **Export Results**: Download your annotated data in JSON format
+- **Export Results**: Download your annotated data in JSON format (including custom fields)
 - **Keyboard Shortcuts**: Efficient navigation and workflow
 - **Modern UI**: Clean, responsive interface built with shadcn/ui
 
@@ -98,7 +100,30 @@ And this is a third one
   - **Anthropic Claude**: Alternative AI provider (placeholder implementation)
   - **Local Model**: Simple rule-based model for testing
 
-### 3. Add Custom Prompt (Optional)
+### 3. Customize Annotation Fields (New!)
+
+You can now customize the annotation interface to match your specific needs:
+
+1. Click the **Customize** button in the "Human Annotation" section.
+2. Use the **XML Editor** to define your fields.
+3. You can add text inputs, textareas, checkboxes, radio buttons, and select dropdowns.
+4. Use `{{columnName}}` to insert values from your data file dynamically.
+
+**Example XML Config:**
+```xml
+<View>
+  <Header value="Sentiment Analysis"/>
+  <Text name="text" value="$text"/>
+  <Choices name="sentiment" toName="text" choice="single">
+    <Choice value="Positive"/>
+    <Choice value="Negative"/>
+    <Choice value="Neutral"/>
+  </Choices>
+  <TextArea name="reasoning" toName="text" placeholder="Why this sentiment?"/>
+</View>
+```
+
+### 4. Add Custom Prompt (Optional)
 
 In the settings dialog, you can add a custom prompt that will be sent to the AI along with each data point:
 
