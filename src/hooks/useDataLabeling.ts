@@ -297,6 +297,21 @@ export const useDataLabeling = (projectId?: string) => {
         handleSaveEdit,
         handleRejectAnnotation,
         handleRateModel,
-        handleHumanAnnotationChange
+        handleHumanAnnotationChange,
+        handleCustomFieldValueChange: (fieldId: string, value: string | boolean) => {
+            if (!currentDataPoint) return;
+            const updated = [...dataPoints];
+            updated[currentIndex] = {
+                ...currentDataPoint,
+                customFieldValues: {
+                    ...(currentDataPoint.customFieldValues || {}),
+                    [fieldId]: value
+                }
+            };
+            setWorkspaceState({
+                dataPoints: updated,
+                currentIndex
+            });
+        }
     };
 };

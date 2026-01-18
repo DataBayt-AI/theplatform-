@@ -19,7 +19,8 @@ export const exportService = {
             status: dp.status,
             confidence: dp.confidence,
             customField: dp.customField || '',
-            customFieldName: dp.customFieldName || ''
+            customFieldName: dp.customFieldName || '',
+            ...dp.customFieldValues, // Include XML form custom field values as separate columns
         }));
     },
 

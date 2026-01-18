@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<annotation-config>
+  <field id="annotation" type="textarea" required="true">
+    <label>Annotation</label>
+    <placeholder>Enter your annotation...</placeholder>
+  </field>
+</annotation-config>

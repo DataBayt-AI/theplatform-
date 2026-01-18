@@ -19,6 +19,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
+import { MetadataSidebar } from "@/components/MetadataSidebar";
+import { DynamicAnnotationForm } from "@/components/DynamicAnnotationForm";
+import { AnnotationConfig, loadDefaultAnnotationConfig, loadAnnotationConfigFromFile, parseAnnotationConfigXML } from "@/services/xmlConfigService";
 import {
   Upload,
   Settings,
@@ -86,6 +89,7 @@ const DataLabelingWorkspace = () => {
     handleRejectAnnotation,
     handleRateModel,
     handleHumanAnnotationChange,
+    handleCustomFieldValueChange,
     undo,
     redo,
     canUndo,
@@ -124,6 +128,9 @@ const DataLabelingWorkspace = () => {
   const [sambaNovaApiKey, setSambaNovaApiKey] = useState(() => localStorage.getItem('databayt-sambanova-key') || '');
   const [ollamaUrl, setOllamaUrl] = useState(() => localStorage.getItem('databayt-ollama-url') || 'http://localhost:11434');
   const [availableColumns, setAvailableColumns] = useState<string[]>([]);
+  const [selectedContentColumn, setSelectedContentColumn] = useState<string>('');
+  const [selectedDisplayColumns, setSelectedDisplayColumns] = useState<string[]>([]);
+  const [showMetadataSidebar, setShowMetadataSidebar] = useState(true);
   const [showExportDialog, setShowExportDialog] = useState(false);
 
   // Hugging Face State
@@ -142,11 +149,98 @@ const DataLabelingWorkspace = () => {
   // Import providers list
   const [availableProviders, setAvailableProviders] = useState<ModelProvider[]>([]);
 
+  // XML Annotation Config State
+  const [annotationConfig, setAnnotationConfig] = useState<AnnotationConfig | null>(null);
+  const [annotationFieldValuesMap, setAnnotationFieldValuesMap] = useState<Record<string, Record<string, string | boolean>>>({});
+  const [showXmlEditor, setShowXmlEditor] = useState(false);
+  const [xmlEditorContent, setXmlEditorContent] = useState('');
+
   useEffect(() => {
     import('@/services/aiProviders').then(module => {
       setAvailableProviders(module.AVAILABLE_PROVIDERS);
     });
   }, []);
+
+  // Load annotation config on mount (from localStorage or default)
+  useEffect(() => {
+    const savedXml = projectId ? localStorage.getItem(`databayt-annotation-config-xml-${projectId}`) : null;
+    if (savedXml) {
+      setXmlEditorContent(savedXml);
+      try {
+        const config = parseAnnotationConfigXML(savedXml);
+        setAnnotationConfig(config);
+        return; // Use saved config
+      } catch (err) {
+        console.error('Failed to parse saved annotation config, loading default:', err);
+      }
+    }
+
+    // Fallback to default config
+    fetch('/default-annotation-config.xml')
+      .then(res => res.text())
+      .then(xmlString => {
+        setXmlEditorContent(xmlString);
+        try {
+          const config = parseAnnotationConfigXML(xmlString);
+          setAnnotationConfig(config);
+        } catch (err) {
+          console.error('Failed to parse default annotation config:', err);
+        }
+      })
+      .catch(err => console.error('Failed to load default annotation config:', err));
+  }, []);
+
+  // Handle custom XML config upload
+  const handleXmlConfigUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const xmlString = await file.text();
+      setXmlEditorContent(xmlString);
+      const config = parseAnnotationConfigXML(xmlString);
+      setAnnotationConfig(config);
+      setAnnotationFieldValuesMap({}); // Reset field values for all data points
+    } catch (err) {
+      setUploadError(`Failed to parse XML config: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+    event.target.value = '';
+  };
+
+  // Handle annotation field value change (per data point)
+  const handleAnnotationFieldChange = (fieldId: string, value: string | boolean) => {
+    if (!currentDataPoint) return;
+    setAnnotationFieldValuesMap(prev => ({
+      ...prev,
+      [currentDataPoint.id]: {
+        ...(prev[currentDataPoint.id] || {}),
+        [fieldId]: value
+      }
+    }));
+  };
+
+  // Open XML editor
+  const openXmlEditor = () => {
+    setShowXmlEditor(true);
+  };
+
+  // Apply XML from editor
+  const applyXmlConfig = () => {
+    try {
+      const config = parseAnnotationConfigXML(xmlEditorContent);
+      setAnnotationConfig(config);
+      setAnnotationFieldValuesMap({});
+      if (projectId) localStorage.setItem(`databayt-annotation-config-xml-${projectId}`, xmlEditorContent);
+      setShowXmlEditor(false);
+    } catch (err) {
+      setUploadError(`Invalid XML: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  // Insert column reference into XML editor
+  const insertColumnToXml = (columnName: string) => {
+    setXmlEditorContent(prev => prev + `{{${columnName}}}`);
+  };
 
   // Initialize HF dataset name when project name loads
   useEffect(() => {
@@ -297,7 +391,12 @@ const DataLabelingWorkspace = () => {
       } else if (file.name.endsWith('.csv')) {
         const lines = text.split('\n').filter(line => line.trim());
         const header = lines[0].split(',').map(h => h.trim());
-        const contentIndex = header.findIndex(h => h.toLowerCase().includes('text') || h.toLowerCase().includes('content'));
+
+        // Use user-selected content column, or fallback to auto-detect
+        const contentIndex = selectedContentColumn
+          ? header.findIndex(h => h === selectedContentColumn)
+          : header.findIndex(h => h.toLowerCase().includes('text') || h.toLowerCase().includes('content'));
+
         const annotationIndex = header.findIndex(h => h.toLowerCase().includes('label') || h.toLowerCase().includes('annotation'));
 
         // Set dynamic labels
@@ -311,25 +410,37 @@ const DataLabelingWorkspace = () => {
           // TODO: Consider using a library like PapaParse for robust CSV handling
           const values = line.split(',');
 
-          // Create metadata object from all columns
+          // Create metadata object - only include selected display columns if specified
           const metadata: Record<string, string> = {};
           header.forEach((h, i) => {
             if (values[i] !== undefined) {
+              // Include all columns in metadata, but mark which ones to display
               metadata[h] = values[i].trim();
             }
           });
 
+          // Filter display metadata to only selected columns
+          const displayMetadata: Record<string, string> = {};
+          if (selectedDisplayColumns.length > 0) {
+            selectedDisplayColumns.forEach(col => {
+              if (metadata[col] !== undefined) {
+                displayMetadata[col] = metadata[col];
+              }
+            });
+          }
+
           return {
             id: `data_${index}`,
-            content: contentIndex >= 0 ? values[contentIndex] : (values[0] || line),
-            originalAnnotation: annotationIndex >= 0 ? values[annotationIndex] : '',
+            content: contentIndex >= 0 ? values[contentIndex]?.trim() : (values[0]?.trim() || line),
+            originalAnnotation: annotationIndex >= 0 ? values[annotationIndex]?.trim() : '',
             aiSuggestions: {},
             ratings: {},
             status: 'pending' as const,
             uploadPrompt: prompt,
             customField: '',
             customFieldName: customField,
-            metadata: metadata
+            metadata: metadata,
+            displayMetadata: selectedDisplayColumns.length > 0 ? displayMetadata : metadata
           };
         });
       } else {
@@ -452,7 +563,8 @@ const DataLabelingWorkspace = () => {
     try {
       const { getAIProvider } = await import('@/services/aiProviders');
 
-      const batchSize = 10; // Increased batch size
+      const batchSize = 20; // Increased batch size for faster throughput
+      const concurrentBatches = 3; // Process this many batches concurrently
       const batches = [];
 
       // Split pending data points into batches
@@ -460,80 +572,83 @@ const DataLabelingWorkspace = () => {
         batches.push(pendingDataPoints.slice(i, i + batchSize));
       }
 
-      console.log(`Processing ${pendingDataPoints.length} items in ${batches.length} batches`);
+      console.log(`Processing ${pendingDataPoints.length} items in ${batches.length} batches (${concurrentBatches} concurrent)`);
 
       setProcessingProgress({ current: 0, total: pendingDataPoints.length });
 
       // We need to work with the latest state
       let currentDataPoints = [...dataPoints];
 
-      // Process each batch
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex];
+      // Helper function to process a single batch
+      const processBatch = async (batch: typeof pendingDataPoints, batchIndex: number) => {
         const batchPromises: Promise<void>[] = [];
 
-        try {
-          // Process ALL selected models for the batch in PARALLEL
-          for (const compositeId of selectedModels) {
-            const [providerId, modelId] = compositeId.split(':');
+        // Process ALL selected models for the batch in PARALLEL
+        for (const compositeId of selectedModels) {
+          const [providerId, modelId] = compositeId.split(':');
 
-            // Filter items for this specific model
-            const itemsToProcessForModel = force
-              ? batch
-              : batch.filter(dp => !dp.aiSuggestions || !dp.aiSuggestions[compositeId]);
+          // Filter items for this specific model
+          const itemsToProcessForModel = force
+            ? batch
+            : batch.filter(dp => !dp.aiSuggestions || !dp.aiSuggestions[compositeId]);
 
-            if (itemsToProcessForModel.length === 0) continue;
+          if (itemsToProcessForModel.length === 0) continue;
 
-            const provider = getAIProvider(providerId);
+          const provider = getAIProvider(providerId);
 
-            let key = '';
-            if (providerId === 'openai') key = apiKey.trim();
-            else if (providerId === 'anthropic') key = anthropicApiKey.trim();
-            else if (providerId === 'sambanova') key = sambaNovaApiKey.trim();
+          let key = '';
+          if (providerId === 'openai') key = apiKey.trim();
+          else if (providerId === 'anthropic') key = anthropicApiKey.trim();
+          else if (providerId === 'sambanova') key = sambaNovaApiKey.trim();
 
-            // Create promises for each item for this model
-            const modelPromises = itemsToProcessForModel.map(async (dp) => {
-              try {
-                const result = await processWithModel(dp, providerId, modelId);
+          // Create promises for each item for this model
+          const modelPromises = itemsToProcessForModel.map(async (dp) => {
+            try {
+              const result = await processWithModel(dp, providerId, modelId);
 
-                // Update the local state immediately
-                const originalIndex = currentDataPoints.findIndex(p => p.id === dp.id);
-                if (originalIndex !== -1) {
-                  const currentSuggestions = currentDataPoints[originalIndex].aiSuggestions || {};
-                  currentDataPoints[originalIndex] = {
-                    ...currentDataPoints[originalIndex],
-                    aiSuggestions: {
-                      ...currentSuggestions,
-                      [compositeId]: result
-                    },
-                    status: 'ai_processed',
-                    confidence: Math.random() * 0.3 + 0.7
-                  };
-                }
-              } catch (err) {
-                console.error(`Error processing ${dp.id} with ${compositeId}:`, err);
+              // Update the local state immediately
+              const originalIndex = currentDataPoints.findIndex(p => p.id === dp.id);
+              if (originalIndex !== -1) {
+                const currentSuggestions = currentDataPoints[originalIndex].aiSuggestions || {};
+                currentDataPoints[originalIndex] = {
+                  ...currentDataPoints[originalIndex],
+                  aiSuggestions: {
+                    ...currentSuggestions,
+                    [compositeId]: result
+                  },
+                  status: 'ai_processed',
+                  confidence: Math.random() * 0.3 + 0.7
+                };
               }
-            });
-
-            batchPromises.push(...modelPromises);
-          }
-
-          // Wait for ALL requests in this batch to complete
-          await Promise.all(batchPromises);
-
-          // Update UI after each batch
-          setDataPoints([...currentDataPoints]);
-
-          // Update progress
-          const processed = (batchIndex + 1) * batchSize;
-          setProcessingProgress({
-            current: Math.min(processed, pendingDataPoints.length),
-            total: pendingDataPoints.length
+            } catch (err) {
+              console.error(`Error processing ${dp.id} with ${compositeId}:`, err);
+            }
           });
 
-        } catch (error) {
-          console.error(`Error processing batch ${batchIndex + 1}:`, error);
+          batchPromises.push(...modelPromises);
         }
+
+        // Wait for ALL requests in this batch to complete
+        await Promise.all(batchPromises);
+        return batchIndex;
+      };
+
+      // Process batches in concurrent windows
+      for (let i = 0; i < batches.length; i += concurrentBatches) {
+        const batchWindow = batches.slice(i, i + concurrentBatches);
+        const windowPromises = batchWindow.map((batch, idx) => processBatch(batch, i + idx));
+
+        await Promise.all(windowPromises);
+
+        // Update UI after each window completes
+        setDataPoints([...currentDataPoints]);
+
+        // Update progress
+        const processed = Math.min((i + concurrentBatches) * batchSize, pendingDataPoints.length);
+        setProcessingProgress({
+          current: processed,
+          total: pendingDataPoints.length
+        });
       }
 
     } catch (error) {
@@ -975,6 +1090,62 @@ const DataLabelingWorkspace = () => {
                           Create your own annotation field alongside AI suggestions for custom labeling.
                         </p>
                       </div>
+
+                      {/* Column Selection Section */}
+                      {availableColumns.length > 0 && (
+                        <div className="space-y-4 pt-2 border-t">
+                          <div>
+                            <Label htmlFor="content-column">Primary Content Column</Label>
+                            <Select
+                              value={selectedContentColumn}
+                              onValueChange={setSelectedContentColumn}
+                            >
+                              <SelectTrigger id="content-column">
+                                <SelectValue placeholder="Select the main content column" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availableColumns.map(col => (
+                                  <SelectItem key={col} value={col}>{col}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              This column will be displayed as the main content for annotation.
+                            </p>
+                          </div>
+
+                          <div>
+                            <Label>Additional Columns to Display</Label>
+                            <div className="grid grid-cols-2 gap-2 mt-2 max-h-32 overflow-y-auto">
+                              {availableColumns.filter(col => col !== selectedContentColumn).map(col => (
+                                <div key={col} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={`display-col-${col}`}
+                                    checked={selectedDisplayColumns.includes(col)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setSelectedDisplayColumns(prev => [...prev, col]);
+                                      } else {
+                                        setSelectedDisplayColumns(prev => prev.filter(c => c !== col));
+                                      }
+                                    }}
+                                  />
+                                  <label
+                                    htmlFor={`display-col-${col}`}
+                                    className="text-sm cursor-pointer"
+                                  >
+                                    {col}
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Selected columns will appear in the metadata sidebar.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex gap-2 justify-end">
                         <Button
                           variant="outline"
@@ -982,6 +1153,8 @@ const DataLabelingWorkspace = () => {
                             setShowUploadPrompt(false);
                             setPendingFile(null);
                             setUploadPrompt('');
+                            setSelectedContentColumn('');
+                            setSelectedDisplayColumns([]);
                           }}
                         >
                           Cancel
@@ -993,9 +1166,74 @@ const DataLabelingWorkspace = () => {
                               setPendingFile(null);
                             }
                           }}
+                          disabled={availableColumns.length > 0 && !selectedContentColumn}
                         >
                           Upload File
                         </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                {/* XML Editor Dialog */}
+                <Dialog open={showXmlEditor} onOpenChange={setShowXmlEditor}>
+                  <DialogContent className="max-w-2xl max-h-[80vh]">
+                    <DialogHeader>
+                      <DialogTitle>Customize Annotation Fields</DialogTitle>
+                      <DialogDescription>
+                        Edit the XML configuration below to customize your annotation form.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      {availableColumns.length > 0 && (
+                        <div>
+                          <Label className="text-sm font-medium">Available Columns (click to insert):</Label>
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {availableColumns.map(col => (
+                              <Badge
+                                key={col}
+                                variant="secondary"
+                                className="cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
+                                onClick={() => insertColumnToXml(col)}
+                              >
+                                {col}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <Textarea
+                        value={xmlEditorContent}
+                        onChange={(e) => setXmlEditorContent(e.target.value)}
+                        className="font-mono text-sm min-h-[300px]"
+                        placeholder="Enter XML configuration..."
+                      />
+                      <div className="flex gap-2 justify-between">
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => document.getElementById('xml-file-upload')?.click()}
+                          >
+                            <Upload className="w-4 h-4 mr-2" />
+                            Upload XML
+                          </Button>
+                          <input
+                            id="xml-file-upload"
+                            type="file"
+                            accept=".xml"
+                            onChange={handleXmlConfigUpload}
+                            className="hidden"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" onClick={() => setShowXmlEditor(false)}>
+                            Cancel
+                          </Button>
+                          <Button onClick={applyXmlConfig}>
+                            Apply Configuration
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </DialogContent>
@@ -1370,224 +1608,288 @@ const DataLabelingWorkspace = () => {
             <div className="flex gap-6 h-full">
               {/* Data Display */}
               <div className="flex-1 overflow-y-auto pb-10">
-                <Card className="min-h-full p-6">
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-lg font-semibold">Data Point</h2>
-                      <Badge variant={currentDataPoint?.status === 'accepted' ? 'default' :
-                        currentDataPoint?.status === 'edited' ? 'secondary' :
-                          currentDataPoint?.status === 'ai_processed' ? 'outline' : 'destructive'}>
-                        {currentDataPoint?.status?.replace('_', ' ')}
-                      </Badge>
-                    </div>
-
-                    <div className="bg-muted/50 p-4 rounded-lg">
-                      <Label className="text-sm font-medium">Original Content</Label>
-                      {currentDataPoint?.type === 'image' ? (
-                        <div className="mt-2">
-                          <img
-                            src={currentDataPoint.content}
-                            alt="Data point"
-                            className="max-w-full max-h-[500px] h-auto rounded-lg border border-border"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Image+Not+Found';
-                            }}
-                          />
+                <div className="flex gap-4">
+                  {/* Main Content */}
+                  <div className="flex-1">
+                    <Card className="min-h-full p-6">
+                      <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                          <h2 className="text-lg font-semibold">Data Point</h2>
+                          <Badge variant={currentDataPoint?.status === 'accepted' ? 'default' :
+                            currentDataPoint?.status === 'edited' ? 'secondary' :
+                              currentDataPoint?.status === 'ai_processed' ? 'outline' : 'destructive'}>
+                            {currentDataPoint?.status?.replace('_', ' ')}
+                          </Badge>
                         </div>
-                      ) : (
-                        <p className="mt-2 text-foreground leading-relaxed whitespace-pre-wrap">
-                          {currentDataPoint?.content}
-                        </p>
-                      )}
-                    </div>
 
-                    {currentDataPoint?.originalAnnotation && (
-                      <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-                        <Label className="text-sm font-medium">{annotationLabel}</Label>
-                        <p className="mt-2 text-foreground">{currentDataPoint.originalAnnotation}</p>
-                      </div>
-                    )}
+                        <div className="bg-muted/50 p-4 rounded-lg">
+                          <Label className="text-sm font-medium">Original Content</Label>
+                          {currentDataPoint?.type === 'image' ? (
+                            <div className="mt-2">
+                              <img
+                                src={currentDataPoint.content}
+                                alt="Data point"
+                                className="max-w-full max-h-[500px] h-auto rounded-lg border border-border"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Image+Not+Found';
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-foreground leading-relaxed whitespace-pre-wrap">
+                              {currentDataPoint?.content}
+                            </p>
+                          )}
+                        </div>
 
-                    {currentDataPoint?.uploadPrompt && (
-                      <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
-                        <Label className="text-sm font-medium">{promptLabel}</Label>
-                        <p className="mt-2 text-foreground text-sm italic">
-                          {getInterpolatedPrompt(currentDataPoint.uploadPrompt, currentDataPoint.metadata)}
-                        </p>
-                      </div>
-                    )}
+                        {currentDataPoint?.originalAnnotation && (
+                          <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                            <Label className="text-sm font-medium">{annotationLabel}</Label>
+                            <p className="mt-2 text-foreground">{currentDataPoint.originalAnnotation}</p>
+                          </div>
+                        )}
 
-                    {/* Model Arena - Display suggestions from all providers */}
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <Bot className="w-5 h-5 text-purple-600" />
-                        <h3 className="font-semibold">Model Arena</h3>
-                      </div>
+                        {currentDataPoint?.uploadPrompt && (
+                          <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
+                            <Label className="text-sm font-medium">{promptLabel}</Label>
+                            <p className="mt-2 text-foreground text-sm italic">
+                              {getInterpolatedPrompt(currentDataPoint.uploadPrompt, currentDataPoint.metadata)}
+                            </p>
+                          </div>
+                        )}
 
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* AI Provider Cards */}
-                        {Object.entries(currentDataPoint?.aiSuggestions || {}).map(([compositeId, suggestion]) => {
-                          const [providerId, modelId] = compositeId.includes(':') ? compositeId.split(':') : [compositeId, ''];
-                          const provider = availableProviders.find(p => p.id === providerId);
-                          const model = provider?.models.find(m => m.id === modelId);
+                        {/* Model Arena - Display suggestions from all providers */}
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2">
+                            <Bot className="w-5 h-5 text-purple-600" />
+                            <h3 className="font-semibold">Model Arena</h3>
+                          </div>
 
-                          const displayName = model ? `${provider?.name} - ${model.name}` : (provider?.name || providerId);
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {/* AI Provider Cards */}
+                            {Object.entries(currentDataPoint?.aiSuggestions || {}).map(([compositeId, suggestion]) => {
+                              const [providerId, modelId] = compositeId.includes(':') ? compositeId.split(':') : [compositeId, ''];
+                              const provider = availableProviders.find(p => p.id === providerId);
+                              const model = provider?.models.find(m => m.id === modelId);
 
-                          return (
-                            <Card key={compositeId} className="p-4 border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/10 transition-all hover:shadow-md">
+                              const displayName = model ? `${provider?.name} - ${model.name}` : (provider?.name || providerId);
+
+                              return (
+                                <Card key={compositeId} className="p-4 border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/10 transition-all hover:shadow-md">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <Badge variant="outline" className="bg-background">
+                                      {displayName}
+                                    </Badge>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        className="h-7 text-xs"
+                                        onClick={() => handleEditAnnotation(suggestion)}
+                                      >
+                                        <Edit3 className="w-3 h-3 mr-1" />
+                                        Edit
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        className="h-7 text-xs"
+                                        onClick={() => handleAcceptAnnotation(suggestion)}
+                                      >
+                                        <Check className="w-3 h-3 mr-1" />
+                                        Use This
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <p className="text-sm text-foreground whitespace-pre-wrap mb-3">{suggestion}</p>
+
+                                  {/* Star Rating */}
+                                  <div className="flex items-center gap-2 pt-2 border-t border-purple-200 dark:border-purple-800">
+                                    <span className="text-xs text-muted-foreground">Rate output:</span>
+                                    <div className="flex items-center">
+                                      {[1, 2, 3, 4, 5].map((star) => (
+                                        <button
+                                          key={star}
+                                          onClick={() => handleRateModel(compositeId, star)}
+                                          className="focus:outline-none p-0.5 hover:scale-110 transition-transform"
+                                        >
+                                          <Star
+                                            className={`w-4 h-4 ${(currentDataPoint.ratings?.[compositeId] || 0) >= star
+                                              ? "fill-yellow-400 text-yellow-400"
+                                              : "text-muted-foreground/30 hover:text-yellow-400"
+                                              }`}
+                                          />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </Card>
+                              );
+                            })}
+
+                            {/* Human Annotation Card - Now using Dynamic Form */}
+                            <Card className="p-4 border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/10 transition-all hover:shadow-md">
                               <div className="flex items-center justify-between mb-3">
-                                <Badge variant="outline" className="bg-background">
-                                  {displayName}
+                                <Badge variant="outline" className="bg-background flex items-center gap-1">
+                                  <User className="w-3 h-3" />
+                                  Human Annotation
                                 </Badge>
                                 <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    className="h-7 text-xs"
-                                    onClick={() => handleEditAnnotation(suggestion)}
-                                  >
-                                    <Edit3 className="w-3 h-3 mr-1" />
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    className="h-7 text-xs"
-                                    onClick={() => handleAcceptAnnotation(suggestion)}
-                                  >
-                                    <Check className="w-3 h-3 mr-1" />
-                                    Use This
-                                  </Button>
-                                </div>
-                              </div>
-                              <p className="text-sm text-foreground whitespace-pre-wrap mb-3">{suggestion}</p>
-
-                              {/* Star Rating */}
-                              <div className="flex items-center gap-2 pt-2 border-t border-purple-200 dark:border-purple-800">
-                                <span className="text-xs text-muted-foreground">Rate output:</span>
-                                <div className="flex items-center">
-                                  {[1, 2, 3, 4, 5].map((star) => (
-                                    <button
-                                      key={star}
-                                      onClick={() => handleRateModel(compositeId, star)}
-                                      className="focus:outline-none p-0.5 hover:scale-110 transition-transform"
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 text-xs"
+                                        onClick={openXmlEditor}
+                                      >
+                                        <FileText className="w-3 h-3 mr-1" />
+                                        Customize
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Customize annotation fields</TooltipContent>
+                                  </Tooltip>
+                                  {currentDataPoint?.humanAnnotation && (
+                                    <Button
+                                      size="sm"
+                                      className="h-7 text-xs"
+                                      onClick={() => handleAcceptAnnotation(currentDataPoint.humanAnnotation!)}
                                     >
-                                      <Star
-                                        className={`w-4 h-4 ${(currentDataPoint.ratings?.[compositeId] || 0) >= star
-                                          ? "fill-yellow-400 text-yellow-400"
-                                          : "text-muted-foreground/30 hover:text-yellow-400"
-                                          }`}
-                                      />
-                                    </button>
-                                  ))}
+                                      <Check className="w-3 h-3 mr-1" />
+                                      Use This
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
-                            </Card>
-                          );
-                        })}
 
-                        {/* Human Annotation Card - Always Visible */}
-                        <Card className="p-4 border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/10 transition-all hover:shadow-md">
-                          <div className="flex items-center justify-between mb-3">
-                            <Badge variant="outline" className="bg-background flex items-center gap-1">
-                              <User className="w-3 h-3" />
-                              Human Annotation
-                            </Badge>
-                            <div className="flex gap-2">
-                              {currentDataPoint?.humanAnnotation && (
-                                <Button
-                                  size="sm"
-                                  className="h-7 text-xs"
-                                  onClick={() => handleAcceptAnnotation(currentDataPoint.humanAnnotation!)}
-                                >
-                                  <Check className="w-3 h-3 mr-1" />
-                                  Use This
-                                </Button>
+                              {annotationConfig && annotationConfig.fields.length > 0 ? (
+                                <>
+                                  <DynamicAnnotationForm
+                                    fields={annotationConfig.fields}
+                                    values={currentDataPoint?.customFieldValues || {}}
+                                    onChange={handleCustomFieldValueChange}
+                                    metadata={currentDataPoint?.metadata}
+                                  />
+                                  <div className="flex justify-end mt-3">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        // Serialize custom field values as the final annotation
+                                        const values = currentDataPoint?.customFieldValues || {};
+                                        const annotation = Object.entries(values)
+                                          .map(([k, v]) => `${k}: ${v}`)
+                                          .join('\n') || 'Submitted';
+                                        handleAcceptAnnotation(annotation);
+                                      }}
+                                      className="bg-green-600 hover:bg-green-700"
+                                      disabled={
+                                        // Disable if any required field is empty
+                                        annotationConfig?.fields.some(field =>
+                                          field.required &&
+                                          !currentDataPoint?.customFieldValues?.[field.id]
+                                        ) ?? false
+                                      }
+                                    >
+                                      <Check className="w-4 h-4 mr-2" />
+                                      Submit Annotation
+                                    </Button>
+                                  </div>
+                                </>
+                              ) : (
+                                <Textarea
+                                  value={currentDataPoint?.humanAnnotation || ''}
+                                  onChange={(e) => handleHumanAnnotationChange(e.target.value)}
+                                  placeholder="Type your own annotation here..."
+                                  className="min-h-[100px] mb-2 bg-background/50"
+                                />
                               )}
+                              <p className="text-xs text-muted-foreground mt-2">
+                                {annotationConfig && annotationConfig.fields.length > 0
+                                  ? 'Fill in the fields above, then click "Submit Annotation" to mark complete.'
+                                  : 'Your manual annotation. Click "Use This" to set it as final.'
+                                }
+                              </p>
+                            </Card>
+                          </div>
+                        </div>
+
+                        {/* Edit Mode Area */}
+                        {isEditMode && (
+                          <div className="bg-background p-4 rounded-lg border-2 border-primary animate-in fade-in zoom-in-95 duration-200">
+                            <Label className="text-sm font-medium mb-2 block">Edit Annotation</Label>
+                            <Textarea
+                              value={tempAnnotation}
+                              onChange={(e) => setTempAnnotation(e.target.value)}
+                              rows={4}
+                              className="mb-3"
+                              autoFocus
+                            />
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" variant="outline" onClick={() => setIsEditMode(false)}>
+                                Cancel
+                              </Button>
+                              <Button size="sm" onClick={handleSaveEdit}>
+                                <Save className="w-4 h-4 mr-2" />
+                                Save Changes
+                              </Button>
                             </div>
                           </div>
+                        )}
 
-                          <Textarea
-                            value={currentDataPoint?.humanAnnotation || ''}
-                            onChange={(e) => handleHumanAnnotationChange(e.target.value)}
-                            placeholder="Type your own annotation here..."
-                            className="min-h-[100px] mb-2 bg-background/50"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Your manual annotation. Click "Use This" to set it as final.
-                          </p>
-                        </Card>
-                      </div>
-                    </div>
-
-                    {/* Edit Mode Area */}
-                    {isEditMode && (
-                      <div className="bg-background p-4 rounded-lg border-2 border-primary animate-in fade-in zoom-in-95 duration-200">
-                        <Label className="text-sm font-medium mb-2 block">Edit Annotation</Label>
-                        <Textarea
-                          value={tempAnnotation}
-                          onChange={(e) => setTempAnnotation(e.target.value)}
-                          rows={4}
-                          className="mb-3"
-                          autoFocus
-                        />
-                        <div className="flex gap-2 justify-end">
-                          <Button size="sm" variant="outline" onClick={() => setIsEditMode(false)}>
-                            Cancel
-                          </Button>
-                          <Button size="sm" onClick={handleSaveEdit}>
-                            <Save className="w-4 h-4 mr-2" />
-                            Save Changes
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Final Annotation Display */}
-                    {currentDataPoint?.finalAnnotation && !isEditMode && (
-                      <div className="bg-green-50 dark:bg-green-950/20 p-4 rounded-lg border border-green-200 dark:border-green-800 animate-in fade-in slide-in-from-bottom-2">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle className="w-4 h-4 text-green-700 dark:text-green-300" />
-                            <Label className="text-sm font-medium text-green-700 dark:text-green-300">Final Selected Annotation</Label>
+                        {/* Final Annotation Display */}
+                        {currentDataPoint?.finalAnnotation && !isEditMode && (
+                          <div className="bg-green-50 dark:bg-green-950/20 p-4 rounded-lg border border-green-200 dark:border-green-800 animate-in fade-in slide-in-from-bottom-2">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <CheckCircle className="w-4 h-4 text-green-700 dark:text-green-300" />
+                                <Label className="text-sm font-medium text-green-700 dark:text-green-300">Final Selected Annotation</Label>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-xs text-green-700 hover:text-green-800 hover:bg-green-100"
+                                onClick={() => handleEditAnnotation(currentDataPoint.finalAnnotation!)}
+                              >
+                                <Edit3 className="w-3 h-3 mr-1" />
+                                Edit
+                              </Button>
+                            </div>
+                            <p className="text-foreground whitespace-pre-wrap">{currentDataPoint.finalAnnotation}</p>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 text-xs text-green-700 hover:text-green-800 hover:bg-green-100"
-                            onClick={() => handleEditAnnotation(currentDataPoint.finalAnnotation!)}
-                          >
-                            <Edit3 className="w-3 h-3 mr-1" />
-                            Edit
-                          </Button>
-                        </div>
-                        <p className="text-foreground whitespace-pre-wrap">{currentDataPoint.finalAnnotation}</p>
-                      </div>
-                    )}
+                        )}
 
-                    {currentDataPoint?.customFieldName && (
-                      <div className="bg-cyan-50 dark:bg-cyan-950/20 p-4 rounded-lg border border-cyan-200 dark:border-cyan-800">
-                        <Label className="text-sm font-medium">{currentDataPoint.customFieldName}</Label>
-                        <Textarea
-                          value={currentDataPoint.customField || ''}
-                          onChange={(e) => {
-                            const updatedDataPoints = [...dataPoints];
-                            const currentIdx = updatedDataPoints.findIndex(dp => dp.id === currentDataPoint.id);
-                            if (currentIdx !== -1) {
-                              updatedDataPoints[currentIdx] = {
-                                ...updatedDataPoints[currentIdx],
-                                customField: e.target.value
-                              };
-                              setDataPoints(updatedDataPoints);
-                            }
-                          }}
-                          placeholder={`Enter your ${currentDataPoint.customFieldName.toLowerCase()}...`}
-                          rows={2}
-                          className="mt-2"
-                        />
+                        {currentDataPoint?.customFieldName && (
+                          <div className="bg-cyan-50 dark:bg-cyan-950/20 p-4 rounded-lg border border-cyan-200 dark:border-cyan-800">
+                            <Label className="text-sm font-medium">{currentDataPoint.customFieldName}</Label>
+                            <Textarea
+                              value={currentDataPoint.customField || ''}
+                              onChange={(e) => {
+                                const updatedDataPoints = [...dataPoints];
+                                const currentIdx = updatedDataPoints.findIndex(dp => dp.id === currentDataPoint.id);
+                                if (currentIdx !== -1) {
+                                  updatedDataPoints[currentIdx] = {
+                                    ...updatedDataPoints[currentIdx],
+                                    customField: e.target.value
+                                  };
+                                  setDataPoints(updatedDataPoints);
+                                }
+                              }}
+                              placeholder={`Enter your ${currentDataPoint.customFieldName.toLowerCase()}...`}
+                              rows={2}
+                              className="mt-2"
+                            />
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </Card>
                   </div>
-                </Card>
+
+                  {/* Metadata Sidebar */}
+                  <MetadataSidebar
+                    metadata={currentDataPoint?.displayMetadata || currentDataPoint?.metadata}
+                    isOpen={showMetadataSidebar}
+                    onToggle={() => setShowMetadataSidebar(!showMetadataSidebar)}
+                  />
+                </div>
               </div>
 
               {/* Actions Panel */}

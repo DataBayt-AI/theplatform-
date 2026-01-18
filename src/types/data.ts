@@ -12,7 +12,9 @@ export interface DataPoint {
     uploadPrompt?: string; // Prompt used during upload
     customField?: string; // Value of the custom field
     customFieldName?: string; // Name of the custom field
-    metadata?: Record<string, string>; // Additional metadata
+    metadata?: Record<string, string>; // All metadata from original file
+    displayMetadata?: Record<string, string>; // User-selected columns to display in sidebar
+    customFieldValues?: Record<string, string | boolean>; // Values from XML annotation form
 }
 
 export interface AIModel {
