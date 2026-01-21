@@ -91,7 +91,7 @@ export const useDataLabeling = (projectId?: string) => {
         const accepted = dataPoints.filter(dp => dp.status === 'accepted').length;
         const rejected = dataPoints.filter(dp => dp.status === 'pending' && Object.keys(dp.aiSuggestions).length > 0).length;
         const edited = dataPoints.filter(dp => dp.status === 'edited').length;
-        const processed = dataPoints.filter(dp => dp.status === 'ai_processed' || dp.status === 'accepted' || dp.status === 'edited').length;
+        const processed = dataPoints.filter(dp => dp.status === 'ai_processed').length;
 
         const confidenceScores = dataPoints
             .filter(dp => dp.confidence && dp.confidence > 0)
