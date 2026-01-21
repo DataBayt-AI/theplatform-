@@ -8,7 +8,7 @@ import { getInterpolatedPrompt } from "@/utils/dataUtils";
 import { DataPoint, ModelProvider } from "@/types/data";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+import { Progress } from "@/components/ui/progress";  
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -16,9 +16,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "@/components/ui/use-toast";
 import { MetadataSidebar } from "@/components/MetadataSidebar";
 import { DynamicAnnotationForm } from "@/components/DynamicAnnotationForm";
 import { AnnotationConfig, loadDefaultAnnotationConfig, loadAnnotationConfigFromFile, parseAnnotationConfigXML } from "@/services/xmlConfigService";
@@ -38,7 +38,6 @@ import {
   Brain,
   Save,
   Download,
-  AlertCircle,
   Loader2,
   Keyboard,
   BarChart3,
@@ -154,6 +153,8 @@ const DataLabelingWorkspace = () => {
   const [annotationFieldValuesMap, setAnnotationFieldValuesMap] = useState<Record<string, Record<string, string | boolean>>>({});
   const [showXmlEditor, setShowXmlEditor] = useState(false);
   const [xmlEditorContent, setXmlEditorContent] = useState('');
+
+  const allowedDataFileExtensions = ['.json', '.csv', '.txt'];
 
   useEffect(() => {
     import('@/services/aiProviders').then(module => {
@@ -299,12 +300,56 @@ const DataLabelingWorkspace = () => {
     // Keep session stats for comparison
   };
 
+  const validateDataFile = (file: File) => {
+    const lastDotIndex = file.name.lastIndexOf('.');
+    const extension = lastDotIndex >= 0 ? file.name.slice(lastDotIndex).toLowerCase() : '';
+
+    if (!extension) {
+      return 'File must have an extension (.json, .csv, or .txt).';
+    }
+
+    if (!allowedDataFileExtensions.includes(extension)) {
+      return `Unsupported file type "${extension}". Please upload a JSON, CSV, or TXT file.`;
+    }
+
+    if (file.size === 0) {
+      return 'The selected file is empty.';
+    }
+
+    return null;
+  };
+
+  const normalizeCsvHeader = (rawHeader: string[]) => {
+    const seen = new Map<string, number>();
+    return rawHeader.map((name, index) => {
+      const baseName = name.trim() || `column_${index + 1}`;
+      const key = baseName.toLowerCase();
+      const count = seen.get(key) ?? 0;
+      seen.set(key, count + 1);
+      return count === 0 ? baseName : `${baseName}_${count + 1}`;
+    });
+  };
+
   // File upload handler - now shows prompt dialog first
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     console.log('File upload triggered', event.target.files);
     const file = event.target.files?.[0];
     if (!file) {
       console.log('No file selected');
+      return;
+    }
+
+    const validationError = validateDataFile(file);
+    if (validationError) {
+      setUploadError(validationError);
+      toast({
+        title: 'Invalid file',
+        description: validationError,
+        variant: 'destructive',
+        duration: 20000
+      });
+      setPendingFile(null);
+      event.target.value = '';
       return;
     }
 
@@ -315,7 +360,7 @@ const DataLabelingWorkspace = () => {
       const text = await file.text();
       const firstLine = text.split('\n')[0];
       if (firstLine) {
-        const headers = firstLine.split(',').map(h => h.trim());
+        const headers = normalizeCsvHeader(firstLine.split(','));
         setAvailableColumns(headers);
       }
     } else if (file.name.endsWith('.json')) {
@@ -358,7 +403,13 @@ const DataLabelingWorkspace = () => {
 
       // Handle different file formats
       if (file.name.endsWith('.json')) {
-        const jsonData = JSON.parse(text);
+        let jsonData: unknown;
+        try {
+          jsonData = JSON.parse(text);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Invalid JSON syntax.';
+          throw new Error(`Invalid JSON syntax. ${message}`);
+        }
         if (Array.isArray(jsonData)) {
           // Detect labels from first item
           if (jsonData.length > 0) {
@@ -390,12 +441,32 @@ const DataLabelingWorkspace = () => {
         }
       } else if (file.name.endsWith('.csv')) {
         const lines = text.split('\n').filter(line => line.trim());
-        const header = lines[0].split(',').map(h => h.trim());
+        if (lines.length === 0) {
+          throw new Error('CSV file is empty.');
+        }
+
+        const rawHeader = lines[0].split(',');
+        if (rawHeader.length === 0) {
+          throw new Error('CSV header row is missing.');
+        }
+        const header = normalizeCsvHeader(rawHeader);
 
         // Use user-selected content column, or fallback to auto-detect
-        const contentIndex = selectedContentColumn
+        let contentIndex = selectedContentColumn
           ? header.findIndex(h => h === selectedContentColumn)
           : header.findIndex(h => h.toLowerCase().includes('text') || h.toLowerCase().includes('content'));
+
+        if (contentIndex < 0) {
+          const fallbackIndex = header.findIndex(h => h.toLowerCase() !== 'id');
+          if (fallbackIndex >= 0) {
+            contentIndex = fallbackIndex;
+          } else {
+            const required = selectedContentColumn
+              ? `"${selectedContentColumn}"`
+              : 'a "text" or "content" column';
+            throw new Error(`CSV file is missing ${required}.`);
+          }
+        }
 
         const annotationIndex = header.findIndex(h => h.toLowerCase().includes('label') || h.toLowerCase().includes('annotation'));
 
@@ -409,6 +480,15 @@ const DataLabelingWorkspace = () => {
           // Handle simple CSV parsing (split by comma)
           // TODO: Consider using a library like PapaParse for robust CSV handling
           const values = line.split(',');
+          if (values.length > header.length) {
+            throw new Error(`CSV row ${index + 2} has ${values.length} columns, expected ${header.length}.`);
+          }
+          while (values.length < header.length) {
+            values.push('');
+          }
+          if (!values[contentIndex] || !values[contentIndex].trim()) {
+            throw new Error(`CSV row ${index + 2} is missing a value for column "${header[contentIndex]}".`);
+          }
 
           // Create metadata object - only include selected display columns if specified
           const metadata: Record<string, string> = {};
@@ -446,6 +526,9 @@ const DataLabelingWorkspace = () => {
       } else {
         // Plain text - each line is a data point
         const lines = text.split('\n').filter(line => line.trim());
+        if (lines.length === 0) {
+          throw new Error('TXT file is empty.');
+        }
         parsedData = lines.map((line, index) => ({
           id: `data_${index}`,
           content: line.trim(),
@@ -460,7 +543,14 @@ const DataLabelingWorkspace = () => {
 
       loadNewData(parsedData);
     } catch (error) {
-      setUploadError(`Failed to parse file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const errorMessage = `Failed to parse file: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      setUploadError(errorMessage);
+      toast({
+        title: 'File upload failed',
+        description: errorMessage,
+        variant: 'destructive',
+        duration: 20000
+      });
     } finally {
       setIsUploading(false);
     }
@@ -1573,13 +1663,6 @@ const DataLabelingWorkspace = () => {
 
         {/* Main Content */}
         <div className="flex-1 pt-20 p-6">
-          {uploadError && (
-            <Alert className="mb-4 border-destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{uploadError}</AlertDescription>
-            </Alert>
-          )}
-
           {dataPoints.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <Card className="p-8 text-center max-w-md">
