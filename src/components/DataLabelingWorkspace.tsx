@@ -876,6 +876,10 @@ const DataLabelingWorkspace = () => {
       matchesMetadataFilters(dataPoint, metadataFilters)
     );
   }, [statusAndQueryFilteredEntries, metadataFilters]);
+  const filteredDataPoints = useMemo(
+    () => filteredAnnotationEntries.map(entry => entry.dataPoint),
+    [filteredAnnotationEntries]
+  );
 
   useEffect(() => {
     if (metadataFilterOptions.length === 0 && Object.keys(metadataFilters).length === 0) return;
@@ -1018,7 +1022,7 @@ const DataLabelingWorkspace = () => {
 
     try {
       const repoId = `${hfUsername}/${hfDatasetName}`;
-      const blob = exportService.generateJSONLBlob(dataPoints);
+      const blob = exportService.generateJSONLBlob(filteredDataPoints);
 
       await huggingFaceService.publishDataset(
         repoId,
@@ -1616,25 +1620,25 @@ const DataLabelingWorkspace = () => {
                 <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
                   <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                      <DialogTitle>Export Results</DialogTitle>
+                      <DialogTitle>Export Filtered Results</DialogTitle>
                       <DialogDescription>
-                        Choose the format for your exported data.
+                        Exports the current filtered list ({filteredDataPoints.length} items).
                       </DialogDescription>
                     </DialogHeader>
                     <div className="grid grid-cols-1 gap-4 py-4">
-                      <Button variant="outline" className="justify-start h-auto py-4 px-4" onClick={() => exportService.exportAsJSON(dataPoints, projectName)}>
+                      <Button variant="outline" className="justify-start h-auto py-4 px-4" onClick={() => exportService.exportAsJSON(filteredDataPoints, projectName)}>
                         <div className="flex flex-col items-start gap-1">
                           <span className="font-semibold">JSON (Standard)</span>
                           <span className="text-xs text-muted-foreground">Best for backups and re-importing.</span>
                         </div>
                       </Button>
-                      <Button variant="outline" className="justify-start h-auto py-4 px-4" onClick={() => exportService.exportAsCSV(dataPoints, projectName)}>
+                      <Button variant="outline" className="justify-start h-auto py-4 px-4" onClick={() => exportService.exportAsCSV(filteredDataPoints, projectName)}>
                         <div className="flex flex-col items-start gap-1">
                           <span className="font-semibold">CSV (Spreadsheet)</span>
                           <span className="text-xs text-muted-foreground">Best for Excel, Google Sheets, and analysis.</span>
                         </div>
                       </Button>
-                      <Button variant="outline" className="justify-start h-auto py-4 px-4" onClick={() => exportService.exportAsJSONL(dataPoints, projectName)}>
+                      <Button variant="outline" className="justify-start h-auto py-4 px-4" onClick={() => exportService.exportAsJSONL(filteredDataPoints, projectName)}>
                         <div className="flex flex-col items-start gap-1">
                           <span className="font-semibold">Hugging Face Dataset (JSONL)</span>
                           <span className="text-xs text-muted-foreground">Best for fine-tuning and machine learning.</span>
@@ -2729,7 +2733,7 @@ const DataLabelingWorkspace = () => {
                       variant="outline"
                       className="w-full"
                       onClick={() => setShowExportDialog(true)}
-                      disabled={dataPoints.length === 0}
+                      disabled={filteredDataPoints.length === 0}
                     >
                       <Download className="w-4 h-4 mr-2" />
                       Export Results
