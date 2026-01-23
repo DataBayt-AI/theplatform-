@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import { useDataLabeling } from "@/hooks/useDataLabeling";
@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/components/ui/use-toast";
 import { MetadataSidebar } from "@/components/MetadataSidebar";
 import { DynamicAnnotationForm } from "@/components/DynamicAnnotationForm";
@@ -27,6 +28,10 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Shuffle,
+  Play,
   Sparkles,
   Check,
   X,
@@ -57,6 +62,8 @@ import {
   Undo2,
   Redo2
 } from "lucide-react";
+
+type AnnotationStatusFilter = 'all' | 'has_final' | DataPoint['status'];
 
 const DataLabelingWorkspace = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -131,6 +138,14 @@ const DataLabelingWorkspace = () => {
   const [selectedDisplayColumns, setSelectedDisplayColumns] = useState<string[]>([]);
   const [showMetadataSidebar, setShowMetadataSidebar] = useState(true);
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [annotationQuery, setAnnotationQuery] = useState('');
+  const [annotationStatusFilter, setAnnotationStatusFilter] = useState<AnnotationStatusFilter>('all');
+  const [annotationPage, setAnnotationPage] = useState(1);
+  const [annotationPageSize, setAnnotationPageSize] = useState(10);
+  const [viewMode, setViewMode] = useState<'list' | 'record'>('list');
+  const [metadataFilters, setMetadataFilters] = useState<Record<string, string[]>>({});
+  const [metadataFiltersCollapsed, setMetadataFiltersCollapsed] = useState(true);
+  const [useFilteredNavigation, setUseFilteredNavigation] = useState(false);
 
   // Hugging Face State
   const [showHFDialog, setShowHFDialog] = useState(false);
@@ -273,6 +288,16 @@ const DataLabelingWorkspace = () => {
     const totalCompleted = annotationStats.totalAccepted + annotationStats.totalEdited;
     if (annotationStats.sessionTime === 0 || totalCompleted === 0) return 0;
     return Math.round((totalCompleted / annotationStats.sessionTime) * 3600); // per hour
+  };
+
+  const getAnnotationPreview = (dataPoint: DataPoint) => {
+    if (dataPoint.finalAnnotation) return { label: 'Final', text: dataPoint.finalAnnotation };
+    if (dataPoint.humanAnnotation) return { label: 'Human', text: dataPoint.humanAnnotation };
+    if (dataPoint.originalAnnotation) return { label: 'Original', text: dataPoint.originalAnnotation };
+    if (dataPoint.customField) return { label: dataPoint.customFieldName || 'Custom', text: dataPoint.customField };
+    const aiSuggestion = Object.values(dataPoint.aiSuggestions || {})[0];
+    if (aiSuggestion) return { label: 'AI', text: aiSuggestion };
+    return { label: 'None', text: '' };
   };
 
   // Handle starting a new task
@@ -759,6 +784,227 @@ const DataLabelingWorkspace = () => {
   // Derived state for completed count
   const completedCount = dataPoints.filter(dp => dp.status === 'accepted' || dp.status === 'edited').length;
 
+  const normalizedAnnotationQuery = useMemo(() => annotationQuery.trim().toLowerCase(), [annotationQuery]);
+  const annotationEntries = useMemo(() => dataPoints.map((dataPoint, index) => ({ dataPoint, index })), [dataPoints]);
+
+  const matchesMetadataFilters = (
+    dataPoint: DataPoint,
+    filters: Record<string, string[]>,
+    skipKey?: string
+  ) => {
+    for (const [key, selectedValue] of Object.entries(filters)) {
+      if (!selectedValue || selectedValue.length === 0 || key === skipKey) continue;
+      const currentValue = dataPoint.metadata?.[key];
+      if (!selectedValue.includes(String(currentValue ?? ''))) return false;
+    }
+    return true;
+  };
+
+  const statusAndQueryFilteredEntries = useMemo(() => {
+    return annotationEntries.filter(({ dataPoint }) => {
+      if (annotationStatusFilter === 'has_final') {
+        if (!dataPoint.finalAnnotation) return false;
+      } else if (annotationStatusFilter !== 'all' && dataPoint.status !== annotationStatusFilter) {
+        return false;
+      }
+
+      if (!normalizedAnnotationQuery) return true;
+
+      const searchText = [
+        dataPoint.content,
+        dataPoint.finalAnnotation,
+        dataPoint.humanAnnotation,
+        dataPoint.originalAnnotation,
+        dataPoint.customField,
+        ...(dataPoint.metadata ? Object.values(dataPoint.metadata) : []),
+        ...(dataPoint.customFieldValues ? Object.values(dataPoint.customFieldValues).map(value => String(value)) : []),
+        ...Object.values(dataPoint.aiSuggestions || {})
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return searchText.includes(normalizedAnnotationQuery);
+    });
+  }, [annotationEntries, annotationStatusFilter, normalizedAnnotationQuery]);
+
+  const eligibleMetadataKeys = useMemo(() => {
+    const keyValues = annotationEntries.reduce((acc, { dataPoint }) => {
+      Object.entries(dataPoint.metadata || {}).forEach(([key, value]) => {
+        if (!acc[key]) acc[key] = new Set<string>();
+        acc[key].add(String(value));
+      });
+      return acc;
+    }, {} as Record<string, Set<string>>);
+
+    return Object.entries(keyValues)
+      .filter(([, values]) => values.size > 0 && values.size < 20)
+      .map(([key]) => key);
+  }, [annotationEntries]);
+
+  const metadataFilterOptions = useMemo(() => {
+    const keys = new Set<string>();
+    statusAndQueryFilteredEntries.forEach(({ dataPoint }) => {
+      Object.keys(dataPoint.metadata || {}).forEach(key => keys.add(key));
+    });
+
+    const options = Array.from(keys)
+      .filter(key => eligibleMetadataKeys.includes(key))
+      .map((key) => {
+      const valueCounts = new Map<string, number>();
+      statusAndQueryFilteredEntries.forEach(({ dataPoint }) => {
+        if (!matchesMetadataFilters(dataPoint, metadataFilters, key)) return;
+        const value = dataPoint.metadata?.[key];
+        if (value !== undefined && value !== null && String(value).length > 0) {
+          const normalizedValue = String(value);
+          valueCounts.set(normalizedValue, (valueCounts.get(normalizedValue) ?? 0) + 1);
+        }
+      });
+      return {
+        key,
+        values: Array.from(valueCounts.entries())
+          .map(([value, count]) => ({ value, count }))
+          .sort((a, b) => a.value.localeCompare(b.value))
+      };
+    });
+
+    return options.filter(({ values }) => values.length > 0 && values.length < 20);
+  }, [statusAndQueryFilteredEntries, metadataFilters, eligibleMetadataKeys]);
+
+  const filteredAnnotationEntries = useMemo(() => {
+    return statusAndQueryFilteredEntries.filter(({ dataPoint }) =>
+      matchesMetadataFilters(dataPoint, metadataFilters)
+    );
+  }, [statusAndQueryFilteredEntries, metadataFilters]);
+
+  useEffect(() => {
+    if (metadataFilterOptions.length === 0 && Object.keys(metadataFilters).length === 0) return;
+    setMetadataFilters(prev => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [key, values] of Object.entries(prev)) {
+        if (!values || values.length === 0) continue;
+        const option = metadataFilterOptions.find(optionItem => optionItem.key === key);
+        if (!option) {
+          next[key] = [];
+          changed = true;
+          continue;
+        }
+        const allowedValues = new Set(option.values.map(item => item.value));
+        const nextValues = values.filter(value => allowedValues.has(value));
+        if (nextValues.length !== values.length) {
+          next[key] = nextValues;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [metadataFilterOptions, metadataFilters]);
+
+  const totalAnnotationPages = Math.max(1, Math.ceil(filteredAnnotationEntries.length / annotationPageSize));
+  const safeAnnotationPage = Math.min(annotationPage, totalAnnotationPages);
+  const annotationStartIndex = filteredAnnotationEntries.length === 0 ? 0 : (safeAnnotationPage - 1) * annotationPageSize + 1;
+  const annotationEndIndex = filteredAnnotationEntries.length === 0
+    ? 0
+    : Math.min(filteredAnnotationEntries.length, safeAnnotationPage * annotationPageSize);
+  const paginatedAnnotationEntries = filteredAnnotationEntries.slice(
+    (safeAnnotationPage - 1) * annotationPageSize,
+    safeAnnotationPage * annotationPageSize
+  );
+
+  const hasActiveMetadataFilters = Object.values(metadataFilters).some(values => values?.length);
+  const hasActiveFilters = annotationStatusFilter !== 'all' || normalizedAnnotationQuery.length > 0 || hasActiveMetadataFilters;
+  const filteredNavigationIndices = useMemo(
+    () => filteredAnnotationEntries.map(entry => entry.index),
+    [filteredAnnotationEntries]
+  );
+  const pendingIndices = useMemo(
+    () => dataPoints.map((dp, index) => (dp.status === 'pending' ? index : -1)).filter(index => index >= 0),
+    [dataPoints]
+  );
+  const scopedPosition = useMemo(
+    () => filteredNavigationIndices.indexOf(currentIndex),
+    [filteredNavigationIndices, currentIndex]
+  );
+  const scopedCanNavigate = useFilteredNavigation && filteredNavigationIndices.length > 0;
+  const scopedHasPrevious = scopedCanNavigate && (scopedPosition > 0 || scopedPosition === -1);
+  const scopedHasNext = scopedCanNavigate && scopedPosition < filteredNavigationIndices.length - 1;
+
+  useEffect(() => {
+    setAnnotationPage(1);
+  }, [annotationQuery, annotationStatusFilter, annotationPageSize, metadataFilters]);
+
+  useEffect(() => {
+    if (annotationPage !== safeAnnotationPage) {
+      setAnnotationPage(safeAnnotationPage);
+    }
+  }, [annotationPage, safeAnnotationPage]);
+
+  useEffect(() => {
+    if (!hasActiveFilters && useFilteredNavigation) {
+      setUseFilteredNavigation(false);
+    }
+  }, [hasActiveFilters, useFilteredNavigation]);
+
+  useEffect(() => {
+    if (viewMode === 'record' && hasActiveFilters) {
+      setUseFilteredNavigation(true);
+    }
+  }, [viewMode, hasActiveFilters]);
+
+  const navigatePrevious = useCallback(() => {
+    if (useFilteredNavigation && scopedPosition > 0) {
+      setCurrentIndex(filteredNavigationIndices[scopedPosition - 1]);
+      return;
+    }
+    if (useFilteredNavigation && scopedPosition === -1 && filteredNavigationIndices.length > 0) {
+      setCurrentIndex(filteredNavigationIndices[0]);
+      return;
+    }
+    handlePrevious();
+  }, [useFilteredNavigation, scopedPosition, filteredNavigationIndices, setCurrentIndex, handlePrevious]);
+
+  const navigateNext = useCallback(() => {
+    if (useFilteredNavigation && scopedPosition >= 0 && scopedPosition < filteredNavigationIndices.length - 1) {
+      setCurrentIndex(filteredNavigationIndices[scopedPosition + 1]);
+      return;
+    }
+    if (useFilteredNavigation && scopedPosition === -1 && filteredNavigationIndices.length > 0) {
+      setCurrentIndex(filteredNavigationIndices[0]);
+      return;
+    }
+    handleNext();
+  }, [useFilteredNavigation, scopedPosition, filteredNavigationIndices, setCurrentIndex, handleNext]);
+
+  const startFilteredScope = () => {
+    if (filteredNavigationIndices.length === 0) {
+      toast({
+        title: 'No matches',
+        description: 'There are no records in the current filtered scope.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    setCurrentIndex(filteredNavigationIndices[0]);
+    setViewMode('record');
+    setUseFilteredNavigation(true);
+  };
+
+  const startRandomPending = () => {
+    if (pendingIndices.length === 0) {
+      toast({
+        title: 'No pending records',
+        description: 'All records are already annotated or processed.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    const randomIndex = pendingIndices[Math.floor(Math.random() * pendingIndices.length)];
+    setCurrentIndex(randomIndex);
+    setViewMode('record');
+    setUseFilteredNavigation(hasActiveFilters);
+  };
+
 
   // Publish to Hugging Face
   const publishToHuggingFace = async () => {
@@ -834,14 +1080,18 @@ const DataLabelingWorkspace = () => {
         return; // Prevent other shortcuts if Ctrl/Meta is held
       }
 
+      if (viewMode !== 'record') {
+        return;
+      }
+
       switch (e.key.toLowerCase()) {
         case 'arrowleft':
           e.preventDefault();
-          handlePrevious();
+          navigatePrevious();
           break;
         case 'arrowright':
           e.preventDefault();
-          handleNext();
+          navigateNext();
           break;
         case 'p':
           e.preventDefault();
@@ -870,7 +1120,7 @@ const DataLabelingWorkspace = () => {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [currentDataPoint, isEditMode, isProcessing, dataPoints.length, canUndo, canRedo, undo, redo]);
+  }, [currentDataPoint, isEditMode, isProcessing, dataPoints.length, canUndo, canRedo, undo, redo, navigatePrevious, navigateNext, viewMode]);
 
 
   return (
@@ -931,11 +1181,11 @@ const DataLabelingWorkspace = () => {
         {/* Header */}
         <div className="absolute top-0 left-0 right-0 z-10 border-b border-border bg-card p-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo}>
-                    <Undo2 className="w-4 h-4" />
+              <div className="flex items-center gap-4">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo}>
+                      <Undo2 className="w-4 h-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Undo (Ctrl+Z)</TooltipContent>
@@ -952,6 +1202,15 @@ const DataLabelingWorkspace = () => {
               <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
                 <ArrowLeft className="w-5 h-5" />
               </Button>
+              {viewMode === 'record' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setViewMode('list')}
+                >
+                  Back to list
+                </Button>
+              )}
               <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
                 <Target className="w-4 h-4 text-white" />
               </div>
@@ -1596,21 +1855,21 @@ const DataLabelingWorkspace = () => {
                 </Dialog>
 
                 {/* Navigation */}
-                {dataPoints.length > 0 && (
+                {dataPoints.length > 0 && viewMode === 'record' && (
                   <>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handlePrevious}
-                      disabled={currentIndex === 0}
+                      onClick={navigatePrevious}
+                      disabled={useFilteredNavigation ? !scopedHasPrevious : currentIndex === 0}
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleNext}
-                      disabled={currentIndex === dataPoints.length - 1}
+                      onClick={navigateNext}
+                      disabled={useFilteredNavigation ? !scopedHasNext : currentIndex === dataPoints.length - 1}
                     >
                       <ChevronRight className="w-4 h-4" />
                     </Button>
@@ -1619,7 +1878,7 @@ const DataLabelingWorkspace = () => {
 
 
                 {/* Start New Task Button (shows after completion) */}
-                {showCompletionButton && (
+                {showCompletionButton && viewMode === 'record' && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1636,17 +1895,19 @@ const DataLabelingWorkspace = () => {
                   </Tooltip>
                 )}
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" size="sm" onClick={() => setShowShortcuts(true)}>
-                      <Keyboard className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Keyboard Shortcuts (?)</TooltipContent>
-                </Tooltip>
+                {viewMode === 'record' && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="outline" size="sm" onClick={() => setShowShortcuts(true)}>
+                        <Keyboard className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Keyboard Shortcuts (?)</TooltipContent>
+                  </Tooltip>
+                )}
 
                 {/* Export Results */}
-                {dataPoints.length > 0 && (
+                {dataPoints.length > 0 && viewMode === 'record' && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button variant="outline" size="sm" onClick={() => setShowExportDialog(true)}>
@@ -1691,11 +1952,13 @@ const DataLabelingWorkspace = () => {
             <div className="flex gap-6 h-full">
               {/* Data Display */}
               <div className="flex-1 overflow-y-auto pb-10">
-                <div className="flex gap-4">
-                  {/* Main Content */}
-                  <div className="flex-1">
-                    <Card className="min-h-full p-6">
-                      <div className="space-y-6">
+                <div className="space-y-6">
+                  {viewMode === 'record' ? (
+                  <div className="flex gap-4">
+                    {/* Main Content */}
+                    <div className="flex-1">
+                      <Card className="min-h-full p-6">
+                        <div className="space-y-6">
                         <div className="flex items-center justify-between">
                           <h2 className="text-lg font-semibold">Data Point</h2>
                           <Badge variant={currentDataPoint?.status === 'accepted' ? 'default' :
@@ -1962,7 +2225,7 @@ const DataLabelingWorkspace = () => {
                             />
                           </div>
                         )}
-                      </div>
+                        </div>
                     </Card>
                   </div>
 
@@ -1973,9 +2236,281 @@ const DataLabelingWorkspace = () => {
                     onToggle={() => setShowMetadataSidebar(!showMetadataSidebar)}
                   />
                 </div>
+                  ) : (
+                <Card className="p-6">
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold">Annotation Overview</h3>
+                          <p className="text-xs text-muted-foreground">
+                            Browse annotations across all data points.
+                          </p>
+                        </div>
+                        <Badge variant="secondary" className="w-fit">
+                          {filteredAnnotationEntries.length} total
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_1fr_1fr]">
+                        <div className="space-y-1">
+                          <Label htmlFor="annotation-search" className="text-xs text-muted-foreground">Search</Label>
+                          <Input
+                            id="annotation-search"
+                            value={annotationQuery}
+                            onChange={(e) => setAnnotationQuery(e.target.value)}
+                            placeholder="Search content, annotations, or metadata..."
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Status</Label>
+                          <Select
+                            value={annotationStatusFilter}
+                            onValueChange={(value) => setAnnotationStatusFilter(value as AnnotationStatusFilter)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="All statuses" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All statuses</SelectItem>
+                              <SelectItem value="has_final">Has final annotation</SelectItem>
+                              <SelectItem value="accepted">Accepted</SelectItem>
+                              <SelectItem value="edited">Edited</SelectItem>
+                              <SelectItem value="ai_processed">AI processed</SelectItem>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="rejected">Rejected</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Page size</Label>
+                          <Select
+                            value={`${annotationPageSize}`}
+                            onValueChange={(value) => setAnnotationPageSize(Number(value))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="10 per page" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="10">10 per page</SelectItem>
+                              <SelectItem value="25">25 per page</SelectItem>
+                              <SelectItem value="50">50 per page</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      {metadataFilterOptions.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Label className="text-xs text-muted-foreground">Metadata filters</Label>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => setMetadataFiltersCollapsed(prev => !prev)}
+                              >
+                                {metadataFiltersCollapsed ? (
+                                  <ChevronDown className="h-4 w-4" />
+                                ) : (
+                                  <ChevronUp className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                            {Object.values(metadataFilters).some(values => values?.length) && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setMetadataFilters({})}
+                              >
+                                Clear
+                              </Button>
+                            )}
+                          </div>
+                          {!metadataFiltersCollapsed && (
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                              {metadataFilterOptions.map(({ key, values }) => {
+                                const selectedValues = metadataFilters[key] || [];
+                                return (
+                                  <div key={key} className="rounded-lg border border-border/60 p-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div>
+                                        <Label className="text-xs text-muted-foreground">{key}</Label>
+                                        <p className="text-[11px] text-muted-foreground">
+                                          {selectedValues.length > 0
+                                            ? `${selectedValues.length} selected`
+                                            : 'No selection'}
+                                        </p>
+                                      </div>
+                                      <Popover>
+                                      <PopoverTrigger asChild>
+                                        <Button size="icon" variant="outline">
+                                          <ChevronDown className="h-4 w-4" />
+                                        </Button>
+                                      </PopoverTrigger>
+                                        <PopoverContent className="w-72">
+                                          <div className="flex items-center justify-between pb-2">
+                                            <Label className="text-xs text-muted-foreground">{key}</Label>
+                                            <div className="flex items-center gap-2">
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() =>
+                                                  setMetadataFilters(prev => ({
+                                                    ...prev,
+                                                    [key]: values.map(item => item.value)
+                                                  }))
+                                                }
+                                              >
+                                                Select all
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() =>
+                                                  setMetadataFilters(prev => ({
+                                                    ...prev,
+                                                    [key]: []
+                                                  }))
+                                                }
+                                              >
+                                                None
+                                              </Button>
+                                            </div>
+                                          </div>
+                                          <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+                                            {values.map(({ value, count }) => {
+                                              const isChecked = selectedValues.includes(value);
+                                              return (
+                                                <div key={`${key}-${value}`} className="flex items-start space-x-2">
+                                                  <Checkbox
+                                                    id={`metadata-${key}-${value}`}
+                                                    checked={isChecked}
+                                                    onCheckedChange={(checked) => {
+                                                      setMetadataFilters(prev => {
+                                                        const current = prev[key] || [];
+                                                        const nextValues = checked
+                                                          ? Array.from(new Set([...current, value]))
+                                                          : current.filter(item => item !== value);
+                                                        return { ...prev, [key]: nextValues };
+                                                      });
+                                                    }}
+                                                  />
+                                                  <Label
+                                                    htmlFor={`metadata-${key}-${value}`}
+                                                    className="text-xs leading-4 text-foreground"
+                                                  >
+                                                    {value} ({count})
+                                                  </Label>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </PopoverContent>
+                                      </Popover>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="space-y-3">
+                        {paginatedAnnotationEntries.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                            No annotations match the current filters.
+                          </div>
+                        ) : (
+                          paginatedAnnotationEntries.map(({ dataPoint, index }) => {
+                            const preview = getAnnotationPreview(dataPoint);
+                            return (
+                              <div
+                                key={dataPoint.id}
+                                className="flex flex-col gap-3 rounded-lg border border-border/60 bg-background p-4 transition hover:bg-muted/40 sm:flex-row sm:items-start sm:justify-between"
+                              >
+                                <div className="space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    <Badge
+                                      variant={
+                                        dataPoint.status === 'accepted'
+                                          ? 'default'
+                                          : dataPoint.status === 'edited'
+                                            ? 'secondary'
+                                            : dataPoint.status === 'ai_processed'
+                                              ? 'outline'
+                                              : 'destructive'
+                                      }
+                                    >
+                                      {dataPoint.status.replace('_', ' ')}
+                                    </Badge>
+                                    <Badge variant="outline">
+                                      #{index + 1}
+                                    </Badge>
+                                    {preview.label !== 'None' && (
+                                      <Badge variant="secondary">{preview.label}</Badge>
+                                    )}
+                                  </div>
+                                  <p className="text-sm font-medium text-foreground max-h-12 overflow-hidden">
+                                    {dataPoint.content || 'Untitled content'}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground max-h-10 overflow-hidden">
+                                    {preview.text || 'No annotation yet.'}
+                                  </p>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setCurrentIndex(index);
+                                      setViewMode('record');
+                                      setUseFilteredNavigation(hasActiveFilters);
+                                    }}
+                                  >
+                                    View
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-3 border-t border-border pt-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                        <span>
+                          Showing {annotationStartIndex}-{annotationEndIndex} of {filteredAnnotationEntries.length}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setAnnotationPage(prev => Math.max(1, prev - 1))}
+                            disabled={safeAnnotationPage === 1}
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </Button>
+                          <span className="text-xs font-medium text-foreground">
+                            Page {safeAnnotationPage} of {totalAnnotationPages}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setAnnotationPage(prev => Math.min(totalAnnotationPages, prev + 1))}
+                            disabled={safeAnnotationPage === totalAnnotationPages}
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                  )}
+                </div>
               </div>
 
-              {/* Actions Panel */}
+              {viewMode === 'record' ? (
               <div className="w-80">
                 <Card className="p-6 space-y-6 sticky top-6">
                   <div className="flex items-center gap-2">
@@ -2119,6 +2654,90 @@ const DataLabelingWorkspace = () => {
                   </div>
                 </Card>
               </div>
+              ) : (
+              <div className="w-80">
+                <Card className="p-6 space-y-6 sticky top-6">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-blue-500" />
+                    <Label className="text-sm font-medium">List Overview</Label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="text-center p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                      <div className="text-lg font-bold text-green-600">{completedCount}</div>
+                      <div className="text-xs text-muted-foreground">Completed</div>
+                    </div>
+                    <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div className="text-lg font-bold text-blue-600">{dataPoints.length - completedCount}</div>
+                      <div className="text-xs text-muted-foreground">Remaining</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
+                      <span>Filtered items</span>
+                      <span className="font-medium">{filteredAnnotationEntries.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
+                      <span>Total items</span>
+                      <span className="font-medium">{dataPoints.length}</span>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Batch Actions</Label>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={startRandomPending}
+                      disabled={dataPoints.length === 0 || pendingIndices.length === 0}
+                    >
+                      <Shuffle className="w-4 h-4 mr-2" />
+                      Random Pending
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={startFilteredScope}
+                      disabled={filteredNavigationIndices.length === 0}
+                    >
+                      <Play className="w-4 h-4 mr-2" />
+                      Start Filtered Scope
+                    </Button>
+                    <Button
+                      className="w-full"
+                      onClick={() => processAllWithAI(false)}
+                      disabled={isProcessing || dataPoints.length === 0}
+                    >
+                      {isProcessing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          {processingProgress.total > 0
+                            ? `Processing... (${processingProgress.current}/${processingProgress.total})`
+                            : 'Processing...'}
+                        </>
+                      ) : (
+                        <>
+                          <Brain className="w-4 h-4 mr-2" />
+                          Process All with AI
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setShowExportDialog(true)}
+                      disabled={dataPoints.length === 0}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Export Results
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+              )}
             </div>
           )}
         </div>
