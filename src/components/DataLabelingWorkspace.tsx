@@ -8,7 +8,7 @@ import { getInterpolatedPrompt } from "@/utils/dataUtils";
 import { DataPoint, ModelProvider } from "@/types/data";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";  
+import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -677,6 +677,7 @@ const DataLabelingWorkspace = () => {
 
     try {
       const { getAIProvider } = await import('@/services/aiProviders');
+      let capturedError: Error | null = null;
 
       const batchSize = 20; // Increased batch size for faster throughput
       const concurrentBatches = 3; // Process this many batches concurrently
@@ -737,6 +738,9 @@ const DataLabelingWorkspace = () => {
               }
             } catch (err) {
               console.error(`Error processing ${dp.id} with ${compositeId}:`, err);
+              if (!capturedError) {
+                capturedError = err instanceof Error ? err : new Error(String(err));
+              }
             }
           });
 
@@ -766,9 +770,20 @@ const DataLabelingWorkspace = () => {
         });
       }
 
+      if (capturedError) {
+        throw capturedError;
+      }
+
     } catch (error) {
       console.error('Error in batch processing:', error);
-      setUploadError(`Batch processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setUploadError(`Batch processing failed: ${errorMessage}`);
+      toast({
+        title: 'Batch Processing Failed',
+        description: errorMessage,
+        variant: 'destructive',
+        duration: 5000
+      });
     } finally {
       setIsProcessing(false);
       setProcessingProgress({ current: 0, total: 0 });
@@ -851,22 +866,22 @@ const DataLabelingWorkspace = () => {
     const options = Array.from(keys)
       .filter(key => eligibleMetadataKeys.includes(key))
       .map((key) => {
-      const valueCounts = new Map<string, number>();
-      statusAndQueryFilteredEntries.forEach(({ dataPoint }) => {
-        if (!matchesMetadataFilters(dataPoint, metadataFilters, key)) return;
-        const value = dataPoint.metadata?.[key];
-        if (value !== undefined && value !== null && String(value).length > 0) {
-          const normalizedValue = String(value);
-          valueCounts.set(normalizedValue, (valueCounts.get(normalizedValue) ?? 0) + 1);
-        }
+        const valueCounts = new Map<string, number>();
+        statusAndQueryFilteredEntries.forEach(({ dataPoint }) => {
+          if (!matchesMetadataFilters(dataPoint, metadataFilters, key)) return;
+          const value = dataPoint.metadata?.[key];
+          if (value !== undefined && value !== null && String(value).length > 0) {
+            const normalizedValue = String(value);
+            valueCounts.set(normalizedValue, (valueCounts.get(normalizedValue) ?? 0) + 1);
+          }
+        });
+        return {
+          key,
+          values: Array.from(valueCounts.entries())
+            .map(([value, count]) => ({ value, count }))
+            .sort((a, b) => a.value.localeCompare(b.value))
+        };
       });
-      return {
-        key,
-        values: Array.from(valueCounts.entries())
-          .map(([value, count]) => ({ value, count }))
-          .sort((a, b) => a.value.localeCompare(b.value))
-      };
-    });
 
     return options.filter(({ values }) => values.length > 0 && values.length < 20);
   }, [statusAndQueryFilteredEntries, metadataFilters, eligibleMetadataKeys]);
@@ -1185,11 +1200,11 @@ const DataLabelingWorkspace = () => {
         {/* Header */}
         <div className="absolute top-0 left-0 right-0 z-10 border-b border-border bg-card p-4">
           <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo}>
-                      <Undo2 className="w-4 h-4" />
+            <div className="flex items-center gap-4">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo}>
+                    <Undo2 className="w-4 h-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Undo (Ctrl+Z)</TooltipContent>
@@ -1958,636 +1973,714 @@ const DataLabelingWorkspace = () => {
               <div className="flex-1 overflow-y-auto pb-10">
                 <div className="space-y-6">
                   {viewMode === 'record' ? (
-                  <div className="flex gap-4">
-                    {/* Main Content */}
-                    <div className="flex-1">
-                      <Card className="min-h-full p-6">
-                        <div className="space-y-6">
-                        <div className="flex items-center justify-between">
-                          <h2 className="text-lg font-semibold">Data Point</h2>
-                          <Badge variant={currentDataPoint?.status === 'accepted' ? 'default' :
-                            currentDataPoint?.status === 'edited' ? 'secondary' :
-                              currentDataPoint?.status === 'ai_processed' ? 'outline' : 'destructive'}>
-                            {currentDataPoint?.status?.replace('_', ' ')}
-                          </Badge>
-                        </div>
-
-                        <div className="bg-muted/50 p-4 rounded-lg">
-                          <Label className="text-sm font-medium">Original Content</Label>
-                          {currentDataPoint?.type === 'image' ? (
-                            <div className="mt-2">
-                              <img
-                                src={currentDataPoint.content}
-                                alt="Data point"
-                                className="max-w-full max-h-[500px] h-auto rounded-lg border border-border"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Image+Not+Found';
-                                }}
-                              />
+                    <div className="flex gap-4">
+                      {/* Main Content */}
+                      <div className="flex-1">
+                        <Card className="min-h-full p-6">
+                          <div className="space-y-6">
+                            <div className="flex items-center justify-between">
+                              <h2 className="text-lg font-semibold">Data Point</h2>
+                              <Badge variant={currentDataPoint?.status === 'accepted' ? 'default' :
+                                currentDataPoint?.status === 'edited' ? 'secondary' :
+                                  currentDataPoint?.status === 'ai_processed' ? 'outline' : 'destructive'}>
+                                {currentDataPoint?.status?.replace('_', ' ')}
+                              </Badge>
                             </div>
-                          ) : (
-                            <p className="mt-2 text-foreground leading-relaxed whitespace-pre-wrap">
-                              {currentDataPoint?.content}
-                            </p>
-                          )}
-                        </div>
 
-                        {currentDataPoint?.originalAnnotation && (
-                          <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-                            <Label className="text-sm font-medium">{annotationLabel}</Label>
-                            <p className="mt-2 text-foreground">{currentDataPoint.originalAnnotation}</p>
-                          </div>
-                        )}
+                            <div className="bg-muted/50 p-4 rounded-lg">
+                              <Label className="text-sm font-medium">Original Content</Label>
+                              {currentDataPoint?.type === 'image' ? (
+                                <div className="mt-2">
+                                  <img
+                                    src={currentDataPoint.content}
+                                    alt="Data point"
+                                    className="max-w-full max-h-[500px] h-auto rounded-lg border border-border"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Image+Not+Found';
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <p className="mt-2 text-foreground leading-relaxed whitespace-pre-wrap">
+                                  {currentDataPoint?.content}
+                                </p>
+                              )}
+                            </div>
 
-                        {currentDataPoint?.uploadPrompt && (
-                          <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
-                            <Label className="text-sm font-medium">{promptLabel}</Label>
-                            <p className="mt-2 text-foreground text-sm italic">
-                              {getInterpolatedPrompt(currentDataPoint.uploadPrompt, currentDataPoint.metadata)}
-                            </p>
-                          </div>
-                        )}
+                            {currentDataPoint?.originalAnnotation && (
+                              <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                                <Label className="text-sm font-medium">{annotationLabel}</Label>
+                                <p className="mt-2 text-foreground">{currentDataPoint.originalAnnotation}</p>
+                              </div>
+                            )}
 
-                        {/* Model Arena - Display suggestions from all providers */}
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <Bot className="w-5 h-5 text-purple-600" />
-                            <h3 className="font-semibold">Model Arena</h3>
-                          </div>
+                            {currentDataPoint?.uploadPrompt && (
+                              <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
+                                <Label className="text-sm font-medium">{promptLabel}</Label>
+                                <p className="mt-2 text-foreground text-sm italic">
+                                  {getInterpolatedPrompt(currentDataPoint.uploadPrompt, currentDataPoint.metadata)}
+                                </p>
+                              </div>
+                            )}
 
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {/* AI Provider Cards */}
-                            {Object.entries(currentDataPoint?.aiSuggestions || {}).map(([compositeId, suggestion]) => {
-                              const [providerId, modelId] = compositeId.includes(':') ? compositeId.split(':') : [compositeId, ''];
-                              const provider = availableProviders.find(p => p.id === providerId);
-                              const model = provider?.models.find(m => m.id === modelId);
+                            {/* Model Arena - Display suggestions from all providers */}
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <Bot className="w-5 h-5 text-purple-600" />
+                                <h3 className="font-semibold">Model Arena</h3>
+                              </div>
 
-                              const displayName = model ? `${provider?.name} - ${model.name}` : (provider?.name || providerId);
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                {/* AI Provider Cards */}
+                                {Object.entries(currentDataPoint?.aiSuggestions || {}).map(([compositeId, suggestion]) => {
+                                  const [providerId, modelId] = compositeId.includes(':') ? compositeId.split(':') : [compositeId, ''];
+                                  const provider = availableProviders.find(p => p.id === providerId);
+                                  const model = provider?.models.find(m => m.id === modelId);
 
-                              return (
-                                <Card key={compositeId} className="p-4 border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/10 transition-all hover:shadow-md">
+                                  const displayName = model ? `${provider?.name} - ${model.name}` : (provider?.name || providerId);
+
+                                  return (
+                                    <Card key={compositeId} className="p-4 border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/10 transition-all hover:shadow-md">
+                                      <div className="flex items-center justify-between mb-3">
+                                        <Badge variant="outline" className="bg-background">
+                                          {displayName}
+                                        </Badge>
+                                        <div className="flex gap-2">
+                                          <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            className="h-7 text-xs"
+                                            onClick={() => handleEditAnnotation(suggestion)}
+                                          >
+                                            <Edit3 className="w-3 h-3 mr-1" />
+                                            Edit
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            className="h-7 text-xs"
+                                            onClick={() => handleAcceptAnnotation(suggestion)}
+                                          >
+                                            <Check className="w-3 h-3 mr-1" />
+                                            Use This
+                                          </Button>
+                                        </div>
+                                      </div>
+                                      <p className="text-sm text-foreground whitespace-pre-wrap mb-3">{suggestion}</p>
+
+                                      {/* Star Rating */}
+                                      <div className="flex items-center gap-2 pt-2 border-t border-purple-200 dark:border-purple-800">
+                                        <span className="text-xs text-muted-foreground">Rate output:</span>
+                                        <div className="flex items-center">
+                                          {[1, 2, 3, 4, 5].map((star) => (
+                                            <button
+                                              key={star}
+                                              onClick={() => handleRateModel(compositeId, star)}
+                                              className="focus:outline-none p-0.5 hover:scale-110 transition-transform"
+                                            >
+                                              <Star
+                                                className={`w-4 h-4 ${(currentDataPoint.ratings?.[compositeId] || 0) >= star
+                                                  ? "fill-yellow-400 text-yellow-400"
+                                                  : "text-muted-foreground/30 hover:text-yellow-400"
+                                                  }`}
+                                              />
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </Card>
+                                  );
+                                })}
+
+                                {/* Human Annotation Card - Now using Dynamic Form */}
+                                <Card className="p-4 border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/10 transition-all hover:shadow-md">
                                   <div className="flex items-center justify-between mb-3">
-                                    <Badge variant="outline" className="bg-background">
-                                      {displayName}
+                                    <Badge variant="outline" className="bg-background flex items-center gap-1">
+                                      <User className="w-3 h-3" />
+                                      Human Annotation
                                     </Badge>
                                     <div className="flex gap-2">
-                                      <Button
-                                        size="sm"
-                                        variant="secondary"
-                                        className="h-7 text-xs"
-                                        onClick={() => handleEditAnnotation(suggestion)}
-                                      >
-                                        <Edit3 className="w-3 h-3 mr-1" />
-                                        Edit
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        className="h-7 text-xs"
-                                        onClick={() => handleAcceptAnnotation(suggestion)}
-                                      >
-                                        <Check className="w-3 h-3 mr-1" />
-                                        Use This
-                                      </Button>
-                                    </div>
-                                  </div>
-                                  <p className="text-sm text-foreground whitespace-pre-wrap mb-3">{suggestion}</p>
-
-                                  {/* Star Rating */}
-                                  <div className="flex items-center gap-2 pt-2 border-t border-purple-200 dark:border-purple-800">
-                                    <span className="text-xs text-muted-foreground">Rate output:</span>
-                                    <div className="flex items-center">
-                                      {[1, 2, 3, 4, 5].map((star) => (
-                                        <button
-                                          key={star}
-                                          onClick={() => handleRateModel(compositeId, star)}
-                                          className="focus:outline-none p-0.5 hover:scale-110 transition-transform"
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-7 text-xs"
+                                            onClick={openXmlEditor}
+                                          >
+                                            <FileText className="w-3 h-3 mr-1" />
+                                            Customize
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>Customize annotation fields</TooltipContent>
+                                      </Tooltip>
+                                      {currentDataPoint?.humanAnnotation && (
+                                        <Button
+                                          size="sm"
+                                          className="h-7 text-xs"
+                                          onClick={() => handleAcceptAnnotation(currentDataPoint.humanAnnotation!)}
                                         >
-                                          <Star
-                                            className={`w-4 h-4 ${(currentDataPoint.ratings?.[compositeId] || 0) >= star
-                                              ? "fill-yellow-400 text-yellow-400"
-                                              : "text-muted-foreground/30 hover:text-yellow-400"
-                                              }`}
-                                          />
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </Card>
-                              );
-                            })}
-
-                            {/* Human Annotation Card - Now using Dynamic Form */}
-                            <Card className="p-4 border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/10 transition-all hover:shadow-md">
-                              <div className="flex items-center justify-between mb-3">
-                                <Badge variant="outline" className="bg-background flex items-center gap-1">
-                                  <User className="w-3 h-3" />
-                                  Human Annotation
-                                </Badge>
-                                <div className="flex gap-2">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 text-xs"
-                                        onClick={openXmlEditor}
-                                      >
-                                        <FileText className="w-3 h-3 mr-1" />
-                                        Customize
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Customize annotation fields</TooltipContent>
-                                  </Tooltip>
-                                  {currentDataPoint?.humanAnnotation && (
-                                    <Button
-                                      size="sm"
-                                      className="h-7 text-xs"
-                                      onClick={() => handleAcceptAnnotation(currentDataPoint.humanAnnotation!)}
-                                    >
-                                      <Check className="w-3 h-3 mr-1" />
-                                      Use This
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-
-                              {annotationConfig && annotationConfig.fields.length > 0 ? (
-                                <>
-                                  <DynamicAnnotationForm
-                                    fields={annotationConfig.fields}
-                                    values={currentDataPoint?.customFieldValues || {}}
-                                    onChange={handleCustomFieldValueChange}
-                                    metadata={currentDataPoint?.metadata}
-                                  />
-                                  <div className="flex justify-end mt-3">
-                                    <Button
-                                      size="sm"
-                                      onClick={() => {
-                                        // Serialize custom field values as the final annotation
-                                        const values = currentDataPoint?.customFieldValues || {};
-                                        const annotation = Object.entries(values)
-                                          .map(([k, v]) => `${k}: ${v}`)
-                                          .join('\n') || 'Submitted';
-                                        handleAcceptAnnotation(annotation);
-                                      }}
-                                      className="bg-green-600 hover:bg-green-700"
-                                      disabled={
-                                        // Disable if any required field is empty
-                                        annotationConfig?.fields.some(field =>
-                                          field.required &&
-                                          !currentDataPoint?.customFieldValues?.[field.id]
-                                        ) ?? false
-                                      }
-                                    >
-                                      <Check className="w-4 h-4 mr-2" />
-                                      Submit Annotation
-                                    </Button>
-                                  </div>
-                                </>
-                              ) : (
-                                <Textarea
-                                  value={currentDataPoint?.humanAnnotation || ''}
-                                  onChange={(e) => handleHumanAnnotationChange(e.target.value)}
-                                  placeholder="Type your own annotation here..."
-                                  className="min-h-[100px] mb-2 bg-background/50"
-                                />
-                              )}
-                              <p className="text-xs text-muted-foreground mt-2">
-                                {annotationConfig && annotationConfig.fields.length > 0
-                                  ? 'Fill in the fields above, then click "Submit Annotation" to mark complete.'
-                                  : 'Your manual annotation. Click "Use This" to set it as final.'
-                                }
-                              </p>
-                            </Card>
-                          </div>
-                        </div>
-
-                        {/* Edit Mode Area */}
-                        {isEditMode && (
-                          <div className="bg-background p-4 rounded-lg border-2 border-primary animate-in fade-in zoom-in-95 duration-200">
-                            <Label className="text-sm font-medium mb-2 block">Edit Annotation</Label>
-                            <Textarea
-                              value={tempAnnotation}
-                              onChange={(e) => setTempAnnotation(e.target.value)}
-                              rows={4}
-                              className="mb-3"
-                              autoFocus
-                            />
-                            <div className="flex gap-2 justify-end">
-                              <Button size="sm" variant="outline" onClick={() => setIsEditMode(false)}>
-                                Cancel
-                              </Button>
-                              <Button size="sm" onClick={handleSaveEdit}>
-                                <Save className="w-4 h-4 mr-2" />
-                                Save Changes
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Final Annotation Display */}
-                        {currentDataPoint?.finalAnnotation && !isEditMode && (
-                          <div className="bg-green-50 dark:bg-green-950/20 p-4 rounded-lg border border-green-200 dark:border-green-800 animate-in fade-in slide-in-from-bottom-2">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <CheckCircle className="w-4 h-4 text-green-700 dark:text-green-300" />
-                                <Label className="text-sm font-medium text-green-700 dark:text-green-300">Final Selected Annotation</Label>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 text-xs text-green-700 hover:text-green-800 hover:bg-green-100"
-                                onClick={() => handleEditAnnotation(currentDataPoint.finalAnnotation!)}
-                              >
-                                <Edit3 className="w-3 h-3 mr-1" />
-                                Edit
-                              </Button>
-                            </div>
-                            <p className="text-foreground whitespace-pre-wrap">{currentDataPoint.finalAnnotation}</p>
-                          </div>
-                        )}
-
-                        {currentDataPoint?.customFieldName && (
-                          <div className="bg-cyan-50 dark:bg-cyan-950/20 p-4 rounded-lg border border-cyan-200 dark:border-cyan-800">
-                            <Label className="text-sm font-medium">{currentDataPoint.customFieldName}</Label>
-                            <Textarea
-                              value={currentDataPoint.customField || ''}
-                              onChange={(e) => {
-                                const updatedDataPoints = [...dataPoints];
-                                const currentIdx = updatedDataPoints.findIndex(dp => dp.id === currentDataPoint.id);
-                                if (currentIdx !== -1) {
-                                  updatedDataPoints[currentIdx] = {
-                                    ...updatedDataPoints[currentIdx],
-                                    customField: e.target.value
-                                  };
-                                  setDataPoints(updatedDataPoints);
-                                }
-                              }}
-                              placeholder={`Enter your ${currentDataPoint.customFieldName.toLowerCase()}...`}
-                              rows={2}
-                              className="mt-2"
-                            />
-                          </div>
-                        )}
-                        </div>
-                    </Card>
-                  </div>
-
-                  {/* Metadata Sidebar */}
-                  <MetadataSidebar
-                    metadata={currentDataPoint?.displayMetadata || currentDataPoint?.metadata}
-                    isOpen={showMetadataSidebar}
-                    onToggle={() => setShowMetadataSidebar(!showMetadataSidebar)}
-                  />
-                </div>
-                  ) : (
-                <Card className="p-6">
-                    <div className="flex flex-col gap-4">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <h3 className="text-lg font-semibold">Annotation Overview</h3>
-                          <p className="text-xs text-muted-foreground">
-                            Browse annotations across all data points.
-                          </p>
-                        </div>
-                        <Badge variant="secondary" className="w-fit">
-                          {filteredAnnotationEntries.length} total
-                        </Badge>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_1fr_1fr]">
-                        <div className="space-y-1">
-                          <Label htmlFor="annotation-search" className="text-xs text-muted-foreground">Search</Label>
-                          <Input
-                            id="annotation-search"
-                            value={annotationQuery}
-                            onChange={(e) => setAnnotationQuery(e.target.value)}
-                            placeholder="Search content, annotations, or metadata..."
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Status</Label>
-                          <Select
-                            value={annotationStatusFilter}
-                            onValueChange={(value) => setAnnotationStatusFilter(value as AnnotationStatusFilter)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="All statuses" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">All statuses</SelectItem>
-                              <SelectItem value="has_final">Has final annotation</SelectItem>
-                              <SelectItem value="accepted">Accepted</SelectItem>
-                              <SelectItem value="edited">Edited</SelectItem>
-                              <SelectItem value="ai_processed">AI processed</SelectItem>
-                              <SelectItem value="pending">Pending</SelectItem>
-                              <SelectItem value="rejected">Rejected</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Page size</Label>
-                          <Select
-                            value={`${annotationPageSize}`}
-                            onValueChange={(value) => setAnnotationPageSize(Number(value))}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="10 per page" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="10">10 per page</SelectItem>
-                              <SelectItem value="25">25 per page</SelectItem>
-                              <SelectItem value="50">50 per page</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      {metadataFilterOptions.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Label className="text-xs text-muted-foreground">Metadata filters</Label>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => setMetadataFiltersCollapsed(prev => !prev)}
-                              >
-                                {metadataFiltersCollapsed ? (
-                                  <ChevronDown className="h-4 w-4" />
-                                ) : (
-                                  <ChevronUp className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-                            {Object.values(metadataFilters).some(values => values?.length) && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setMetadataFilters({})}
-                              >
-                                Clear
-                              </Button>
-                            )}
-                          </div>
-                          {!metadataFiltersCollapsed && (
-                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                              {metadataFilterOptions.map(({ key, values }) => {
-                                const selectedValues = metadataFilters[key] || [];
-                                return (
-                                  <div key={key} className="rounded-lg border border-border/60 p-3">
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div>
-                                        <Label className="text-xs text-muted-foreground">{key}</Label>
-                                        <p className="text-[11px] text-muted-foreground">
-                                          {selectedValues.length > 0
-                                            ? `${selectedValues.length} selected`
-                                            : 'No selection'}
-                                        </p>
-                                      </div>
-                                      <Popover>
-                                      <PopoverTrigger asChild>
-                                        <Button size="icon" variant="outline">
-                                          <ChevronDown className="h-4 w-4" />
+                                          <Check className="w-3 h-3 mr-1" />
+                                          Use This
                                         </Button>
-                                      </PopoverTrigger>
-                                        <PopoverContent className="w-72">
-                                          <div className="flex items-center justify-between pb-2">
-                                            <Label className="text-xs text-muted-foreground">{key}</Label>
-                                            <div className="flex items-center gap-2">
-                                              <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={() =>
-                                                  setMetadataFilters(prev => ({
-                                                    ...prev,
-                                                    [key]: values.map(item => item.value)
-                                                  }))
-                                                }
-                                              >
-                                                Select all
-                                              </Button>
-                                              <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={() =>
-                                                  setMetadataFilters(prev => ({
-                                                    ...prev,
-                                                    [key]: []
-                                                  }))
-                                                }
-                                              >
-                                                None
-                                              </Button>
-                                            </div>
-                                          </div>
-                                          <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
-                                            {values.map(({ value, count }) => {
-                                              const isChecked = selectedValues.includes(value);
-                                              return (
-                                                <div key={`${key}-${value}`} className="flex items-start space-x-2">
-                                                  <Checkbox
-                                                    id={`metadata-${key}-${value}`}
-                                                    checked={isChecked}
-                                                    onCheckedChange={(checked) => {
-                                                      setMetadataFilters(prev => {
-                                                        const current = prev[key] || [];
-                                                        const nextValues = checked
-                                                          ? Array.from(new Set([...current, value]))
-                                                          : current.filter(item => item !== value);
-                                                        return { ...prev, [key]: nextValues };
-                                                      });
-                                                    }}
-                                                  />
-                                                  <Label
-                                                    htmlFor={`metadata-${key}-${value}`}
-                                                    className="text-xs leading-4 text-foreground"
-                                                  >
-                                                    {value} ({count})
-                                                  </Label>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        </PopoverContent>
-                                      </Popover>
+                                      )}
                                     </div>
                                   </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
 
-                      <div className="space-y-3">
-                        {paginatedAnnotationEntries.length === 0 ? (
-                          <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                            No annotations match the current filters.
-                          </div>
-                        ) : (
-                          paginatedAnnotationEntries.map(({ dataPoint, index }) => {
-                            const preview = getAnnotationPreview(dataPoint);
-                            return (
-                              <div
-                                key={dataPoint.id}
-                                className="flex flex-col gap-3 rounded-lg border border-border/60 bg-background p-4 transition hover:bg-muted/40 sm:flex-row sm:items-start sm:justify-between"
-                              >
-                                <div className="space-y-2">
-                                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                                    <Badge
-                                      variant={
-                                        dataPoint.status === 'accepted'
-                                          ? 'default'
-                                          : dataPoint.status === 'edited'
-                                            ? 'secondary'
-                                            : dataPoint.status === 'ai_processed'
-                                              ? 'outline'
-                                              : 'destructive'
-                                      }
-                                    >
-                                      {dataPoint.status.replace('_', ' ')}
-                                    </Badge>
-                                    <Badge variant="outline">
-                                      #{index + 1}
-                                    </Badge>
-                                    {preview.label !== 'None' && (
-                                      <Badge variant="secondary">{preview.label}</Badge>
-                                    )}
-                                  </div>
-                                  <p className="text-sm font-medium text-foreground max-h-12 overflow-hidden">
-                                    {dataPoint.content || 'Untitled content'}
+                                  {annotationConfig && annotationConfig.fields.length > 0 ? (
+                                    <>
+                                      <DynamicAnnotationForm
+                                        fields={annotationConfig.fields}
+                                        values={currentDataPoint?.customFieldValues || {}}
+                                        onChange={handleCustomFieldValueChange}
+                                        metadata={currentDataPoint?.metadata}
+                                      />
+                                      <div className="flex justify-end mt-3">
+                                        <Button
+                                          size="sm"
+                                          onClick={() => {
+                                            // Serialize custom field values as the final annotation
+                                            const values = currentDataPoint?.customFieldValues || {};
+                                            const annotation = Object.entries(values)
+                                              .map(([k, v]) => `${k}: ${v}`)
+                                              .join('\n') || 'Submitted';
+                                            handleAcceptAnnotation(annotation);
+                                          }}
+                                          className="bg-green-600 hover:bg-green-700"
+                                          disabled={
+                                            // Disable if any required field is empty
+                                            annotationConfig?.fields.some(field =>
+                                              field.required &&
+                                              !currentDataPoint?.customFieldValues?.[field.id]
+                                            ) ?? false
+                                          }
+                                        >
+                                          <Check className="w-4 h-4 mr-2" />
+                                          Submit Annotation
+                                        </Button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <Textarea
+                                      value={currentDataPoint?.humanAnnotation || ''}
+                                      onChange={(e) => handleHumanAnnotationChange(e.target.value)}
+                                      placeholder="Type your own annotation here..."
+                                      className="min-h-[100px] mb-2 bg-background/50"
+                                    />
+                                  )}
+                                  <p className="text-xs text-muted-foreground mt-2">
+                                    {annotationConfig && annotationConfig.fields.length > 0
+                                      ? 'Fill in the fields above, then click "Submit Annotation" to mark complete.'
+                                      : 'Your manual annotation. Click "Use This" to set it as final.'
+                                    }
                                   </p>
-                                  <p className="text-xs text-muted-foreground max-h-10 overflow-hidden">
-                                    {preview.text || 'No annotation yet.'}
-                                  </p>
-                                </div>
-                                <div className="flex shrink-0 items-center gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setCurrentIndex(index);
-                                      setViewMode('record');
-                                      setUseFilteredNavigation(hasActiveFilters);
-                                    }}
-                                  >
-                                    View
+                                </Card>
+                              </div>
+                            </div>
+
+                            {/* Edit Mode Area */}
+                            {isEditMode && (
+                              <div className="bg-background p-4 rounded-lg border-2 border-primary animate-in fade-in zoom-in-95 duration-200">
+                                <Label className="text-sm font-medium mb-2 block">Edit Annotation</Label>
+                                <Textarea
+                                  value={tempAnnotation}
+                                  onChange={(e) => setTempAnnotation(e.target.value)}
+                                  rows={4}
+                                  className="mb-3"
+                                  autoFocus
+                                />
+                                <div className="flex gap-2 justify-end">
+                                  <Button size="sm" variant="outline" onClick={() => setIsEditMode(false)}>
+                                    Cancel
+                                  </Button>
+                                  <Button size="sm" onClick={handleSaveEdit}>
+                                    <Save className="w-4 h-4 mr-2" />
+                                    Save Changes
                                   </Button>
                                 </div>
                               </div>
-                            );
-                          })
-                        )}
+                            )}
+
+                            {/* Final Annotation Display */}
+                            {currentDataPoint?.finalAnnotation && !isEditMode && (
+                              <div className="bg-green-50 dark:bg-green-950/20 p-4 rounded-lg border border-green-200 dark:border-green-800 animate-in fade-in slide-in-from-bottom-2">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <CheckCircle className="w-4 h-4 text-green-700 dark:text-green-300" />
+                                    <Label className="text-sm font-medium text-green-700 dark:text-green-300">Final Selected Annotation</Label>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-xs text-green-700 hover:text-green-800 hover:bg-green-100"
+                                    onClick={() => handleEditAnnotation(currentDataPoint.finalAnnotation!)}
+                                  >
+                                    <Edit3 className="w-3 h-3 mr-1" />
+                                    Edit
+                                  </Button>
+                                </div>
+                                <p className="text-foreground whitespace-pre-wrap">{currentDataPoint.finalAnnotation}</p>
+                              </div>
+                            )}
+
+                            {currentDataPoint?.customFieldName && (
+                              <div className="bg-cyan-50 dark:bg-cyan-950/20 p-4 rounded-lg border border-cyan-200 dark:border-cyan-800">
+                                <Label className="text-sm font-medium">{currentDataPoint.customFieldName}</Label>
+                                <Textarea
+                                  value={currentDataPoint.customField || ''}
+                                  onChange={(e) => {
+                                    const updatedDataPoints = [...dataPoints];
+                                    const currentIdx = updatedDataPoints.findIndex(dp => dp.id === currentDataPoint.id);
+                                    if (currentIdx !== -1) {
+                                      updatedDataPoints[currentIdx] = {
+                                        ...updatedDataPoints[currentIdx],
+                                        customField: e.target.value
+                                      };
+                                      setDataPoints(updatedDataPoints);
+                                    }
+                                  }}
+                                  placeholder={`Enter your ${currentDataPoint.customFieldName.toLowerCase()}...`}
+                                  rows={2}
+                                  className="mt-2"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </Card>
                       </div>
 
-                      <div className="flex flex-col gap-3 border-t border-border pt-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-                        <span>
-                          Showing {annotationStartIndex}-{annotationEndIndex} of {filteredAnnotationEntries.length}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setAnnotationPage(prev => Math.max(1, prev - 1))}
-                            disabled={safeAnnotationPage === 1}
-                          >
-                            <ChevronLeft className="w-4 h-4" />
-                          </Button>
-                          <span className="text-xs font-medium text-foreground">
-                            Page {safeAnnotationPage} of {totalAnnotationPages}
+                      {/* Metadata Sidebar */}
+                      <MetadataSidebar
+                        metadata={currentDataPoint?.displayMetadata || currentDataPoint?.metadata}
+                        isOpen={showMetadataSidebar}
+                        onToggle={() => setShowMetadataSidebar(!showMetadataSidebar)}
+                      />
+                    </div>
+                  ) : (
+                    <Card className="p-6">
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h3 className="text-lg font-semibold">Annotation Overview</h3>
+                            <p className="text-xs text-muted-foreground">
+                              Browse annotations across all data points.
+                            </p>
+                          </div>
+                          <Badge variant="secondary" className="w-fit">
+                            {filteredAnnotationEntries.length} total
+                          </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_1fr_1fr]">
+                          <div className="space-y-1">
+                            <Label htmlFor="annotation-search" className="text-xs text-muted-foreground">Search</Label>
+                            <Input
+                              id="annotation-search"
+                              value={annotationQuery}
+                              onChange={(e) => setAnnotationQuery(e.target.value)}
+                              placeholder="Search content, annotations, or metadata..."
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Status</Label>
+                            <Select
+                              value={annotationStatusFilter}
+                              onValueChange={(value) => setAnnotationStatusFilter(value as AnnotationStatusFilter)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="All statuses" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">All statuses</SelectItem>
+                                <SelectItem value="has_final">Has final annotation</SelectItem>
+                                <SelectItem value="accepted">Accepted</SelectItem>
+                                <SelectItem value="edited">Edited</SelectItem>
+                                <SelectItem value="ai_processed">AI processed</SelectItem>
+                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="rejected">Rejected</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Page size</Label>
+                            <Select
+                              value={`${annotationPageSize}`}
+                              onValueChange={(value) => setAnnotationPageSize(Number(value))}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="10 per page" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="10">10 per page</SelectItem>
+                                <SelectItem value="25">25 per page</SelectItem>
+                                <SelectItem value="50">50 per page</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        {metadataFilterOptions.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs text-muted-foreground">Metadata filters</Label>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => setMetadataFiltersCollapsed(prev => !prev)}
+                                >
+                                  {metadataFiltersCollapsed ? (
+                                    <ChevronDown className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronUp className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                              {Object.values(metadataFilters).some(values => values?.length) && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setMetadataFilters({})}
+                                >
+                                  Clear
+                                </Button>
+                              )}
+                            </div>
+                            {!metadataFiltersCollapsed && (
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                {metadataFilterOptions.map(({ key, values }) => {
+                                  const selectedValues = metadataFilters[key] || [];
+                                  return (
+                                    <div key={key} className="rounded-lg border border-border/60 p-3">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                          <Label className="text-xs text-muted-foreground">{key}</Label>
+                                          <p className="text-[11px] text-muted-foreground">
+                                            {selectedValues.length > 0
+                                              ? `${selectedValues.length} selected`
+                                              : 'No selection'}
+                                          </p>
+                                        </div>
+                                        <Popover>
+                                          <PopoverTrigger asChild>
+                                            <Button size="icon" variant="outline">
+                                              <ChevronDown className="h-4 w-4" />
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-72">
+                                            <div className="flex items-center justify-between pb-2">
+                                              <Label className="text-xs text-muted-foreground">{key}</Label>
+                                              <div className="flex items-center gap-2">
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={() =>
+                                                    setMetadataFilters(prev => ({
+                                                      ...prev,
+                                                      [key]: values.map(item => item.value)
+                                                    }))
+                                                  }
+                                                >
+                                                  Select all
+                                                </Button>
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={() =>
+                                                    setMetadataFilters(prev => ({
+                                                      ...prev,
+                                                      [key]: []
+                                                    }))
+                                                  }
+                                                >
+                                                  None
+                                                </Button>
+                                              </div>
+                                            </div>
+                                            <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+                                              {values.map(({ value, count }) => {
+                                                const isChecked = selectedValues.includes(value);
+                                                return (
+                                                  <div key={`${key}-${value}`} className="flex items-start space-x-2">
+                                                    <Checkbox
+                                                      id={`metadata-${key}-${value}`}
+                                                      checked={isChecked}
+                                                      onCheckedChange={(checked) => {
+                                                        setMetadataFilters(prev => {
+                                                          const current = prev[key] || [];
+                                                          const nextValues = checked
+                                                            ? Array.from(new Set([...current, value]))
+                                                            : current.filter(item => item !== value);
+                                                          return { ...prev, [key]: nextValues };
+                                                        });
+                                                      }}
+                                                    />
+                                                    <Label
+                                                      htmlFor={`metadata-${key}-${value}`}
+                                                      className="text-xs leading-4 text-foreground"
+                                                    >
+                                                      {value} ({count})
+                                                    </Label>
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          </PopoverContent>
+                                        </Popover>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="space-y-3">
+                          {paginatedAnnotationEntries.length === 0 ? (
+                            <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                              No annotations match the current filters.
+                            </div>
+                          ) : (
+                            paginatedAnnotationEntries.map(({ dataPoint, index }) => {
+                              const preview = getAnnotationPreview(dataPoint);
+                              return (
+                                <div
+                                  key={dataPoint.id}
+                                  className="flex flex-col gap-3 rounded-lg border border-border/60 bg-background p-4 transition hover:bg-muted/40 sm:flex-row sm:items-start sm:justify-between"
+                                >
+                                  <div className="space-y-2">
+                                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                                      <Badge
+                                        variant={
+                                          dataPoint.status === 'accepted'
+                                            ? 'default'
+                                            : dataPoint.status === 'edited'
+                                              ? 'secondary'
+                                              : dataPoint.status === 'ai_processed'
+                                                ? 'outline'
+                                                : 'destructive'
+                                        }
+                                      >
+                                        {dataPoint.status.replace('_', ' ')}
+                                      </Badge>
+                                      <Badge variant="outline">
+                                        #{index + 1}
+                                      </Badge>
+                                      {preview.label !== 'None' && (
+                                        <Badge variant="secondary">{preview.label}</Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-sm font-medium text-foreground max-h-12 overflow-hidden">
+                                      {dataPoint.content || 'Untitled content'}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground max-h-10 overflow-hidden">
+                                      {preview.text || 'No annotation yet.'}
+                                    </p>
+                                  </div>
+                                  <div className="flex shrink-0 items-center gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setCurrentIndex(index);
+                                        setViewMode('record');
+                                        setUseFilteredNavigation(hasActiveFilters);
+                                      }}
+                                    >
+                                      View
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        <div className="flex flex-col gap-3 border-t border-border pt-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                          <span>
+                            Showing {annotationStartIndex}-{annotationEndIndex} of {filteredAnnotationEntries.length}
                           </span>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setAnnotationPage(prev => Math.min(totalAnnotationPages, prev + 1))}
-                            disabled={safeAnnotationPage === totalAnnotationPages}
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setAnnotationPage(prev => Math.max(1, prev - 1))}
+                              disabled={safeAnnotationPage === 1}
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                            </Button>
+                            <span className="text-xs font-medium text-foreground">
+                              Page {safeAnnotationPage} of {totalAnnotationPages}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setAnnotationPage(prev => Math.min(totalAnnotationPages, prev + 1))}
+                              disabled={safeAnnotationPage === totalAnnotationPages}
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </Card>
+                    </Card>
                   )}
                 </div>
               </div>
 
               {viewMode === 'record' ? (
-              <div className="w-80">
-                <Card className="p-6 space-y-6 sticky top-6">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-purple-500" />
-                    <h3 className="font-semibold">Actions</h3>
-                  </div>
-
-                  {/* AI Processing */}
-                  <div className="space-y-2">
-                    <Button
-                      className="w-full"
-                      onClick={() => processAllWithAI(false)}
-                      disabled={isProcessing || dataPoints.length === 0}
-                    >
-                      {isProcessing ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          {processingProgress.total > 0
-                            ? `Processing... (${processingProgress.current}/${processingProgress.total})`
-                            : 'Processing...'
-                          }
-                        </>
-                      ) : (
-                        <>
-                          <Brain className="w-4 h-4 mr-2" />
-                          Process All with AI
-                        </>
-                      )}
-                    </Button>
-                    {isProcessing && processingProgress.total > 0 ? (
-                      <div className="space-y-2">
-                        <Progress
-                          value={(processingProgress.current / processingProgress.total) * 100}
-                          className="w-full h-2"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Processing in batches...
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Run selected models on all pending items
-                      </p>
-                    )}
-                  </div>
-
-                  <Separator />
-
-                  {/* Annotation Actions */}
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Manual Actions</Label>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      className="w-full"
-                      onClick={handleRejectAnnotation}
-                      disabled={!currentDataPoint?.finalAnnotation && Object.keys(currentDataPoint?.aiSuggestions || {}).length === 0}
-                    >
-                      <X className="w-4 h-4 mr-2" />
-                      Clear / Reject
-                    </Button>
-                  </div>
-
-                  <Separator />
-
-                  {/* Comprehensive Statistics */}
-                  <div className="space-y-4">
+                <div className="w-80">
+                  <Card className="p-6 space-y-6 sticky top-6">
                     <div className="flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-blue-500" />
-                      <Label className="text-sm font-medium">Session Statistics</Label>
+                      <Sparkles className="w-5 h-5 text-purple-500" />
+                      <h3 className="font-semibold">Actions</h3>
                     </div>
 
-                    {/* Progress Overview */}
+                    {/* AI Processing */}
+                    <div className="space-y-2">
+                      <Button
+                        className="w-full"
+                        onClick={() => processAllWithAI(false)}
+                        disabled={isProcessing || dataPoints.length === 0}
+                      >
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            {processingProgress.total > 0
+                              ? `Processing... (${processingProgress.current}/${processingProgress.total})`
+                              : 'Processing...'
+                            }
+                          </>
+                        ) : (
+                          <>
+                            <Brain className="w-4 h-4 mr-2" />
+                            Process All with AI
+                          </>
+                        )}
+                      </Button>
+                      {isProcessing && processingProgress.total > 0 ? (
+                        <div className="space-y-2">
+                          <Progress
+                            value={(processingProgress.current / processingProgress.total) * 100}
+                            className="w-full h-2"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Processing in batches...
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Run selected models on all pending items
+                        </p>
+                      )}
+                    </div>
+
+                    <Separator />
+
+                    {/* Annotation Actions */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Manual Actions</Label>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="w-full"
+                        onClick={handleRejectAnnotation}
+                        disabled={!currentDataPoint?.finalAnnotation && Object.keys(currentDataPoint?.aiSuggestions || {}).length === 0}
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Clear / Reject
+                      </Button>
+                    </div>
+
+                    <Separator />
+
+                    {/* Comprehensive Statistics */}
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4 text-blue-500" />
+                        <Label className="text-sm font-medium">Session Statistics</Label>
+                      </div>
+
+                      {/* Progress Overview */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="text-center p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                          <div className="text-lg font-bold text-green-600">{completedCount}</div>
+                          <div className="text-xs text-muted-foreground">Completed</div>
+                        </div>
+                        <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                          <div className="text-lg font-bold text-blue-600">{dataPoints.length - completedCount}</div>
+                          <div className="text-xs text-muted-foreground">Remaining</div>
+                        </div>
+                      </div>
+
+                      {/* Detailed Stats */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                          <div className="flex items-center gap-2 text-xs">
+                            <CheckCircle className="w-3 h-3 text-green-600" />
+                            <span>Accepted</span>
+                          </div>
+                          <span className="text-xs font-medium">{annotationStats.totalAccepted}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                          <div className="flex items-center gap-2 text-xs">
+                            <Edit className="w-3 h-3 text-orange-600" />
+                            <span>Edited</span>
+                          </div>
+                          <span className="text-xs font-medium">{annotationStats.totalEdited}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                          <div className="flex items-center gap-2 text-xs">
+                            <Zap className="w-3 h-3 text-purple-600" />
+                            <span>AI Processed</span>
+                          </div>
+                          <span className="text-xs font-medium">{annotationStats.totalProcessed}</span>
+                        </div>
+                      </div>
+
+                      {/* Performance Metrics */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-950/20 rounded border border-blue-200 dark:border-blue-800">
+                          <div className="flex items-center gap-2 text-xs">
+                            <Clock className="w-3 h-3 text-blue-600" />
+                            <span>Session Time</span>
+                          </div>
+                          <span className="text-xs font-medium">{formatTime(annotationStats.sessionTime)}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-950/20 rounded border border-green-200 dark:border-green-800">
+                          <div className="flex items-center gap-2 text-xs">
+                            <TrendingUp className="w-3 h-3 text-green-600" />
+                            <span>Rate (per hour)</span>
+                          </div>
+                          <span className="text-xs font-medium">{getAnnotationRate()}</span>
+                        </div>
+                      </div>
+
+                      {/* Completion Progress */}
+                      {dataPoints.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span>Overall Progress</span>
+                            <span>{Math.round(progress)}%</span>
+                          </div>
+                          <Progress value={progress} className="h-2" />
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                </div>
+              ) : (
+                <div className="w-80">
+                  <Card className="p-6 space-y-6 sticky top-6">
+                    <div className="flex items-center gap-2">
+                      <BarChart3 className="w-4 h-4 text-blue-500" />
+                      <Label className="text-sm font-medium">List Overview</Label>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <div className="text-center p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
                         <div className="text-lg font-bold text-green-600">{completedCount}</div>
@@ -2599,148 +2692,70 @@ const DataLabelingWorkspace = () => {
                       </div>
                     </div>
 
-                    {/* Detailed Stats */}
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
-                        <div className="flex items-center gap-2 text-xs">
-                          <CheckCircle className="w-3 h-3 text-green-600" />
-                          <span>Accepted</span>
-                        </div>
-                        <span className="text-xs font-medium">{annotationStats.totalAccepted}</span>
+                      <div className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
+                        <span>Filtered items</span>
+                        <span className="font-medium">{filteredAnnotationEntries.length}</span>
                       </div>
-
-                      <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
-                        <div className="flex items-center gap-2 text-xs">
-                          <Edit className="w-3 h-3 text-orange-600" />
-                          <span>Edited</span>
-                        </div>
-                        <span className="text-xs font-medium">{annotationStats.totalEdited}</span>
-                      </div>
-
-                      <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
-                        <div className="flex items-center gap-2 text-xs">
-                          <Zap className="w-3 h-3 text-purple-600" />
-                          <span>AI Processed</span>
-                        </div>
-                        <span className="text-xs font-medium">{annotationStats.totalProcessed}</span>
+                      <div className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
+                        <span>Total items</span>
+                        <span className="font-medium">{dataPoints.length}</span>
                       </div>
                     </div>
 
-                    {/* Performance Metrics */}
+                    <Separator />
+
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-950/20 rounded border border-blue-200 dark:border-blue-800">
-                        <div className="flex items-center gap-2 text-xs">
-                          <Clock className="w-3 h-3 text-blue-600" />
-                          <span>Session Time</span>
-                        </div>
-                        <span className="text-xs font-medium">{formatTime(annotationStats.sessionTime)}</span>
-                      </div>
-
-                      <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-950/20 rounded border border-green-200 dark:border-green-800">
-                        <div className="flex items-center gap-2 text-xs">
-                          <TrendingUp className="w-3 h-3 text-green-600" />
-                          <span>Rate (per hour)</span>
-                        </div>
-                        <span className="text-xs font-medium">{getAnnotationRate()}</span>
-                      </div>
+                      <Label className="text-sm font-medium">Batch Actions</Label>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={startRandomPending}
+                        disabled={dataPoints.length === 0 || pendingIndices.length === 0}
+                      >
+                        <Shuffle className="w-4 h-4 mr-2" />
+                        Random Pending
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={startFilteredScope}
+                        disabled={filteredNavigationIndices.length === 0}
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        Start Filtered Scope
+                      </Button>
+                      <Button
+                        className="w-full"
+                        onClick={() => processAllWithAI(false)}
+                        disabled={isProcessing || dataPoints.length === 0}
+                      >
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            {processingProgress.total > 0
+                              ? `Processing... (${processingProgress.current}/${processingProgress.total})`
+                              : 'Processing...'}
+                          </>
+                        ) : (
+                          <>
+                            <Brain className="w-4 h-4 mr-2" />
+                            Process All with AI
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setShowExportDialog(true)}
+                        disabled={filteredDataPoints.length === 0}
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        Export Results
+                      </Button>
                     </div>
-
-                    {/* Completion Progress */}
-                    {dataPoints.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-xs">
-                          <span>Overall Progress</span>
-                          <span>{Math.round(progress)}%</span>
-                        </div>
-                        <Progress value={progress} className="h-2" />
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              </div>
-              ) : (
-              <div className="w-80">
-                <Card className="p-6 space-y-6 sticky top-6">
-                  <div className="flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-blue-500" />
-                    <Label className="text-sm font-medium">List Overview</Label>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="text-center p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                      <div className="text-lg font-bold text-green-600">{completedCount}</div>
-                      <div className="text-xs text-muted-foreground">Completed</div>
-                    </div>
-                    <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                      <div className="text-lg font-bold text-blue-600">{dataPoints.length - completedCount}</div>
-                      <div className="text-xs text-muted-foreground">Remaining</div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
-                      <span>Filtered items</span>
-                      <span className="font-medium">{filteredAnnotationEntries.length}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
-                      <span>Total items</span>
-                      <span className="font-medium">{dataPoints.length}</span>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Batch Actions</Label>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={startRandomPending}
-                      disabled={dataPoints.length === 0 || pendingIndices.length === 0}
-                    >
-                      <Shuffle className="w-4 h-4 mr-2" />
-                      Random Pending
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={startFilteredScope}
-                      disabled={filteredNavigationIndices.length === 0}
-                    >
-                      <Play className="w-4 h-4 mr-2" />
-                      Start Filtered Scope
-                    </Button>
-                    <Button
-                      className="w-full"
-                      onClick={() => processAllWithAI(false)}
-                      disabled={isProcessing || dataPoints.length === 0}
-                    >
-                      {isProcessing ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          {processingProgress.total > 0
-                            ? `Processing... (${processingProgress.current}/${processingProgress.total})`
-                            : 'Processing...'}
-                        </>
-                      ) : (
-                        <>
-                          <Brain className="w-4 h-4 mr-2" />
-                          Process All with AI
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => setShowExportDialog(true)}
-                      disabled={filteredDataPoints.length === 0}
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Export Results
-                    </Button>
-                  </div>
-                </Card>
-              </div>
+                  </Card>
+                </div>
               )}
             </div>
           )}
