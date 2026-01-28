@@ -60,8 +60,11 @@ import {
   User,
   ArrowLeft,
   Undo2,
-  Redo2
+  Redo2,
+  History
 } from "lucide-react";
+import { VersionHistory } from "@/components/VersionHistory";
+import { projectService } from "@/services/projectService";
 
 type AnnotationStatusFilter = 'all' | 'has_final' | DataPoint['status'];
 
@@ -146,6 +149,9 @@ const DataLabelingWorkspace = () => {
   const [metadataFilters, setMetadataFilters] = useState<Record<string, string[]>>({});
   const [metadataFiltersCollapsed, setMetadataFiltersCollapsed] = useState(true);
   const [useFilteredNavigation, setUseFilteredNavigation] = useState(false);
+
+  // Advanced Features State
+  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
 
   // Hugging Face State
   const [showHFDialog, setShowHFDialog] = useState(false);
@@ -578,6 +584,17 @@ const DataLabelingWorkspace = () => {
       });
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  // Handle Restore Version
+  const handleRestoreVersion = async () => {
+    if (projectId) {
+      const project = await projectService.getById(projectId);
+      if (project) {
+        loadNewData(project.dataPoints);
+        // Optionally reload stats if useDataLabeling supported it, but it tracks local stats mostly
+      }
     }
   };
 
@@ -1289,6 +1306,15 @@ const DataLabelingWorkspace = () => {
                   className="hidden"
                 />
 
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="mr-1"
+                  onClick={() => setShowHistoryDialog(true)}
+                  disabled={!projectId}
+                >
+                  <History className="h-5 w-5" />
+                </Button>
                 {/* Settings */}
                 <Dialog open={showSettings} onOpenChange={setShowSettings}>
                   <DialogTrigger asChild>
@@ -1781,6 +1807,16 @@ const DataLabelingWorkspace = () => {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+
+                {/* Version History Dialog */}
+                {projectId && (
+                  <VersionHistory
+                    open={showHistoryDialog}
+                    onOpenChange={setShowHistoryDialog}
+                    projectId={projectId}
+                    onRestore={handleRestoreVersion}
+                  />
+                )}
 
                 {/* Completion Celebration Dialog */}
                 <Dialog

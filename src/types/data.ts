@@ -15,6 +15,17 @@ export interface DataPoint {
     metadata?: Record<string, string>; // All metadata from original file
     displayMetadata?: Record<string, string>; // User-selected columns to display in sidebar
     customFieldValues?: Record<string, string | boolean>; // Values from XML annotation form
+    split?: 'train' | 'validation' | 'test';
+}
+
+export interface ProjectSnapshot {
+    id: string;
+    projectId: string;
+    name: string; // e.g. "v1.0", "Before auto-labeling"
+    description?: string;
+    createdAt: number;
+    dataPoints: DataPoint[];
+    stats: AnnotationStats;
 }
 
 export interface AIModel {

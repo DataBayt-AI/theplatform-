@@ -1,5 +1,5 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
-import { Project } from '@/types/data';
+import { Project, ProjectSnapshot } from '@/types/data';
 
 interface LabelerDB extends DBSchema {
     projects: {
@@ -7,10 +7,15 @@ interface LabelerDB extends DBSchema {
         value: Project;
         indexes: { 'by-date': number };
     };
+    snapshots: {
+        key: string;
+        value: ProjectSnapshot;
+        indexes: { 'by-project': string };
+    };
 }
 
 const DB_NAME = 'databayt-labeler-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented for snapshots
 
 export const dbService = {
     dbPromise: null as Promise<IDBPDatabase<LabelerDB>> | null,
@@ -18,9 +23,15 @@ export const dbService = {
     getDB: async () => {
         if (!dbService.dbPromise) {
             dbService.dbPromise = openDB<LabelerDB>(DB_NAME, DB_VERSION, {
-                upgrade(db) {
-                    const store = db.createObjectStore('projects', { keyPath: 'id' });
-                    store.createIndex('by-date', 'updatedAt');
+                upgrade(db, oldVersion) {
+                    if (oldVersion < 1) {
+                        const store = db.createObjectStore('projects', { keyPath: 'id' });
+                        store.createIndex('by-date', 'updatedAt');
+                    }
+                    if (oldVersion < 2) {
+                        const snapshotStore = db.createObjectStore('snapshots', { keyPath: 'id' });
+                        snapshotStore.createIndex('by-project', 'projectId');
+                    }
                 },
             });
         }
@@ -46,6 +57,31 @@ export const dbService = {
     deleteProject: async (id: string): Promise<void> => {
         const db = await dbService.getDB();
         await db.delete('projects', id);
+        // Also delete associated snapshots
+        const tx = db.transaction('snapshots', 'readwrite');
+        const index = tx.store.index('by-project');
+        const snapshots = await index.getAllKeys(id);
+        await Promise.all([
+            ...snapshots.map(key => tx.store.delete(key)),
+            tx.done
+        ]);
+    },
+
+    // Snapshot methods
+    saveSnapshot: async (snapshot: ProjectSnapshot): Promise<string> => {
+        const db = await dbService.getDB();
+        await db.put('snapshots', snapshot);
+        return snapshot.id;
+    },
+
+    getSnapshots: async (projectId: string): Promise<ProjectSnapshot[]> => {
+        const db = await dbService.getDB();
+        return db.getAllFromIndex('snapshots', 'by-project', projectId);
+    },
+
+    deleteSnapshot: async (id: string): Promise<void> => {
+        const db = await dbService.getDB();
+        await db.delete('snapshots', id);
     },
 
     // Migration helper

@@ -1,4 +1,4 @@
-import { Project, DataPoint, AnnotationStats } from "@/types/data";
+import { Project, DataPoint, AnnotationStats, ProjectSnapshot } from "@/types/data";
 import { dbService } from "./db";
 
 export const projectService = {
@@ -53,5 +53,46 @@ export const projectService = {
             project.stats = stats;
             await projectService.update(project);
         }
+    },
+
+    // Snapshot methods
+    createSnapshot: async (projectId: string, name: string, description?: string): Promise<string> => {
+        const project = await projectService.getById(projectId);
+        if (!project) throw new Error("Project not found");
+
+        const snapshot: ProjectSnapshot = {
+            id: crypto.randomUUID(),
+            projectId: project.id,
+            name,
+            description,
+            createdAt: Date.now(),
+            dataPoints: [...project.dataPoints], // Deep copy if needed, but shallow copy of array is usually enough for immutable items
+            stats: { ...project.stats }
+        };
+
+        return await dbService.saveSnapshot(snapshot);
+    },
+
+    getSnapshots: async (projectId: string): Promise<ProjectSnapshot[]> => {
+        return await dbService.getSnapshots(projectId);
+    },
+
+    restoreSnapshot: async (snapshotId: string): Promise<void> => {
+        // 1. Get snapshot
+        const db = await dbService.getDB();
+        const snapshot = await db.get('snapshots', snapshotId);
+        if (!snapshot) throw new Error("Snapshot not found");
+
+        // 2. Get current project
+        const project = await projectService.getById(snapshot.projectId);
+        if (!project) throw new Error("Project not found");
+
+        // 3. Update project with snapshot data
+        project.dataPoints = snapshot.dataPoints;
+        project.stats = snapshot.stats;
+        project.updatedAt = Date.now();
+
+        // 4. Save project
+        await projectService.update(project);
     }
 };
