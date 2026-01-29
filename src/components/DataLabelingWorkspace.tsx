@@ -192,6 +192,7 @@ const DataLabelingWorkspace = () => {
   const [annotationPage, setAnnotationPage] = useState(1);
   const [annotationPageSize, setAnnotationPageSize] = useState(10);
   const [viewMode, setViewMode] = useState<'list' | 'record'>('list');
+  const [listLayout, setListLayout] = useState<'grid' | 'list'>('grid');
   const [metadataFilters, setMetadataFilters] = useState<Record<string, string[]>>({});
   const [metadataFiltersCollapsed, setMetadataFiltersCollapsed] = useState(true);
   const [useFilteredNavigation, setUseFilteredNavigation] = useState(false);
@@ -1370,7 +1371,6 @@ const DataLabelingWorkspace = () => {
             </div>
 
             <div className="flex items-center gap-4">
-              <UserMenu />
               {dataPoints.length > 0 && (
                 <div className="text-right">
                   <p className="text-sm font-medium text-foreground">{completedCount} completed</p>
@@ -2124,6 +2124,9 @@ const DataLabelingWorkspace = () => {
                   </Tooltip>
                 )}
               </div>
+              <div className="ml-2">
+                <UserMenu />
+              </div>
             </div>
           </div>
         </div>
@@ -2159,7 +2162,7 @@ const DataLabelingWorkspace = () => {
           ) : (
             <div className="flex gap-6 h-full">
               {/* Data Display */}
-              <div className="flex-1 overflow-y-auto pb-10">
+              <div className="flex-1 overflow-y-auto pb-10 min-w-0">
                 <div className="space-y-6">
                   {viewMode === 'record' ? (
                     <div className="flex gap-4">
@@ -2446,7 +2449,7 @@ const DataLabelingWorkspace = () => {
                     </div>
                   ) : (
                     <Card className="p-6">
-                      <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-4 min-w-0">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <h3 className="text-lg font-semibold">Annotation Overview</h3>
@@ -2459,7 +2462,7 @@ const DataLabelingWorkspace = () => {
                           </Badge>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_1fr_1fr]">
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_1fr_1fr_1fr]">
                           <div className="space-y-1">
                             <Label htmlFor="annotation-search" className="text-xs text-muted-foreground">Search</Label>
                             <Input
@@ -2498,14 +2501,34 @@ const DataLabelingWorkspace = () => {
                               onValueChange={(value) => setAnnotationPageSize(Number(value))}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="10 per page" />
+                                <SelectValue placeholder="12 per page" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="10">10 per page</SelectItem>
-                                <SelectItem value="25">25 per page</SelectItem>
-                                <SelectItem value="50">50 per page</SelectItem>
+                                <SelectItem value="12">12 per page</SelectItem>
+                                <SelectItem value="36">36 per page</SelectItem>
+                                <SelectItem value="72">72 per page</SelectItem>
                               </SelectContent>
                             </Select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Layout</Label>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant={listLayout === 'grid' ? "default" : "outline"}
+                                onClick={() => setListLayout('grid')}
+                              >
+                                Grid
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant={listLayout === 'list' ? "default" : "outline"}
+                                onClick={() => setListLayout('list')}
+                              >
+                                List
+                              </Button>
+                            </div>
                           </div>
                         </div>
                         {metadataFilterOptions.length > 0 && (
@@ -2625,7 +2648,13 @@ const DataLabelingWorkspace = () => {
                           </div>
                         )}
 
-                        <div className="space-y-3">
+                        <div
+                          className={
+                            listLayout === 'grid'
+                              ? "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"
+                              : "flex w-full flex-col gap-3 min-w-0"
+                          }
+                        >
                           {paginatedAnnotationEntries.length === 0 ? (
                             <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                               No annotations match the current filters.
@@ -2636,9 +2665,19 @@ const DataLabelingWorkspace = () => {
                               return (
                                 <div
                                   key={dataPoint.id}
-                                  className="flex flex-col gap-3 rounded-lg border border-border/60 bg-background p-4 transition hover:bg-muted/40 sm:flex-row sm:items-start sm:justify-between"
+                                  className={
+                                    listLayout === 'grid'
+                                      ? "flex h-full w-full min-w-0 cursor-pointer flex-col gap-3 rounded-lg border border-border/60 bg-background p-4 transition hover:bg-muted/40 text-start overflow-hidden"
+                                      : "flex w-full min-w-0 cursor-pointer flex-col sm:flex-row sm:items-center sm:gap-4 rounded-lg border border-border/60 bg-background p-4 transition hover:bg-muted/40 text-start overflow-hidden"
+                                  }
+                                  onClick={() => {
+                                    setCurrentIndex(index);
+                                    setViewMode('record');
+                                    setUseFilteredNavigation(hasActiveFilters);
+                                  }}
                                 >
-                                  <div className="space-y-2">
+                                  {/* Section 1: Badges & Status */}
+                                  <div className={listLayout === 'list' ? "sm:w-[140px] flex-shrink-0" : "w-full"}>
                                     <div className="flex flex-wrap items-center gap-2 text-xs">
                                       <Badge
                                         variant={
@@ -2666,26 +2705,38 @@ const DataLabelingWorkspace = () => {
                                         </Badge>
                                       )}
                                     </div>
-                                    <p className="text-sm font-medium text-foreground max-h-12 overflow-hidden">
+                                  </div>
+
+
+                                  {/* Section 2: Main Content */}
+                                  <div className={`flex-1 min-w-0 space-y-1 max-w-full ${listLayout === 'grid' ? "w-full" : ""}`}>
+                                    <p className="text-sm font-medium text-foreground line-clamp-1 w-full">
                                       {dataPoint.content || 'Untitled content'}
                                     </p>
-                                    <p className="text-xs text-muted-foreground max-h-10 overflow-hidden">
+                                    <p className="text-xs text-muted-foreground break-words whitespace-normal line-clamp-2">
                                       {preview.text || 'No annotation yet.'}
                                     </p>
                                   </div>
-                                  <div className="flex shrink-0 items-center gap-2">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setCurrentIndex(index);
-                                        setViewMode('record');
-                                        setUseFilteredNavigation(hasActiveFilters);
-                                      }}
-                                    >
-                                      View
-                                    </Button>
-                                  </div>
+                                  {/* Section 3: Metadata */}
+                                  {
+                                    dataPoint.displayMetadata && Object.keys(dataPoint.displayMetadata).length > 0 && (
+                                      <div className={listLayout === 'list' ? "sm:w-[220px] flex-shrink-0" : "w-full mt-auto pt-2 border-t border-border/40"}>
+                                        <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground min-w-0">
+                                          {Object.entries(dataPoint.displayMetadata).slice(0, 6).map(([key, value]) => (
+                                            <div
+                                              key={key}
+                                              className="inline-flex max-w-[180px] min-w-0 items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5"
+                                            >
+                                              <span className="uppercase tracking-wide text-muted-foreground/80 truncate min-w-0">
+                                                {key}
+                                              </span>
+                                              <span className="truncate min-w-0">:{value}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )
+                                  }
                                 </div>
                               );
                             })
@@ -2725,7 +2776,7 @@ const DataLabelingWorkspace = () => {
               </div>
 
               {viewMode === 'record' ? (
-                <div className="w-80">
+                <div className="w-80 flex-shrink-0">
                   <Card className="p-6 space-y-6 sticky top-6">
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-5 h-5 text-purple-500" />
@@ -2870,7 +2921,7 @@ const DataLabelingWorkspace = () => {
                   </Card>
                 </div>
               ) : (
-                <div className="w-80">
+                <div className="w-80 flex-shrink-0">
                   <Card className="p-6 space-y-6 sticky top-6">
                     <div className="flex items-center gap-2">
                       <BarChart3 className="w-4 h-4 text-blue-500" />
@@ -2959,7 +3010,7 @@ const DataLabelingWorkspace = () => {
           )}
         </div>
       </div>
-    </TooltipProvider>
+    </TooltipProvider >
   );
 };
 
