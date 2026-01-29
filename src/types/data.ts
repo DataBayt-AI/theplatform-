@@ -60,8 +60,18 @@ export interface Project {
     description?: string;
     managerId?: string | null;
     annotatorIds?: string[];
+    auditLog?: ProjectAuditEntry[];
     createdAt: number;
     updatedAt: number;
     dataPoints: DataPoint[];
     stats: AnnotationStats;
+}
+
+export interface ProjectAuditEntry {
+    id: string;
+    timestamp: number;
+    actorId?: string;
+    actorName?: string;
+    action: 'upload' | 'ai_process' | 'export' | 'assign';
+    details?: string;
 }

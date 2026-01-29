@@ -92,6 +92,12 @@ const Dashboard = () => {
             managerId: managerIdToSave,
             annotatorIds: annotatorsToSave
         });
+        await projectService.appendAuditLog(accessProject.id, {
+            actorId: currentUser.id,
+            actorName: currentUser.username,
+            action: "assign",
+            details: `Manager: ${managerIdToSave || "unassigned"}, Annotators: ${annotatorsToSave.length}`
+        });
         setAccessProject(null);
         await loadProjects();
     };

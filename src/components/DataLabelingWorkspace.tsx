@@ -152,6 +152,19 @@ const DataLabelingWorkspace = () => {
   const canProcessAI = isAdmin || isManagerForProject;
   const canExport = isAdmin || isManagerForProject;
   const accessDenied = !!projectAccess && !!currentUser && !canViewProject;
+  const logProjectAction = async (action: 'upload' | 'ai_process' | 'export', details?: string) => {
+    if (!projectId || !currentUser) return;
+    try {
+      await projectService.appendAuditLog(projectId, {
+        actorId: currentUser.id,
+        actorName: currentUser.username,
+        action,
+        details
+      });
+    } catch (error) {
+      console.error("Failed to log project action:", error);
+    }
+  };
 
   useEffect(() => {
     if (!projectAccess || !currentUser) return;
@@ -662,6 +675,7 @@ const DataLabelingWorkspace = () => {
       }
 
       loadNewData(parsedData);
+      await logProjectAction('upload', `File: ${file.name}, Items: ${parsedData.length}`);
     } catch (error) {
       const errorMessage = `Failed to parse file: ${error instanceof Error ? error.message : 'Unknown error'}`;
       setUploadError(errorMessage);
@@ -723,6 +737,7 @@ const DataLabelingWorkspace = () => {
       });
       return;
     }
+    await logProjectAction('ai_process', `Models: ${selectedModels.join(', ')}`);
     if (selectedModels.length === 0) {
       setUploadError('Please select at least one AI model in settings');
       return;
@@ -1775,7 +1790,10 @@ const DataLabelingWorkspace = () => {
                       <Button
                         variant="outline"
                         className="justify-start h-auto py-4 px-4"
-                        onClick={() => exportService.exportAsJSON(filteredDataPoints, projectName)}
+                        onClick={async () => {
+                          await logProjectAction('export', `Format: JSON, Items: ${filteredDataPoints.length}`);
+                          exportService.exportAsJSON(filteredDataPoints, projectName);
+                        }}
                         disabled={!canExport}
                         title={!canExport ? "Requires manager or admin role" : undefined}
                       >
@@ -1787,7 +1805,10 @@ const DataLabelingWorkspace = () => {
                       <Button
                         variant="outline"
                         className="justify-start h-auto py-4 px-4"
-                        onClick={() => exportService.exportAsCSV(filteredDataPoints, projectName)}
+                        onClick={async () => {
+                          await logProjectAction('export', `Format: CSV, Items: ${filteredDataPoints.length}`);
+                          exportService.exportAsCSV(filteredDataPoints, projectName);
+                        }}
                         disabled={!canExport}
                         title={!canExport ? "Requires manager or admin role" : undefined}
                       >
@@ -1799,7 +1820,10 @@ const DataLabelingWorkspace = () => {
                       <Button
                         variant="outline"
                         className="justify-start h-auto py-4 px-4"
-                        onClick={() => exportService.exportAsJSONL(filteredDataPoints, projectName)}
+                        onClick={async () => {
+                          await logProjectAction('export', `Format: JSONL, Items: ${filteredDataPoints.length}`);
+                          exportService.exportAsJSONL(filteredDataPoints, projectName);
+                        }}
                         disabled={!canExport}
                         title={!canExport ? "Requires manager or admin role" : undefined}
                       >

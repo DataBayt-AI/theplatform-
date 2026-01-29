@@ -1,4 +1,4 @@
-import { Project, DataPoint, AnnotationStats, ProjectSnapshot } from "@/types/data";
+import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry } from "@/types/data";
 import { dbService } from "./db";
 
 export const projectService = {
@@ -10,7 +10,8 @@ export const projectService = {
         return {
             ...project,
             managerId: project.managerId ?? null,
-            annotatorIds: project.annotatorIds ?? []
+            annotatorIds: project.annotatorIds ?? [],
+            auditLog: project.auditLog ?? []
         };
     },
 
@@ -65,6 +66,21 @@ export const projectService = {
             ...project,
             managerId: access.managerId ?? project.managerId ?? null,
             annotatorIds: access.annotatorIds ?? project.annotatorIds ?? []
+        };
+        await projectService.update(updated);
+    },
+
+    appendAuditLog: async (projectId: string, entry: Omit<ProjectAuditEntry, 'id' | 'timestamp'>) => {
+        const project = await projectService.getById(projectId);
+        if (!project) throw new Error("Project not found");
+        const logEntry: ProjectAuditEntry = {
+            id: crypto.randomUUID(),
+            timestamp: Date.now(),
+            ...entry
+        };
+        const updated = {
+            ...project,
+            auditLog: [...(project.auditLog ?? []), logEntry]
         };
         await projectService.update(updated);
     },
