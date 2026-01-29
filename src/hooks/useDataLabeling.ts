@@ -8,6 +8,8 @@ interface WorkspaceState {
     currentIndex: number;
 }
 
+type AnnotatorMeta = { id: string; name: string };
+
 export const useDataLabeling = (projectId?: string) => {
     // Undo/Redo State
     const {
@@ -163,10 +165,17 @@ export const useDataLabeling = (projectId?: string) => {
 
     const currentDataPoint = dataPoints[currentIndex];
 
-    const handleAcceptAnnotation = (content: string) => {
+    const handleAcceptAnnotation = (content: string, annotator?: AnnotatorMeta) => {
         if (!currentDataPoint) return;
         const updated = [...dataPoints];
-        updated[currentIndex] = { ...currentDataPoint, finalAnnotation: content, status: 'accepted' };
+        updated[currentIndex] = {
+            ...currentDataPoint,
+            finalAnnotation: content,
+            status: 'accepted',
+            annotatorId: annotator?.id ?? currentDataPoint.annotatorId,
+            annotatorName: annotator?.name ?? currentDataPoint.annotatorName,
+            annotatedAt: annotator ? Date.now() : currentDataPoint.annotatedAt
+        };
 
         // Move to next if not last
         const nextIndex = currentIndex < dataPoints.length - 1 ? currentIndex + 1 : currentIndex;
@@ -182,10 +191,17 @@ export const useDataLabeling = (projectId?: string) => {
         setIsEditMode(true);
     };
 
-    const handleSaveEdit = () => {
+    const handleSaveEdit = (annotator?: AnnotatorMeta) => {
         if (!currentDataPoint) return;
         const updated = [...dataPoints];
-        updated[currentIndex] = { ...currentDataPoint, finalAnnotation: tempAnnotation, status: 'edited' };
+        updated[currentIndex] = {
+            ...currentDataPoint,
+            finalAnnotation: tempAnnotation,
+            status: 'edited',
+            annotatorId: annotator?.id ?? currentDataPoint.annotatorId,
+            annotatorName: annotator?.name ?? currentDataPoint.annotatorName,
+            annotatedAt: annotator ? Date.now() : currentDataPoint.annotatedAt
+        };
 
         setWorkspaceState({
             dataPoints: updated,
@@ -198,7 +214,14 @@ export const useDataLabeling = (projectId?: string) => {
     const handleRejectAnnotation = () => {
         if (!currentDataPoint) return;
         const updated = [...dataPoints];
-        updated[currentIndex] = { ...currentDataPoint, finalAnnotation: '', status: 'pending' };
+        updated[currentIndex] = {
+            ...currentDataPoint,
+            finalAnnotation: '',
+            status: 'pending',
+            annotatorId: undefined,
+            annotatorName: undefined,
+            annotatedAt: undefined
+        };
 
         // Move to next if not last
         const nextIndex = currentIndex < dataPoints.length - 1 ? currentIndex + 1 : currentIndex;

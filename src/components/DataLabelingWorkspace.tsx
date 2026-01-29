@@ -5,7 +5,7 @@ import { useDataLabeling } from "@/hooks/useDataLabeling";
 import { exportService } from "@/services/exportService";
 import { huggingFaceService } from "@/services/huggingFaceService";
 import { getInterpolatedPrompt } from "@/utils/dataUtils";
-import { DataPoint, ModelProvider } from "@/types/data";
+import { DataPoint, ModelProvider, Project } from "@/types/data";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -23,6 +23,8 @@ import { toast } from "@/components/ui/use-toast";
 import { MetadataSidebar } from "@/components/MetadataSidebar";
 import { DynamicAnnotationForm } from "@/components/DynamicAnnotationForm";
 import { AnnotationConfig, loadDefaultAnnotationConfig, loadAnnotationConfigFromFile, parseAnnotationConfigXML } from "@/services/xmlConfigService";
+import { useAuth } from "@/contexts/AuthContext";
+import { UserMenu } from "@/components/UserMenu";
 import {
   Upload,
   Settings,
@@ -71,6 +73,8 @@ type AnnotationStatusFilter = 'all' | 'has_final' | DataPoint['status'];
 const DataLabelingWorkspace = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
+  const annotatorMeta = currentUser ? { id: currentUser.id, name: currentUser.username } : undefined;
 
   // Use custom hook for core logic
   const {
@@ -106,18 +110,12 @@ const DataLabelingWorkspace = () => {
     loadNewData
   } = useDataLabeling(projectId);
 
-  // Redirect if project not found
-  useEffect(() => {
-    if (projectNotFound) {
-      navigate('/');
-    }
-  }, [projectNotFound, navigate]);
-
   // Local UI State
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showUploadPrompt, setShowUploadPrompt] = useState(false);
+  const [projectAccess, setProjectAccess] = useState<Project | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadPrompt, setUploadPrompt] = useState('');
@@ -129,6 +127,41 @@ const DataLabelingWorkspace = () => {
   const [hasShownCompletion, setHasShownCompletion] = useState(false);
   const [showReRunConfirmation, setShowReRunConfirmation] = useState(false);
   const [pendingProcessingModels, setPendingProcessingModels] = useState<string[]>([]);
+
+  // Redirect if project not found
+  useEffect(() => {
+    if (projectNotFound) {
+      navigate('/');
+    }
+  }, [projectNotFound, navigate]);
+
+  useEffect(() => {
+    const loadAccess = async () => {
+      if (!projectId) return;
+      const project = await projectService.getById(projectId);
+      setProjectAccess(project ?? null);
+    };
+    loadAccess();
+  }, [projectId]);
+
+  const isAdmin = currentUser?.roles?.includes("admin");
+  const isManagerForProject = currentUser?.roles?.includes("manager") && projectAccess?.managerId === currentUser.id;
+  const isAnnotatorForProject = currentUser?.roles?.includes("annotator") && (projectAccess?.annotatorIds || []).includes(currentUser.id);
+  const canViewProject = !!currentUser && (isAdmin || isManagerForProject || isAnnotatorForProject);
+  const canUpload = isAdmin || isManagerForProject;
+  const canProcessAI = isAdmin || isManagerForProject;
+  const canExport = isAdmin || isManagerForProject;
+  const accessDenied = !!projectAccess && !!currentUser && !canViewProject;
+
+  useEffect(() => {
+    if (!projectAccess || !currentUser) return;
+    if (!canViewProject) {
+      toast({
+        title: "Access denied",
+        description: "You are not assigned to this project."
+      });
+    }
+  }, [projectAccess, currentUser, canViewProject]);
 
   // Configuration state
   const [selectedModels, setSelectedModels] = useState<string[]>(['openai:gpt-4o-mini']);
@@ -176,6 +209,37 @@ const DataLabelingWorkspace = () => {
   const [xmlEditorContent, setXmlEditorContent] = useState('');
 
   const allowedDataFileExtensions = ['.json', '.csv', '.txt'];
+
+  if (accessDenied) {
+    return (
+      <div className="min-h-screen bg-background p-6">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                <Target className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold text-foreground">Access Denied</h1>
+                <p className="text-sm text-muted-foreground">You are not assigned to this project.</p>
+              </div>
+            </div>
+            <UserMenu />
+          </div>
+          <Card className="p-6">
+            <p className="text-sm text-muted-foreground">
+              Ask an admin or project manager to grant you access.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <Button variant="outline" onClick={() => navigate('/')}>
+                Back to Dashboard
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     import('@/services/aiProviders').then(module => {
@@ -308,17 +372,34 @@ const DataLabelingWorkspace = () => {
 
   // Handle starting a new task
   const handleStartNewTask = () => {
+    if (!canUpload) {
+      toast({
+        title: "Permission denied",
+        description: "Only managers or admins can upload files."
+      });
+      return;
+    }
     setShowCompletionDialog(false);
     setShowCompletionButton(false);
     // Trigger file upload
     document.getElementById('file-upload-new-task')?.click();
   };
 
+  const openExportDialog = () => {
+    if (!canExport) {
+      toast({
+        title: "Permission denied",
+        description: "Only managers or admins can export results."
+      });
+      return;
+    }
+    setShowExportDialog(true);
+  };
+
   // Handle viewing results
   const handleViewResults = () => {
     setShowCompletionDialog(false);
-    // Open export dialog
-    setShowExportDialog(true);
+    openExportDialog();
   };
 
   // Reset for new task
@@ -363,6 +444,14 @@ const DataLabelingWorkspace = () => {
 
   // File upload handler - now shows prompt dialog first
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canUpload) {
+      toast({
+        title: "Permission denied",
+        description: "Only managers or admins can upload files."
+      });
+      event.target.value = '';
+      return;
+    }
     console.log('File upload triggered', event.target.files);
     const file = event.target.files?.[0];
     if (!file) {
@@ -627,6 +716,13 @@ const DataLabelingWorkspace = () => {
 
   // Process all data points with AI using batch processing
   const processAllWithAI = async (force: boolean = false) => {
+    if (!canProcessAI) {
+      toast({
+        title: "Permission denied",
+        description: "Only managers or admins can run AI processing."
+      });
+      return;
+    }
     if (selectedModels.length === 0) {
       setUploadError('Please select at least one AI model in settings');
       return;
@@ -1138,7 +1234,7 @@ const DataLabelingWorkspace = () => {
         case 's':
           e.preventDefault();
           if (isEditMode) {
-            handleSaveEdit();
+            handleSaveEdit(annotatorMeta);
           }
           break;
         case '?':
@@ -1156,7 +1252,7 @@ const DataLabelingWorkspace = () => {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [currentDataPoint, isEditMode, isProcessing, dataPoints.length, canUndo, canRedo, undo, redo, navigatePrevious, navigateNext, viewMode]);
+  }, [currentDataPoint, isEditMode, isProcessing, dataPoints.length, canUndo, canRedo, undo, redo, navigatePrevious, navigateNext, viewMode, annotatorMeta]);
 
 
   return (
@@ -1259,6 +1355,7 @@ const DataLabelingWorkspace = () => {
             </div>
 
             <div className="flex items-center gap-4">
+              <UserMenu />
               {dataPoints.length > 0 && (
                 <div className="text-right">
                   <p className="text-sm font-medium text-foreground">{completedCount} completed</p>
@@ -1278,7 +1375,8 @@ const DataLabelingWorkspace = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={isUploading}
+                      disabled={isUploading || !canUpload}
+                      title={!canUpload ? "Requires manager or admin role" : undefined}
                       onClick={() => document.getElementById('file-upload')?.click()}
                     >
                       {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
@@ -1291,6 +1389,7 @@ const DataLabelingWorkspace = () => {
                   type="file"
                   accept=".json,.csv,.txt"
                   onChange={handleFileUpload}
+                  disabled={!canUpload}
                   className="hidden"
                 />
 
@@ -1303,6 +1402,7 @@ const DataLabelingWorkspace = () => {
                     resetForNewTask();
                     handleFileUpload(e);
                   }}
+                  disabled={!canUpload}
                   className="hidden"
                 />
 
@@ -1318,7 +1418,12 @@ const DataLabelingWorkspace = () => {
                 {/* Settings */}
                 <Dialog open={showSettings} onOpenChange={setShowSettings}>
                   <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!canProcessAI}
+                      title={!canProcessAI ? "Requires manager or admin role" : undefined}
+                    >
                       <Settings className="w-4 h-4" />
                     </Button>
                   </DialogTrigger>
@@ -1667,19 +1772,37 @@ const DataLabelingWorkspace = () => {
                       </DialogDescription>
                     </DialogHeader>
                     <div className="grid grid-cols-1 gap-4 py-4">
-                      <Button variant="outline" className="justify-start h-auto py-4 px-4" onClick={() => exportService.exportAsJSON(filteredDataPoints, projectName)}>
+                      <Button
+                        variant="outline"
+                        className="justify-start h-auto py-4 px-4"
+                        onClick={() => exportService.exportAsJSON(filteredDataPoints, projectName)}
+                        disabled={!canExport}
+                        title={!canExport ? "Requires manager or admin role" : undefined}
+                      >
                         <div className="flex flex-col items-start gap-1">
                           <span className="font-semibold">JSON (Standard)</span>
                           <span className="text-xs text-muted-foreground">Best for backups and re-importing.</span>
                         </div>
                       </Button>
-                      <Button variant="outline" className="justify-start h-auto py-4 px-4" onClick={() => exportService.exportAsCSV(filteredDataPoints, projectName)}>
+                      <Button
+                        variant="outline"
+                        className="justify-start h-auto py-4 px-4"
+                        onClick={() => exportService.exportAsCSV(filteredDataPoints, projectName)}
+                        disabled={!canExport}
+                        title={!canExport ? "Requires manager or admin role" : undefined}
+                      >
                         <div className="flex flex-col items-start gap-1">
                           <span className="font-semibold">CSV (Spreadsheet)</span>
                           <span className="text-xs text-muted-foreground">Best for Excel, Google Sheets, and analysis.</span>
                         </div>
                       </Button>
-                      <Button variant="outline" className="justify-start h-auto py-4 px-4" onClick={() => exportService.exportAsJSONL(filteredDataPoints, projectName)}>
+                      <Button
+                        variant="outline"
+                        className="justify-start h-auto py-4 px-4"
+                        onClick={() => exportService.exportAsJSONL(filteredDataPoints, projectName)}
+                        disabled={!canExport}
+                        title={!canExport ? "Requires manager or admin role" : undefined}
+                      >
                         <div className="flex flex-col items-start gap-1">
                           <span className="font-semibold">Hugging Face Dataset (JSONL)</span>
                           <span className="text-xs text-muted-foreground">Best for fine-tuning and machine learning.</span>
@@ -1875,6 +1998,8 @@ const DataLabelingWorkspace = () => {
                         <Button
                           className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
                           onClick={handleStartNewTask}
+                          disabled={!canUpload}
+                          title={!canUpload ? "Requires manager or admin role" : undefined}
                         >
                           <Upload className="w-4 h-4 mr-2" />
                           Start New Task
@@ -1883,7 +2008,8 @@ const DataLabelingWorkspace = () => {
                         <div className="grid grid-cols-2 gap-3">
                           <Button
                             variant="outline"
-                            onClick={() => setShowExportDialog(true)}
+                            onClick={openExportDialog}
+                            disabled={!canExport}
                           >
                             <Download className="w-4 h-4 mr-2" />
                             Export Results
@@ -1941,6 +2067,7 @@ const DataLabelingWorkspace = () => {
                         size="sm"
                         onClick={handleStartNewTask}
                         className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                        disabled={!canUpload}
                       >
                         <Upload className="w-4 h-4 mr-2" />
                         Start New Task
@@ -1965,7 +2092,7 @@ const DataLabelingWorkspace = () => {
                 {dataPoints.length > 0 && viewMode === 'record' && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={() => setShowExportDialog(true)}>
+                      <Button variant="outline" size="sm" onClick={openExportDialog} disabled={!canExport}>
                         <Download className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
@@ -1988,7 +2115,8 @@ const DataLabelingWorkspace = () => {
                   Upload a data file to start labeling. Supports JSON, CSV, and TXT formats.
                 </p>
                 <Button
-                  disabled={isUploading}
+                  disabled={isUploading || !canUpload}
+                  title={!canUpload ? "Requires manager or admin role" : undefined}
                   onClick={() => document.getElementById('file-upload-main')?.click()}
                 >
                   {isUploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
@@ -1999,6 +2127,7 @@ const DataLabelingWorkspace = () => {
                   type="file"
                   accept=".json,.csv,.txt"
                   onChange={handleFileUpload}
+                  disabled={!canUpload}
                   className="hidden"
                 />
               </Card>
@@ -2094,7 +2223,7 @@ const DataLabelingWorkspace = () => {
                                           <Button
                                             size="sm"
                                             className="h-7 text-xs"
-                                            onClick={() => handleAcceptAnnotation(suggestion)}
+                                            onClick={() => handleAcceptAnnotation(suggestion, annotatorMeta)}
                                           >
                                             <Check className="w-3 h-3 mr-1" />
                                             Use This
@@ -2153,7 +2282,7 @@ const DataLabelingWorkspace = () => {
                                         <Button
                                           size="sm"
                                           className="h-7 text-xs"
-                                          onClick={() => handleAcceptAnnotation(currentDataPoint.humanAnnotation!)}
+                                          onClick={() => handleAcceptAnnotation(currentDataPoint.humanAnnotation!, annotatorMeta)}
                                         >
                                           <Check className="w-3 h-3 mr-1" />
                                           Use This
@@ -2179,7 +2308,7 @@ const DataLabelingWorkspace = () => {
                                             const annotation = Object.entries(values)
                                               .map(([k, v]) => `${k}: ${v}`)
                                               .join('\n') || 'Submitted';
-                                            handleAcceptAnnotation(annotation);
+                                            handleAcceptAnnotation(annotation, annotatorMeta);
                                           }}
                                           className="bg-green-600 hover:bg-green-700"
                                           disabled={
@@ -2228,7 +2357,7 @@ const DataLabelingWorkspace = () => {
                                   <Button size="sm" variant="outline" onClick={() => setIsEditMode(false)}>
                                     Cancel
                                   </Button>
-                                  <Button size="sm" onClick={handleSaveEdit}>
+                                  <Button size="sm" onClick={() => handleSaveEdit(annotatorMeta)}>
                                     <Save className="w-4 h-4 mr-2" />
                                     Save Changes
                                   </Button>
@@ -2506,6 +2635,12 @@ const DataLabelingWorkspace = () => {
                                       {preview.label !== 'None' && (
                                         <Badge variant="secondary">{preview.label}</Badge>
                                       )}
+                                      {dataPoint.annotatorName && (
+                                        <Badge variant="outline" className="flex items-center gap-1">
+                                          <User className="w-3 h-3" />
+                                          {dataPoint.annotatorName}
+                                        </Badge>
+                                      )}
                                     </div>
                                     <p className="text-sm font-medium text-foreground max-h-12 overflow-hidden">
                                       {dataPoint.content || 'Untitled content'}
@@ -2578,7 +2713,8 @@ const DataLabelingWorkspace = () => {
                       <Button
                         className="w-full"
                         onClick={() => processAllWithAI(false)}
-                        disabled={isProcessing || dataPoints.length === 0}
+                        disabled={!canProcessAI || isProcessing || dataPoints.length === 0}
+                        title={!canProcessAI ? "Requires manager or admin role" : undefined}
                       >
                         {isProcessing ? (
                           <>
@@ -2764,7 +2900,8 @@ const DataLabelingWorkspace = () => {
                       <Button
                         className="w-full"
                         onClick={() => processAllWithAI(false)}
-                        disabled={isProcessing || dataPoints.length === 0}
+                        disabled={!canProcessAI || isProcessing || dataPoints.length === 0}
+                        title={!canProcessAI ? "Requires manager or admin role" : undefined}
                       >
                         {isProcessing ? (
                           <>
@@ -2783,8 +2920,9 @@ const DataLabelingWorkspace = () => {
                       <Button
                         variant="outline"
                         className="w-full"
-                        onClick={() => setShowExportDialog(true)}
-                        disabled={filteredDataPoints.length === 0}
+                        onClick={openExportDialog}
+                        disabled={!canExport || filteredDataPoints.length === 0}
+                        title={!canExport ? "Requires manager or admin role" : undefined}
                       >
                         <Download className="w-4 h-4 mr-2" />
                         Export Results

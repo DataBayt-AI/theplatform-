@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
+import { attachUser, requireRole } from './middleware/auth.js';
 
 dotenv.config();
 
@@ -10,6 +11,34 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+app.use(attachUser);
+
+// Project routes (scaffolded for auth enforcement)
+app.post('/api/projects', requireRole(['admin']), async (req, res) => {
+    // TODO: persist project in DB
+    const { name, description } = req.body || {};
+    if (!name) {
+        return res.status(400).json({ error: 'Project name is required' });
+    }
+    return res.status(201).json({
+        id: crypto.randomUUID(),
+        name,
+        description: description || null,
+        createdAt: Date.now()
+    });
+});
+
+app.post('/api/projects/:id/upload', requireRole(['admin', 'manager']), async (req, res) => {
+    // TODO: accept file payload + validate membership
+    const { id } = req.params;
+    return res.status(200).json({ ok: true, projectId: id });
+});
+
+app.post('/api/projects/:id/export', requireRole(['admin', 'manager']), async (req, res) => {
+    // TODO: export logic + validate membership
+    const { id } = req.params;
+    return res.status(200).json({ ok: true, projectId: id });
+});
 
 // Helper to get API key (prefer header, fallback to env)
 const getApiKey = (req, envVarName) => {

@@ -6,12 +6,22 @@ export const projectService = {
         await dbService.migrateFromLocalStorage();
     },
 
+    normalize: (project: Project): Project => {
+        return {
+            ...project,
+            managerId: project.managerId ?? null,
+            annotatorIds: project.annotatorIds ?? []
+        };
+    },
+
     getAll: async (): Promise<Project[]> => {
-        return await dbService.getAllProjects();
+        const projects = await dbService.getAllProjects();
+        return projects.map(projectService.normalize);
     },
 
     getById: async (id: string): Promise<Project | undefined> => {
-        return await dbService.getProject(id);
+        const project = await dbService.getProject(id);
+        return project ? projectService.normalize(project) : undefined;
     },
 
     create: async (name: string, description?: string): Promise<Project> => {
@@ -19,6 +29,8 @@ export const projectService = {
             id: crypto.randomUUID(),
             name,
             description,
+            managerId: null,
+            annotatorIds: [],
             createdAt: Date.now(),
             updatedAt: Date.now(),
             dataPoints: [],
@@ -32,17 +44,29 @@ export const projectService = {
             },
         };
 
-        await dbService.saveProject(newProject);
-        return newProject;
+        const normalized = projectService.normalize(newProject);
+        await dbService.saveProject(normalized);
+        return normalized;
     },
 
     update: async (project: Project): Promise<void> => {
-        const updatedProject = { ...project, updatedAt: Date.now() };
+        const updatedProject = projectService.normalize({ ...project, updatedAt: Date.now() });
         await dbService.saveProject(updatedProject);
     },
 
     delete: async (id: string): Promise<void> => {
         await dbService.deleteProject(id);
+    },
+
+    updateAccess: async (projectId: string, access: { managerId?: string | null; annotatorIds?: string[] }) => {
+        const project = await projectService.getById(projectId);
+        if (!project) throw new Error("Project not found");
+        const updated = {
+            ...project,
+            managerId: access.managerId ?? project.managerId ?? null,
+            annotatorIds: access.annotatorIds ?? project.annotatorIds ?? []
+        };
+        await projectService.update(updated);
     },
 
     // Helper to save just the data points and stats for a project

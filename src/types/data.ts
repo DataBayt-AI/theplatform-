@@ -16,6 +16,9 @@ export interface DataPoint {
     displayMetadata?: Record<string, string>; // User-selected columns to display in sidebar
     customFieldValues?: Record<string, string | boolean>; // Values from XML annotation form
     split?: 'train' | 'validation' | 'test';
+    annotatorId?: string;
+    annotatorName?: string;
+    annotatedAt?: number;
 }
 
 export interface ProjectSnapshot {
@@ -55,6 +58,8 @@ export interface Project {
     id: string;
     name: string;
     description?: string;
+    managerId?: string | null;
+    annotatorIds?: string[];
     createdAt: number;
     updatedAt: number;
     dataPoints: DataPoint[];
