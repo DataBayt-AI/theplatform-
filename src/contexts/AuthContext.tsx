@@ -19,6 +19,9 @@ type AuthContextValue = {
   createUser: (username: string, password: string, roles: Role[]) => { ok: boolean; error?: string };
   changePassword: (currentPassword: string, newPassword: string) => { ok: boolean; error?: string };
   getUserById: (id: string | null | undefined) => User | undefined;
+  deleteUser: (userId: string) => { ok: boolean; error?: string };
+  updateUserRoles: (userId: string, newRoles: Role[]) => { ok: boolean; error?: string };
+  adminResetPassword: (userId: string, newPassword: string) => { ok: boolean; error?: string };
 };
 
 const USERS_KEY = "databayt_users";
@@ -69,7 +72,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           : ["annotator"];
       return {
         ...user,
-        roles,
+        roles: roles as Role[],
         mustChangePassword: user.mustChangePassword ?? false
       };
     });
@@ -119,7 +122,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       id: crypto.randomUUID(),
       username: normalized,
       password: effectivePassword,
-      roles: normalizedRoles,
+      roles: normalizedRoles as Role[],
       mustChangePassword: !normalizedRoles.includes("admin")
     };
     setUsers(prev => [...prev, user]);
@@ -141,6 +144,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return users.find(u => u.id === id);
   };
 
+  const deleteUser = (userId: string) => {
+    if (userId === currentUserId) return { ok: false, error: "Cannot delete yourself" };
+    const user = users.find(u => u.id === userId);
+    if (!user) return { ok: false, error: "User not found" };
+    if (user.username === "admin") return { ok: false, error: "Cannot delete the super admin" };
+
+    setUsers(prev => prev.filter(u => u.id !== userId));
+    return { ok: true };
+  };
+
+  const updateUserRoles = (userId: string, newRoles: Role[]) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return { ok: false, error: "User not found" };
+    if (user.username === "admin") return { ok: false, error: "Cannot change super admin roles" };
+
+    // Ensure normalization logic matches creation
+    const finalRoles = newRoles.length === 0 ? ["annotator"] : newRoles;
+
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, roles: finalRoles as Role[] } : u));
+    return { ok: true };
+  };
+
+  const adminResetPassword = (userId: string, newPassword: string) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return { ok: false, error: "User not found" };
+    if (newPassword.trim().length < 4) return { ok: false, error: "Password must be at least 4 characters" };
+
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: newPassword, mustChangePassword: true } : u));
+    return { ok: true };
+  };
+
   const value = useMemo<AuthContextValue>(() => {
     return {
       currentUser: users.find(u => u.id === currentUserId) ?? null,
@@ -149,7 +183,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       logout,
       createUser,
       changePassword,
-      getUserById
+      getUserById,
+      deleteUser,
+      updateUserRoles,
+      adminResetPassword
     };
   }, [users, currentUserId]);
 
