@@ -1,4 +1,4 @@
-# DataBayt AI Labeler
+# DataBayt.AI Studio
 
 A powerful, modern data annotation tool that leverages AI to accelerate the data labeling process. Upload your data, choose an AI provider, and efficiently review and refine annotations.
 
@@ -50,7 +50,7 @@ A powerful, modern data annotation tool that leverages AI to accelerate the data
 2. Sign in or create an account
 3. Navigate to the API section
 4. Generate a new API key
-5. Copy and paste it into the DataBayt AI Labeler settings
+5. Copy and paste it into the DataBayt.AI Studio settings
 
 **Important**: Your API key should start with `sk-` and is sensitive information. Keep it secure!
 
@@ -242,8 +242,8 @@ If you encounter issues:
 
 ## 📄 License
 
-This project is part of the DataBayt AI suite. Please refer to your license agreement for terms of use.
+This project is part of the DataBayt.AI suite. Please refer to your license agreement for terms of use.
 
 ---
 
-**DataBayt AI Labeler** - Accelerating data annotation with AI-powered assistance.# theplatform-
+**DataBayt.AI Studio** - Accelerating data annotation with AI-powered assistance.
