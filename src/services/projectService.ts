@@ -1,4 +1,4 @@
-import { Project, DataPoint, AnnotationStats } from "@/types/data";
+import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry } from "@/types/data";
 import { dbService } from "./db";
 
 export const projectService = {
@@ -6,12 +6,23 @@ export const projectService = {
         await dbService.migrateFromLocalStorage();
     },
 
+    normalize: (project: Project): Project => {
+        return {
+            ...project,
+            managerId: project.managerId ?? null,
+            annotatorIds: project.annotatorIds ?? [],
+            auditLog: project.auditLog ?? []
+        };
+    },
+
     getAll: async (): Promise<Project[]> => {
-        return await dbService.getAllProjects();
+        const projects = await dbService.getAllProjects();
+        return projects.map(projectService.normalize);
     },
 
     getById: async (id: string): Promise<Project | undefined> => {
-        return await dbService.getProject(id);
+        const project = await dbService.getProject(id);
+        return project ? projectService.normalize(project) : undefined;
     },
 
     create: async (name: string, description?: string): Promise<Project> => {
@@ -19,6 +30,8 @@ export const projectService = {
             id: crypto.randomUUID(),
             name,
             description,
+            managerId: null,
+            annotatorIds: [],
             createdAt: Date.now(),
             updatedAt: Date.now(),
             dataPoints: [],
@@ -32,17 +45,44 @@ export const projectService = {
             },
         };
 
-        await dbService.saveProject(newProject);
-        return newProject;
+        const normalized = projectService.normalize(newProject);
+        await dbService.saveProject(normalized);
+        return normalized;
     },
 
     update: async (project: Project): Promise<void> => {
-        const updatedProject = { ...project, updatedAt: Date.now() };
+        const updatedProject = projectService.normalize({ ...project, updatedAt: Date.now() });
         await dbService.saveProject(updatedProject);
     },
 
     delete: async (id: string): Promise<void> => {
         await dbService.deleteProject(id);
+    },
+
+    updateAccess: async (projectId: string, access: { managerId?: string | null; annotatorIds?: string[] }) => {
+        const project = await projectService.getById(projectId);
+        if (!project) throw new Error("Project not found");
+        const updated = {
+            ...project,
+            managerId: access.managerId ?? project.managerId ?? null,
+            annotatorIds: access.annotatorIds ?? project.annotatorIds ?? []
+        };
+        await projectService.update(updated);
+    },
+
+    appendAuditLog: async (projectId: string, entry: Omit<ProjectAuditEntry, 'id' | 'timestamp'>) => {
+        const project = await projectService.getById(projectId);
+        if (!project) throw new Error("Project not found");
+        const logEntry: ProjectAuditEntry = {
+            id: crypto.randomUUID(),
+            timestamp: Date.now(),
+            ...entry
+        };
+        const updated = {
+            ...project,
+            auditLog: [...(project.auditLog ?? []), logEntry]
+        };
+        await projectService.update(updated);
     },
 
     // Helper to save just the data points and stats for a project
@@ -53,5 +93,46 @@ export const projectService = {
             project.stats = stats;
             await projectService.update(project);
         }
+    },
+
+    // Snapshot methods
+    createSnapshot: async (projectId: string, name: string, description?: string): Promise<string> => {
+        const project = await projectService.getById(projectId);
+        if (!project) throw new Error("Project not found");
+
+        const snapshot: ProjectSnapshot = {
+            id: crypto.randomUUID(),
+            projectId: project.id,
+            name,
+            description,
+            createdAt: Date.now(),
+            dataPoints: [...project.dataPoints], // Deep copy if needed, but shallow copy of array is usually enough for immutable items
+            stats: { ...project.stats }
+        };
+
+        return await dbService.saveSnapshot(snapshot);
+    },
+
+    getSnapshots: async (projectId: string): Promise<ProjectSnapshot[]> => {
+        return await dbService.getSnapshots(projectId);
+    },
+
+    restoreSnapshot: async (snapshotId: string): Promise<void> => {
+        // 1. Get snapshot
+        const db = await dbService.getDB();
+        const snapshot = await db.get('snapshots', snapshotId);
+        if (!snapshot) throw new Error("Snapshot not found");
+
+        // 2. Get current project
+        const project = await projectService.getById(snapshot.projectId);
+        if (!project) throw new Error("Project not found");
+
+        // 3. Update project with snapshot data
+        project.dataPoints = snapshot.dataPoints;
+        project.stats = snapshot.stats;
+        project.updatedAt = Date.now();
+
+        // 4. Save project
+        await projectService.update(project);
     }
 };

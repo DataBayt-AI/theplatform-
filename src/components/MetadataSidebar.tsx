@@ -40,10 +40,10 @@ export const MetadataSidebar = ({ metadata, isOpen, onToggle }: MetadataSidebarP
                         <div className="p-4 space-y-3">
                             {Object.entries(metadata).map(([key, value]) => (
                                 <div key={key} className="space-y-1">
-                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide break-words">
                                         {key}
                                     </p>
-                                    <p className="text-sm break-words">
+                                    <p className="text-sm break-words whitespace-normal">
                                         {value || <span className="text-muted-foreground italic">—</span>}
                                     </p>
                                     <Separator className="mt-2" />

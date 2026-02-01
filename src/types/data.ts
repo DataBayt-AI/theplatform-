@@ -15,6 +15,20 @@ export interface DataPoint {
     metadata?: Record<string, string>; // All metadata from original file
     displayMetadata?: Record<string, string>; // User-selected columns to display in sidebar
     customFieldValues?: Record<string, string | boolean>; // Values from XML annotation form
+    split?: 'train' | 'validation' | 'test';
+    annotatorId?: string;
+    annotatorName?: string;
+    annotatedAt?: number;
+}
+
+export interface ProjectSnapshot {
+    id: string;
+    projectId: string;
+    name: string; // e.g. "v1.0", "Before auto-labeling"
+    description?: string;
+    createdAt: number;
+    dataPoints: DataPoint[];
+    stats: AnnotationStats;
 }
 
 export interface AIModel {
@@ -44,8 +58,20 @@ export interface Project {
     id: string;
     name: string;
     description?: string;
+    managerId?: string | null;
+    annotatorIds?: string[];
+    auditLog?: ProjectAuditEntry[];
     createdAt: number;
     updatedAt: number;
     dataPoints: DataPoint[];
     stats: AnnotationStats;
+}
+
+export interface ProjectAuditEntry {
+    id: string;
+    timestamp: number;
+    actorId?: string;
+    actorName?: string;
+    action: 'upload' | 'ai_process' | 'export' | 'assign';
+    details?: string;
 }
