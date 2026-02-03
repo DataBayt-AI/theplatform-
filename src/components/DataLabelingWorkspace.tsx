@@ -4,8 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useDataLabeling } from "@/hooks/useDataLabeling";
 import { exportService } from "@/services/exportService";
 import { huggingFaceService } from "@/services/huggingFaceService";
-import { getInterpolatedPrompt } from "@/utils/dataUtils";
-import { DataPoint, ModelProvider, Project } from "@/types/data";
+import { DataPoint, ModelProfile, ModelProvider, Project, ProjectModelPolicy, ProviderConnection } from "@/types/data";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -40,7 +39,6 @@ import {
   Edit3,
   RefreshCw,
   Target,
-  Key,
   FileText,
   Brain,
   Save,
@@ -67,6 +65,7 @@ import {
 } from "lucide-react";
 import { VersionHistory } from "@/components/VersionHistory";
 import { projectService } from "@/services/projectService";
+import { modelManagementService } from "@/services/modelManagementService";
 
 type AnnotationStatusFilter = 'all' | 'has_final' | DataPoint['status'];
 
@@ -126,7 +125,6 @@ const DataLabelingWorkspace = () => {
   const [showCompletionButton, setShowCompletionButton] = useState(false);
   const [hasShownCompletion, setHasShownCompletion] = useState(false);
   const [showReRunConfirmation, setShowReRunConfirmation] = useState(false);
-  const [pendingProcessingModels, setPendingProcessingModels] = useState<string[]>([]);
 
   // Redirect if project not found
   useEffect(() => {
@@ -177,11 +175,11 @@ const DataLabelingWorkspace = () => {
   }, [projectAccess, currentUser, canViewProject]);
 
   // Configuration state
-  const [selectedModels, setSelectedModels] = useState<string[]>(['openai:gpt-4o-mini']);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('databayt-api-key') || '');
-  const [anthropicApiKey, setAnthropicApiKey] = useState(() => localStorage.getItem('databayt-anthropic-key') || '');
-  const [sambaNovaApiKey, setSambaNovaApiKey] = useState(() => localStorage.getItem('databayt-sambanova-key') || '');
-  const [ollamaUrl, setOllamaUrl] = useState(() => localStorage.getItem('databayt-ollama-url') || 'http://localhost:11434');
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [providerConnections, setProviderConnections] = useState<ProviderConnection[]>([]);
+  const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([]);
+  const [projectModelPolicy, setProjectModelPolicy] = useState<ProjectModelPolicy | null>(null);
+  const defaultLocalBaseUrl = 'http://localhost:11434';
   const [availableColumns, setAvailableColumns] = useState<string[]>([]);
   const [selectedContentColumn, setSelectedContentColumn] = useState<string>('');
   const [selectedDisplayColumns, setSelectedDisplayColumns] = useState<string[]>([]);
@@ -256,6 +254,27 @@ const DataLabelingWorkspace = () => {
     []
   );
 
+  const connectionById = useMemo(
+    () => new Map(providerConnections.map(connection => [connection.id, connection])),
+    [providerConnections]
+  );
+  const profileById = useMemo(
+    () => new Map(modelProfiles.map(profile => [profile.id, profile])),
+    [modelProfiles]
+  );
+  const availableModelProfiles = useMemo(() => {
+    const activeProfiles = modelProfiles.filter(profile => profile.isActive);
+    if (!projectModelPolicy?.allowedModelProfileIds?.length) return activeProfiles;
+    const allowed = new Set(projectModelPolicy.allowedModelProfileIds);
+    return activeProfiles.filter(profile => allowed.has(profile.id));
+  }, [modelProfiles, projectModelPolicy]);
+
+  useEffect(() => {
+    if (availableModelProfiles.length === 0) return;
+    const allowed = new Set(availableModelProfiles.map(profile => profile.id));
+    setSelectedModels(prev => prev.filter(id => allowed.has(id)));
+  }, [availableModelProfiles]);
+
   const allowedDataFileExtensions = ['.json', '.csv', '.txt'];
 
   if (accessDenied) {
@@ -294,6 +313,20 @@ const DataLabelingWorkspace = () => {
       setAvailableProviders(module.AVAILABLE_PROVIDERS);
     });
   }, []);
+
+  useEffect(() => {
+    const connections = modelManagementService.getConnections();
+    const profiles = modelManagementService.getProfiles();
+    setProviderConnections(connections);
+    setModelProfiles(profiles);
+    if (projectId) {
+      const policy = modelManagementService.getProjectPolicy(projectId);
+      setProjectModelPolicy(policy);
+      if (selectedModels.length === 0 && policy?.defaultModelProfileIds?.length) {
+        setSelectedModels(policy.defaultModelProfileIds);
+      }
+    }
+  }, [projectId, selectedModels.length]);
 
   // Load annotation config on mount (from localStorage or default)
   useEffect(() => {
@@ -747,20 +780,25 @@ const DataLabelingWorkspace = () => {
     return interpolated;
   };
 
-  // AI processing function for a single provider/model
-  const processWithModel = async (dataPoint: DataPoint, providerId: string, modelId: string): Promise<string> => {
+  // AI processing function for a single model profile
+  const processWithProfile = async (dataPoint: DataPoint, modelProfileId: string): Promise<string> => {
+    const profile = profileById.get(modelProfileId);
+    if (!profile) throw new Error(`Model profile ${modelProfileId} not found`);
+    const connection = connectionById.get(profile.providerConnectionId);
+    if (!connection || !connection.isActive) {
+      throw new Error(`Provider connection for ${profile.displayName} is missing or inactive`);
+    }
+
     const { getAIProvider } = await import('@/services/aiProviders');
-    const provider = getAIProvider(providerId);
+    const provider = getAIProvider(connection.providerId);
 
-    // Use upload prompt if available
-    const promptToUse = getInterpolatedPrompt(dataPoint.uploadPrompt || '', dataPoint.metadata);
+    const promptSeed = dataPoint.uploadPrompt || profile.defaultPrompt || '';
+    const promptToUse = getInterpolatedPrompt(promptSeed, dataPoint.metadata);
 
-    let key = '';
-    if (providerId === 'openai') key = apiKey.trim();
-    else if (providerId === 'anthropic') key = anthropicApiKey.trim();
-    else if (providerId === 'sambanova') key = sambaNovaApiKey.trim();
+    const key = connection.apiKey?.trim() || '';
+    const baseUrl = connection.baseUrl?.trim() || (connection.providerId === 'local' ? defaultLocalBaseUrl : undefined);
 
-    return await provider.processText(dataPoint.content, promptToUse, key, modelId, ollamaUrl, dataPoint.type);
+    return await provider.processText(dataPoint.content, promptToUse, key, profile.modelId, baseUrl, dataPoint.type);
   };
 
   // Process all data points with AI using batch processing
@@ -777,21 +815,28 @@ const DataLabelingWorkspace = () => {
       return;
     }
 
-    // Check keys
-    const providersUsed = new Set(selectedModels.map(m => m.split(':')[0]));
-    if (providersUsed.has('openai') && !apiKey) {
-      setUploadError('Please set your OpenAI API key in settings');
+    const selectedProfiles = selectedModels
+      .map(modelProfileId => profileById.get(modelProfileId))
+      .filter(Boolean) as ModelProfile[];
+
+    if (selectedProfiles.length === 0) {
+      setUploadError('Selected models are not available. Please update model settings.');
       return;
     }
-    if (providersUsed.has('anthropic') && !anthropicApiKey) {
-      setUploadError('Please set your Anthropic API key in settings');
-      return;
+
+    const providerRequirements = new Map(availableProviders.map(provider => [provider.id, provider.requiresApiKey]));
+    for (const profile of selectedProfiles) {
+      const connection = connectionById.get(profile.providerConnectionId);
+      if (!connection || !connection.isActive) {
+        setUploadError(`Connection for ${profile.displayName} is missing or inactive`);
+        return;
+      }
+      if (providerRequirements.get(connection.providerId) && !connection.apiKey) {
+        setUploadError(`Missing API key for ${connection.name}`);
+        return;
+      }
     }
-    if (providersUsed.has('sambanova') && !sambaNovaApiKey) {
-      setUploadError('Please set your SambaNova API key in settings');
-      return;
-    }
-    await logProjectAction('ai_process', `Models: ${selectedModels.join(', ')}`);
+    await logProjectAction('ai_process', `Models: ${selectedProfiles.map(p => p.displayName).join(', ')}`);
 
     // Identify data points that need processing for the selected models
     // We want to process any data point that is missing a suggestion for ANY of the selected models
@@ -821,14 +866,13 @@ const DataLabelingWorkspace = () => {
         // However, if the user explicitly wants to RE-RUN a model they already ran, 
         // they might be confused why nothing happens if they select ONLY that model.
 
-        if (pendingDataPoints.length === 0) {
-          // Nothing to do based on "missing" logic. 
-          // This implies all selected models have been run on all available items.
-          // Ask user if they want to re-run.
-          setPendingProcessingModels(selectedModels);
-          setShowReRunConfirmation(true);
-          return;
-        }
+          if (pendingDataPoints.length === 0) {
+            // Nothing to do based on "missing" logic. 
+            // This implies all selected models have been run on all available items.
+            // Ask user if they want to re-run.
+            setShowReRunConfirmation(true);
+            return;
+          }
       }
     }
 
@@ -840,7 +884,6 @@ const DataLabelingWorkspace = () => {
     setIsProcessing(true);
 
     try {
-      const { getAIProvider } = await import('@/services/aiProviders');
       let capturedError: Error | null = null;
 
       const batchSize = 20; // Increased batch size for faster throughput
@@ -862,30 +905,26 @@ const DataLabelingWorkspace = () => {
         const batchResults: { id: string; compositeId: string; result: string }[] = [];
 
         // Process ALL selected models for the batch in PARALLEL
-        for (const compositeId of selectedModels) {
-          const [providerId, modelId] = compositeId.split(':');
+        for (const modelProfileId of selectedModels) {
+          const profile = profileById.get(modelProfileId);
+          if (!profile) continue;
 
           // Filter items for this specific model
           const itemsToProcessForModel = force
             ? batch
-            : batch.filter(dp => !dp.aiSuggestions || !dp.aiSuggestions[compositeId]);
+            : batch.filter(dp => !dp.aiSuggestions || !dp.aiSuggestions[modelProfileId]);
 
           if (itemsToProcessForModel.length === 0) continue;
-
-          let key = '';
-          if (providerId === 'openai') key = apiKey.trim();
-          else if (providerId === 'anthropic') key = anthropicApiKey.trim();
-          else if (providerId === 'sambanova') key = sambaNovaApiKey.trim();
 
           // Create promises for each item for this model
           const modelPromises = itemsToProcessForModel.map(async (dp) => {
             try {
               const result = await runWithInflightLimit(() =>
-                processWithModel(dp, providerId, modelId)
+                processWithProfile(dp, modelProfileId)
               );
-              batchResults.push({ id: dp.id, compositeId, result });
+              batchResults.push({ id: dp.id, compositeId: modelProfileId, result });
             } catch (err) {
-              console.error(`Error processing ${dp.id} with ${compositeId}:`, err);
+              console.error(`Error processing ${dp.id} with ${profile.displayName}:`, err);
               if (!capturedError) {
                 capturedError = err instanceof Error ? err : new Error(String(err));
               }
@@ -1238,15 +1277,11 @@ const DataLabelingWorkspace = () => {
     }
   }, [isEditMode, currentIndex]);
 
-  // Save API keys to localStorage
+  // Save HF credentials to localStorage
   useEffect(() => {
-    if (apiKey) localStorage.setItem('databayt-api-key', apiKey);
-    if (anthropicApiKey) localStorage.setItem('databayt-anthropic-key', anthropicApiKey);
-    if (sambaNovaApiKey) localStorage.setItem('databayt-sambanova-key', sambaNovaApiKey);
-    if (ollamaUrl) localStorage.setItem('databayt-ollama-url', ollamaUrl);
     if (hfUsername) localStorage.setItem('databayt-hf-username', hfUsername);
     if (hfToken) localStorage.setItem('databayt-hf-token', hfToken);
-  }, [apiKey, anthropicApiKey, sambaNovaApiKey, ollamaUrl, hfUsername, hfToken]);
+  }, [hfUsername, hfToken]);
 
 
   // Keyboard shortcuts
@@ -1483,115 +1518,58 @@ const DataLabelingWorkspace = () => {
                       <Settings className="w-4 h-4" />
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>Configuration</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-6">
-                      <div>
-                        <Label className="mb-2 block">Model Selection</Label>
-                        <div className="space-y-4">
-                          {availableProviders.map(provider => (
-                            <div key={provider.id} className="border rounded-lg p-3">
-                              <div className="font-medium mb-2 flex items-center gap-2">
-                                {provider.name}
-                                <span className="text-xs text-muted-foreground font-normal">
-                                  ({provider.description})
-                                </span>
-                              </div>
-                              <div className="pl-2 space-y-2">
-                                {provider.models.map(model => {
-                                  const compositeId = `${provider.id}:${model.id}`;
-                                  return (
-                                    <div key={model.id} className="flex items-center space-x-2">
-                                      <Checkbox
-                                        id={compositeId}
-                                        checked={selectedModels.includes(compositeId)}
-                                        onCheckedChange={(checked) => {
-                                          if (checked) {
-                                            setSelectedModels([...selectedModels, compositeId]);
-                                          } else {
-                                            setSelectedModels(selectedModels.filter(id => id !== compositeId));
-                                          }
-                                        }}
-                                      />
-                                      <Label htmlFor={compositeId} className="text-sm font-normal cursor-pointer">
-                                        {model.name}
-                                      </Label>
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                    <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Model Selection</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-6">
+                        <div>
+                          <Label className="mb-2 block">Available Model Profiles</Label>
+                          {availableModelProfiles.length === 0 ? (
+                            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                              No model profiles assigned to this project yet.
                             </div>
-                          ))}
+                          ) : (
+                            <div className="space-y-2">
+                              {availableModelProfiles.map(profile => {
+                                const connection = connectionById.get(profile.providerConnectionId);
+                                const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
+                                return (
+                                  <div key={profile.id} className="flex items-center space-x-2">
+                                    <Checkbox
+                                      id={profile.id}
+                                      checked={selectedModels.includes(profile.id)}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          setSelectedModels([...selectedModels, profile.id]);
+                                        } else {
+                                          setSelectedModels(selectedModels.filter(id => id !== profile.id));
+                                        }
+                                      }}
+                                    />
+                                    <Label htmlFor={profile.id} className="text-sm font-normal cursor-pointer">
+                                      {profile.displayName}
+                                      {provider && (
+                                        <span className="ml-2 text-xs text-muted-foreground">
+                                          {provider.name}
+                                        </span>
+                                      )}
+                                    </Label>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
+
+                        {canProcessAI && (
+                          <Button variant="outline" onClick={() => navigate('/model-management')}>
+                            Manage Model Profiles
+                          </Button>
+                        )}
                       </div>
-
-                      <div className="space-y-4">
-                        {selectedModels.some(m => m.startsWith('openai:')) && (
-                          <div>
-                            <Label htmlFor="apikey" className="flex items-center gap-2">
-                              <Key className="w-4 h-4" />
-                              OpenAI API Key
-                            </Label>
-                            <Input
-                              id="apikey"
-                              type="password"
-                              value={apiKey}
-                              onChange={(e) => {
-                                setApiKey(e.target.value);
-                              }}
-                              placeholder="sk-..."
-                              className="mt-1.5"
-                            />
-                          </div>
-                        )}
-
-                        {selectedModels.some(m => m.startsWith('anthropic:')) && (
-                          <div>
-                            <Label htmlFor="anthropic-key" className="flex items-center gap-2">
-                              <Key className="w-4 h-4" />
-                              Anthropic API Key
-                            </Label>
-                            <Input
-                              id="anthropic-key"
-                              type="password"
-                              value={anthropicApiKey}
-                              onChange={(e) => {
-                                setAnthropicApiKey(e.target.value);
-                              }}
-                              placeholder="sk-ant-..."
-                              className="mt-1.5"
-                            />
-                          </div>
-                        )}
-
-                        {selectedModels.some(m => m.startsWith('sambanova:')) && (
-                          <div>
-                            <Label htmlFor="sambanova-key" className="flex items-center gap-2">
-                              <Key className="w-4 h-4" />
-                              SambaNova API Key
-                            </Label>
-                            <Input
-                              id="sambanova-key"
-                              type="password"
-                              value={sambaNovaApiKey}
-                              onChange={(e) => {
-                                setSambaNovaApiKey(e.target.value);
-                              }}
-                              placeholder="Enter SambaNova API Key"
-                              className="mt-1.5"
-                            />
-                          </div>
-                        )}
-
-                        <p className="text-xs text-muted-foreground">
-                          API keys are stored locally in your browser.
-                        </p>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                    </DialogContent>
+                  </Dialog>
 
                 {/* Upload Prompt Dialog */}
                 <Dialog open={showUploadPrompt} onOpenChange={setShowUploadPrompt}>
@@ -1927,18 +1905,6 @@ const DataLabelingWorkspace = () => {
                         </p>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="ollama-url">Ollama URL (Local)</Label>
-                        <Input
-                          id="ollama-url"
-                          placeholder="http://localhost:11434"
-                          value={ollamaUrl}
-                          onChange={(e) => setOllamaUrl(e.target.value)}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Default is http://localhost:11434. Change if running on a different port or machine.
-                        </p>
-                      </div>
-                      <div className="space-y-2">
                         <Label htmlFor="hf-dataset">Dataset Name</Label>
                         <Input
                           id="hf-dataset"
@@ -2265,15 +2231,21 @@ const DataLabelingWorkspace = () => {
 
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {/* AI Provider Cards */}
-                                {Object.entries(currentDataPoint?.aiSuggestions || {}).map(([compositeId, suggestion]) => {
-                                  const [providerId, modelId] = compositeId.includes(':') ? compositeId.split(':') : [compositeId, ''];
-                                  const provider = availableProviders.find(p => p.id === providerId);
-                                  const model = provider?.models.find(m => m.id === modelId);
-
-                                  const displayName = model ? `${provider?.name} - ${model.name}` : (provider?.name || providerId);
+                                {Object.entries(currentDataPoint?.aiSuggestions || {}).map(([modelProfileId, suggestion]) => {
+                                  const profile = profileById.get(modelProfileId);
+                                  const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
+                                  const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
+                                  const legacyParts = modelProfileId.includes(':') ? modelProfileId.split(':') : null;
+                                  const legacyProvider = legacyParts ? availableProviders.find(p => p.id === legacyParts[0]) : null;
+                                  const legacyModel = legacyProvider?.models.find(m => m.id === legacyParts?.[1]);
+                                  const displayName =
+                                    profile?.displayName
+                                    || (legacyModel ? `${legacyProvider?.name} - ${legacyModel.name}` : legacyProvider?.name)
+                                    || provider?.name
+                                    || modelProfileId;
 
                                   return (
-                                    <Card key={compositeId} className="p-4 border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/10 transition-all hover:shadow-md">
+                                    <Card key={modelProfileId} className="p-4 border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/10 transition-all hover:shadow-md">
                                       <div className="flex items-center justify-between mb-3">
                                         <Badge variant="outline" className="bg-background">
                                           {displayName}
@@ -2307,11 +2279,11 @@ const DataLabelingWorkspace = () => {
                                           {[1, 2, 3, 4, 5].map((star) => (
                                             <button
                                               key={star}
-                                              onClick={() => handleRateModel(compositeId, star)}
+                                              onClick={() => handleRateModel(modelProfileId, star)}
                                               className="focus:outline-none p-0.5 hover:scale-110 transition-transform"
                                             >
                                               <Star
-                                                className={`w-4 h-4 ${(currentDataPoint.ratings?.[compositeId] || 0) >= star
+                                                className={`w-4 h-4 ${(currentDataPoint.ratings?.[modelProfileId] || 0) >= star
                                                   ? "fill-yellow-400 text-yellow-400"
                                                   : "text-muted-foreground/30 hover:text-yellow-400"
                                                   }`}
