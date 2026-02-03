@@ -125,6 +125,7 @@ const DataLabelingWorkspace = () => {
   const [showCompletionButton, setShowCompletionButton] = useState(false);
   const [hasShownCompletion, setHasShownCompletion] = useState(false);
   const [showReRunConfirmation, setShowReRunConfirmation] = useState(false);
+  const [reRunScope, setReRunScope] = useState<'all' | 'filtered' | 'current'>('all');
 
   // Redirect if project not found
   useEffect(() => {
@@ -802,7 +803,7 @@ const DataLabelingWorkspace = () => {
   };
 
   // Process all data points with AI using batch processing
-  const processAllWithAI = async (force: boolean = false) => {
+  const processScopeWithAI = async (scopeDataPoints: DataPoint[], force: boolean = false) => {
     if (!canProcessAI) {
       toast({
         title: "Permission denied",
@@ -841,7 +842,7 @@ const DataLabelingWorkspace = () => {
     // Identify data points that need processing for the selected models
     // We want to process any data point that is missing a suggestion for ANY of the selected models
     // UNLESS we are forcing a re-run, in which case we process everything
-    const pendingDataPoints = dataPoints.filter(dp => {
+    const pendingDataPoints = scopeDataPoints.filter(dp => {
       // If force is true, we re-process everything that isn't manually finalized (accepted/edited)
       if (force) return dp.status !== 'accepted' && dp.status !== 'edited';
 
@@ -853,12 +854,12 @@ const DataLabelingWorkspace = () => {
     // If not forcing, check if we are about to re-run any models on already processed items
     // This happens if the user selects a model that has already been run on some pending items
     if (!force) {
-      const alreadyProcessedCount = dataPoints.filter(dp =>
+      const alreadyProcessedCount = scopeDataPoints.filter(dp =>
         (dp.status !== 'accepted' && dp.status !== 'edited') &&
         selectedModels.some(modelId => dp.aiSuggestions && dp.aiSuggestions[modelId])
       ).length;
 
-      if (alreadyProcessedCount > 0 && pendingDataPoints.length < dataPoints.length) {
+      if (alreadyProcessedCount > 0 && pendingDataPoints.length < scopeDataPoints.length) {
         // We have some overlap. The user might want to re-run or just fill in gaps.
         // But wait, the logic above (pendingDataPoints) ONLY selects items that are MISSING suggestions.
         // So pendingDataPoints will NOT include items that already have ALL selected models.
@@ -866,13 +867,13 @@ const DataLabelingWorkspace = () => {
         // However, if the user explicitly wants to RE-RUN a model they already ran, 
         // they might be confused why nothing happens if they select ONLY that model.
 
-          if (pendingDataPoints.length === 0) {
-            // Nothing to do based on "missing" logic. 
-            // This implies all selected models have been run on all available items.
-            // Ask user if they want to re-run.
-            setShowReRunConfirmation(true);
-            return;
-          }
+        if (pendingDataPoints.length === 0) {
+          // Nothing to do based on "missing" logic. 
+          // This implies all selected models have been run on all available items.
+          // Ask user if they want to re-run.
+          setShowReRunConfirmation(true);
+          return;
+        }
       }
     }
 
@@ -997,6 +998,22 @@ const DataLabelingWorkspace = () => {
       setIsProcessing(false);
       setProcessingProgress({ current: 0, total: 0 });
     }
+  };
+
+  const processAllWithAI = async (force: boolean = false) => {
+    setReRunScope('all');
+    return processScopeWithAI(dataPoints, force);
+  };
+
+  const processFilteredWithAI = async (force: boolean = false) => {
+    setReRunScope('filtered');
+    return processScopeWithAI(filteredDataPoints, force);
+  };
+
+  const processCurrentWithAI = async (force: boolean = false) => {
+    if (!currentDataPoint) return;
+    setReRunScope('current');
+    return processScopeWithAI([currentDataPoint], force);
   };
 
   // Navigation handlers
@@ -1788,7 +1805,13 @@ const DataLabelingWorkspace = () => {
                       </Button>
                       <Button onClick={() => {
                         setShowReRunConfirmation(false);
-                        processAllWithAI(true);
+                        if (reRunScope === 'filtered') {
+                          processFilteredWithAI(true);
+                        } else if (reRunScope === 'current') {
+                          processCurrentWithAI();
+                        } else {
+                          processAllWithAI(true);
+                        }
                       }}>
                         Yes, Re-run
                       </Button>
@@ -2800,22 +2823,19 @@ const DataLabelingWorkspace = () => {
                     <div className="space-y-2">
                       <Button
                         className="w-full"
-                        onClick={() => processAllWithAI(false)}
-                        disabled={!canProcessAI || isProcessing || dataPoints.length === 0}
+                        onClick={() => processCurrentWithAI()}
+                        disabled={!canProcessAI || isProcessing || !currentDataPoint}
                         title={!canProcessAI ? "Requires manager or admin role" : undefined}
                       >
                         {isProcessing ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            {processingProgress.total > 0
-                              ? `Processing... (${processingProgress.current}/${processingProgress.total})`
-                              : 'Processing...'
-                            }
+                            Processing...
                           </>
                         ) : (
                           <>
                             <Brain className="w-4 h-4 mr-2" />
-                            Process All with AI
+                            Process Current
                           </>
                         )}
                       </Button>
@@ -3002,6 +3022,25 @@ const DataLabelingWorkspace = () => {
                           <>
                             <Brain className="w-4 h-4 mr-2" />
                             Process All with AI
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => processFilteredWithAI(false)}
+                        disabled={!canProcessAI || isProcessing || filteredDataPoints.length === 0}
+                        title={!canProcessAI ? "Requires manager or admin role" : undefined}
+                      >
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <Brain className="w-4 h-4 mr-2" />
+                            Process Filtered with AI
                           </>
                         )}
                       </Button>
