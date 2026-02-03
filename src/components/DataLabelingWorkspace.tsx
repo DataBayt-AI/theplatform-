@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import { useDataLabeling } from "@/hooks/useDataLabeling";
@@ -190,7 +190,7 @@ const DataLabelingWorkspace = () => {
   const [annotationQuery, setAnnotationQuery] = useState('');
   const [annotationStatusFilter, setAnnotationStatusFilter] = useState<AnnotationStatusFilter>('all');
   const [annotationPage, setAnnotationPage] = useState(1);
-  const [annotationPageSize, setAnnotationPageSize] = useState(10);
+  const [annotationPageSize, setAnnotationPageSize] = useState(12);
   const [viewMode, setViewMode] = useState<'list' | 'record'>('list');
   const [listLayout, setListLayout] = useState<'grid' | 'list'>('grid');
   const [metadataFilters, setMetadataFilters] = useState<Record<string, string[]>>({});
@@ -221,6 +221,40 @@ const DataLabelingWorkspace = () => {
   const [annotationFieldValuesMap, setAnnotationFieldValuesMap] = useState<Record<string, Record<string, string | boolean>>>({});
   const [showXmlEditor, setShowXmlEditor] = useState(false);
   const [xmlEditorContent, setXmlEditorContent] = useState('');
+
+  const dataPointsRef = useRef<DataPoint[]>(dataPoints);
+  const inflightRef = useRef(0);
+  const inflightQueueRef = useRef<Array<() => void>>([]);
+  const maxInflightRef = useRef(12);
+
+  useEffect(() => {
+    dataPointsRef.current = dataPoints;
+  }, [dataPoints]);
+
+  const runWithInflightLimit = useCallback(
+    <T,>(fn: () => Promise<T>): Promise<T> => {
+      return new Promise<T>((resolve, reject) => {
+        const run = () => {
+          inflightRef.current += 1;
+          fn()
+            .then(resolve)
+            .catch(reject)
+            .finally(() => {
+              inflightRef.current -= 1;
+              const next = inflightQueueRef.current.shift();
+              if (next) next();
+            });
+        };
+
+        if (inflightRef.current < maxInflightRef.current) {
+          run();
+        } else {
+          inflightQueueRef.current.push(run);
+        }
+      });
+    },
+    []
+  );
 
   const allowedDataFileExtensions = ['.json', '.csv', '.txt'];
 
@@ -738,7 +772,6 @@ const DataLabelingWorkspace = () => {
       });
       return;
     }
-    await logProjectAction('ai_process', `Models: ${selectedModels.join(', ')}`);
     if (selectedModels.length === 0) {
       setUploadError('Please select at least one AI model in settings');
       return;
@@ -758,6 +791,7 @@ const DataLabelingWorkspace = () => {
       setUploadError('Please set your SambaNova API key in settings');
       return;
     }
+    await logProjectAction('ai_process', `Models: ${selectedModels.join(', ')}`);
 
     // Identify data points that need processing for the selected models
     // We want to process any data point that is missing a suggestion for ANY of the selected models
@@ -767,7 +801,8 @@ const DataLabelingWorkspace = () => {
       if (force) return dp.status !== 'accepted' && dp.status !== 'edited';
 
       // Otherwise, check if any selected model is missing
-      return selectedModels.some(modelId => !dp.aiSuggestions || !dp.aiSuggestions[modelId]);
+      return dp.status !== 'accepted' && dp.status !== 'edited'
+        && selectedModels.some(modelId => !dp.aiSuggestions || !dp.aiSuggestions[modelId]);
     });
 
     // If not forcing, check if we are about to re-run any models on already processed items
@@ -821,12 +856,10 @@ const DataLabelingWorkspace = () => {
 
       setProcessingProgress({ current: 0, total: pendingDataPoints.length });
 
-      // We need to work with the latest state
-      let currentDataPoints = [...dataPoints];
-
       // Helper function to process a single batch
       const processBatch = async (batch: typeof pendingDataPoints, batchIndex: number) => {
         const batchPromises: Promise<void>[] = [];
+        const batchResults: { id: string; compositeId: string; result: string }[] = [];
 
         // Process ALL selected models for the batch in PARALLEL
         for (const compositeId of selectedModels) {
@@ -839,8 +872,6 @@ const DataLabelingWorkspace = () => {
 
           if (itemsToProcessForModel.length === 0) continue;
 
-          const provider = getAIProvider(providerId);
-
           let key = '';
           if (providerId === 'openai') key = apiKey.trim();
           else if (providerId === 'anthropic') key = anthropicApiKey.trim();
@@ -849,22 +880,10 @@ const DataLabelingWorkspace = () => {
           // Create promises for each item for this model
           const modelPromises = itemsToProcessForModel.map(async (dp) => {
             try {
-              const result = await processWithModel(dp, providerId, modelId);
-
-              // Update the local state immediately
-              const originalIndex = currentDataPoints.findIndex(p => p.id === dp.id);
-              if (originalIndex !== -1) {
-                const currentSuggestions = currentDataPoints[originalIndex].aiSuggestions || {};
-                currentDataPoints[originalIndex] = {
-                  ...currentDataPoints[originalIndex],
-                  aiSuggestions: {
-                    ...currentSuggestions,
-                    [compositeId]: result
-                  },
-                  status: 'ai_processed',
-                  confidence: Math.random() * 0.3 + 0.7
-                };
-              }
+              const result = await runWithInflightLimit(() =>
+                processWithModel(dp, providerId, modelId)
+              );
+              batchResults.push({ id: dp.id, compositeId, result });
             } catch (err) {
               console.error(`Error processing ${dp.id} with ${compositeId}:`, err);
               if (!capturedError) {
@@ -878,6 +897,31 @@ const DataLabelingWorkspace = () => {
 
         // Wait for ALL requests in this batch to complete
         await Promise.all(batchPromises);
+
+        if (batchResults.length > 0) {
+          const resultsById = new Map<string, Record<string, string>>();
+          for (const item of batchResults) {
+            const entry = resultsById.get(item.id) || {};
+            entry[item.compositeId] = item.result;
+            resultsById.set(item.id, entry);
+          }
+
+          const merged = dataPointsRef.current.map(dp => {
+            const updates = resultsById.get(dp.id);
+            if (!updates) return dp;
+            const aiSuggestions = { ...(dp.aiSuggestions || {}), ...updates };
+            const shouldUpdateStatus = dp.status !== 'accepted' && dp.status !== 'edited';
+            return {
+              ...dp,
+              aiSuggestions,
+              status: shouldUpdateStatus ? 'ai_processed' : dp.status,
+              confidence: dp.confidence
+            };
+          });
+
+          dataPointsRef.current = merged;
+          setDataPoints(merged);
+        }
         return batchIndex;
       };
 
@@ -887,9 +931,6 @@ const DataLabelingWorkspace = () => {
         const windowPromises = batchWindow.map((batch, idx) => processBatch(batch, i + idx));
 
         await Promise.all(windowPromises);
-
-        // Update UI after each window completes
-        setDataPoints([...currentDataPoints]);
 
         // Update progress
         const processed = Math.min((i + concurrentBatches) * batchSize, pendingDataPoints.length);
