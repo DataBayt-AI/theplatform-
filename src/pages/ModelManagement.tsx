@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { modelManagementService } from "@/services/modelManagementService";
@@ -16,6 +16,12 @@ import { Separator } from "@/components/ui/separator";
 import { UserMenu } from "@/components/UserMenu";
 import { toast } from "@/components/ui/use-toast";
 import { Loader2 } from "lucide-react";
+
+type RuntimeModelOption = {
+  id: string;
+  name: string;
+  description?: string;
+};
 
 const ModelManagement = () => {
   const navigate = useNavigate();
@@ -40,12 +46,17 @@ const ModelManagement = () => {
   const [profileDefaultPrompt, setProfileDefaultPrompt] = useState("");
   const [profileTemperature, setProfileTemperature] = useState("");
   const [profileMaxTokens, setProfileMaxTokens] = useState("");
+  const [profileInputPrice, setProfileInputPrice] = useState("");
+  const [profileOutputPrice, setProfileOutputPrice] = useState("");
   const [profileIsActive, setProfileIsActive] = useState(true);
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [allowedProfiles, setAllowedProfiles] = useState<string[]>([]);
   const [defaultProfiles, setDefaultProfiles] = useState<string[]>([]);
   const [testingProfileId, setTestingProfileId] = useState<string | null>(null);
+  const [remoteModelsByConnection, setRemoteModelsByConnection] = useState<Record<string, RuntimeModelOption[]>>({});
+  const [isLoadingRemoteModels, setIsLoadingRemoteModels] = useState(false);
+  const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
 
   useEffect(() => {
     projectService.initialize().then(async () => {
@@ -70,10 +81,115 @@ const ModelManagement = () => {
   const connectionOptions = useMemo(() => connections.filter(c => c.isActive), [connections]);
   const providerLookup = useMemo(() => new Map(AVAILABLE_PROVIDERS.map(p => [p.id, p])), []);
   const connectionLookup = useMemo(() => new Map(connections.map(c => [c.id, c])), [connections]);
+  const selectedProfileConnection = profileConnectionId ? connectionLookup.get(profileConnectionId) : undefined;
+  const staticModelsForConnection = selectedProfileConnection
+    ? (providerLookup.get(selectedProfileConnection.providerId)?.models ?? [])
+    : [];
+  const baseModelsForSelectedConnection = selectedProfileConnection
+    && (selectedProfileConnection.providerId === "openai"
+      || selectedProfileConnection.providerId === "anthropic"
+      || selectedProfileConnection.providerId === "openrouter")
+    ? (remoteModelsByConnection[selectedProfileConnection.id] ?? [])
+    : staticModelsForConnection;
+  const modelsForSelectedConnection = useMemo(() => {
+    if (!profileModelId) return baseModelsForSelectedConnection;
+    const exists = baseModelsForSelectedConnection.some(model => model.id === profileModelId);
+    if (exists) return baseModelsForSelectedConnection;
+    return [{ id: profileModelId, name: `${profileModelId} (current)` }, ...baseModelsForSelectedConnection];
+  }, [baseModelsForSelectedConnection, profileModelId]);
 
   const profileOptions = useMemo(() => {
     return profiles.filter(profile => profile.isActive);
   }, [profiles]);
+
+  const fetchOfficialModels = useCallback(async (connection: ProviderConnection, force = false) => {
+    if (connection.providerId !== "openai"
+      && connection.providerId !== "anthropic"
+      && connection.providerId !== "openrouter") return;
+    if (!connection.apiKey) {
+      setRemoteModelsError("API key is required to load official provider models.");
+      return;
+    }
+    if (!force && remoteModelsByConnection[connection.id]?.length) return;
+
+    const endpoint =
+      connection.providerId === "openai"
+        ? "/api/openai/models"
+        : connection.providerId === "anthropic"
+          ? "/api/anthropic/models"
+          : "/api/openrouter/models";
+    setIsLoadingRemoteModels(true);
+    setRemoteModelsError(null);
+    try {
+      const response = await fetch(endpoint, {
+        headers: {
+          Authorization: `Bearer ${connection.apiKey}`
+        }
+      });
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("API route returned HTML. Start the backend server and verify /api proxy.");
+      }
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || payload?.error || "Failed to load models");
+      }
+      const list = Array.isArray(payload?.data) ? payload.data : [];
+      const mapped: RuntimeModelOption[] = list
+        .map((item: unknown) => {
+          const record = item as {
+            id?: string;
+            name?: string;
+            display_name?: string;
+            architecture?: {
+              input_modalities?: string[];
+              output_modalities?: string[];
+            };
+          };
+          if (!record.id) return null;
+          if (connection.providerId === "openrouter") {
+            const inputModalities = record.architecture?.input_modalities || [];
+            const outputModalities = record.architecture?.output_modalities || [];
+            const textEligible = inputModalities.includes("text") && outputModalities.includes("text");
+            if (!textEligible) return null;
+          }
+          return {
+            id: record.id,
+            name: record.display_name || record.name || record.id
+          };
+        })
+        .filter((item): item is RuntimeModelOption => !!item);
+
+      setRemoteModelsByConnection(prev => ({ ...prev, [connection.id]: mapped }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load provider models";
+      setRemoteModelsError(message);
+    } finally {
+      setIsLoadingRemoteModels(false);
+    }
+  }, [remoteModelsByConnection]);
+
+  useEffect(() => {
+    if (!profileConnectionId) return;
+    const connection = connectionLookup.get(profileConnectionId);
+    if (!connection) return;
+    if (connection.providerId !== "openai"
+      && connection.providerId !== "anthropic"
+      && connection.providerId !== "openrouter") {
+      setRemoteModelsError(null);
+      return;
+    }
+    fetchOfficialModels(connection, false);
+  }, [profileConnectionId, connectionLookup, fetchOfficialModels]);
+
+  useEffect(() => {
+    if (editingProfileId) return;
+    if (!profileModelId) return;
+    const isStillAvailable = modelsForSelectedConnection.some(model => model.id === profileModelId);
+    if (!isStillAvailable) {
+      setProfileModelId("");
+    }
+  }, [editingProfileId, profileModelId, modelsForSelectedConnection]);
 
   const handleTestProfile = async (profile: ModelProfile) => {
     const connection = connectionLookup.get(profile.providerConnectionId);
@@ -110,7 +226,11 @@ const ModelManagement = () => {
         connection.apiKey,
         profile.modelId,
         baseUrl,
-        "text"
+        "text",
+        {
+          temperature: profile.temperature,
+          maxTokens: profile.maxTokens
+        }
       );
       toast({
         title: "Profile OK",
@@ -172,6 +292,8 @@ const ModelManagement = () => {
     setProfileDefaultPrompt("");
     setProfileTemperature("");
     setProfileMaxTokens("");
+    setProfileInputPrice("");
+    setProfileOutputPrice("");
     setProfileIsActive(true);
   };
 
@@ -224,6 +346,8 @@ const ModelManagement = () => {
       defaultPrompt: profileDefaultPrompt.trim() || undefined,
       temperature: profileTemperature ? Number(profileTemperature) : undefined,
       maxTokens: profileMaxTokens ? Number(profileMaxTokens) : undefined,
+      inputPricePerMillion: profileInputPrice ? Number(profileInputPrice) : undefined,
+      outputPricePerMillion: profileOutputPrice ? Number(profileOutputPrice) : undefined,
       isActive: profileIsActive,
       createdAt: now,
       updatedAt: now
@@ -241,6 +365,8 @@ const ModelManagement = () => {
     setProfileDefaultPrompt(profile.defaultPrompt ?? "");
     setProfileTemperature(profile.temperature !== undefined ? String(profile.temperature) : "");
     setProfileMaxTokens(profile.maxTokens !== undefined ? String(profile.maxTokens) : "");
+    setProfileInputPrice(profile.inputPricePerMillion !== undefined ? String(profile.inputPricePerMillion) : "");
+    setProfileOutputPrice(profile.outputPricePerMillion !== undefined ? String(profile.outputPricePerMillion) : "");
     setProfileIsActive(profile.isActive);
   };
 
@@ -260,13 +386,6 @@ const ModelManagement = () => {
     modelManagementService.saveProjectPolicy(policy);
     toast({ title: "Policy saved", description: "Project model policy updated." });
   };
-
-  const modelsForSelectedConnection = useMemo(() => {
-    const connection = connectionLookup.get(profileConnectionId);
-    if (!connection) return [];
-    const provider = providerLookup.get(connection.providerId);
-    return provider?.models ?? [];
-  }, [profileConnectionId, connectionLookup, providerLookup]);
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -377,7 +496,25 @@ const ModelManagement = () => {
               </Select>
             </div>
             <div className="space-y-3">
-              <Label>Model</Label>
+              <div className="flex items-center justify-between">
+                <Label>Model</Label>
+                {selectedProfileConnection && (
+                  selectedProfileConnection.providerId === "openai"
+                  || selectedProfileConnection.providerId === "anthropic"
+                  || selectedProfileConnection.providerId === "openrouter"
+                ) && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => fetchOfficialModels(selectedProfileConnection, true)}
+                    disabled={isLoadingRemoteModels}
+                  >
+                    {isLoadingRemoteModels ? "Loading..." : "Refresh"}
+                  </Button>
+                )}
+              </div>
               <Select value={profileModelId} onValueChange={setProfileModelId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select model" />
@@ -388,6 +525,19 @@ const ModelManagement = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {selectedProfileConnection && (
+                selectedProfileConnection.providerId === "openai"
+                || selectedProfileConnection.providerId === "anthropic"
+                || selectedProfileConnection.providerId === "openrouter"
+              ) && (
+                <p className="text-xs text-muted-foreground">
+                  {remoteModelsError
+                    ? `Could not load provider models: ${remoteModelsError}`
+                    : modelsForSelectedConnection.length === 0
+                      ? "No models loaded yet. Check API key and click Refresh."
+                      : "Loaded from provider API."}
+                </p>
+              )}
             </div>
             <div className="space-y-3">
               <Label>Display Name</Label>
@@ -404,6 +554,14 @@ const ModelManagement = () => {
             <div className="space-y-3">
               <Label>Max Tokens (optional)</Label>
               <Input value={profileMaxTokens} onChange={(e) => setProfileMaxTokens(e.target.value)} placeholder="1024" />
+            </div>
+            <div className="space-y-3">
+              <Label>Input Price / 1M tokens (optional)</Label>
+              <Input value={profileInputPrice} onChange={(e) => setProfileInputPrice(e.target.value)} placeholder="0.15" />
+            </div>
+            <div className="space-y-3">
+              <Label>Output Price / 1M tokens (optional)</Label>
+              <Input value={profileOutputPrice} onChange={(e) => setProfileOutputPrice(e.target.value)} placeholder="0.60" />
             </div>
             <div className="flex items-center gap-2">
               <Checkbox

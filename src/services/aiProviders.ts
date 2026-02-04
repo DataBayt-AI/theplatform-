@@ -1,11 +1,16 @@
 // SDK imports removed to prevent client-side key exposure
 import { ModelProvider } from '@/types/data';
 
+export interface AIRequestOptions {
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export interface AIProvider {
   id: string;
   name: string;
-  processText: (text: string, prompt?: string, apiKey?: string, modelId?: string, baseUrl?: string, type?: 'text' | 'image') => Promise<string>;
-  processBatch?: (texts: string[], prompt?: string, apiKey?: string, modelId?: string, baseUrl?: string, type?: 'text' | 'image') => Promise<string[]>;
+  processText: (text: string, prompt?: string, apiKey?: string, modelId?: string, baseUrl?: string, type?: 'text' | 'image', options?: AIRequestOptions) => Promise<string>;
+  processBatch?: (texts: string[], prompt?: string, apiKey?: string, modelId?: string, baseUrl?: string, type?: 'text' | 'image', options?: AIRequestOptions) => Promise<string[]>;
 }
 
 export const AVAILABLE_PROVIDERS: ModelProvider[] = [
@@ -30,6 +35,13 @@ export const AVAILABLE_PROVIDERS: ModelProvider[] = [
       { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', description: 'Most powerful' },
       { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Fastest' }
     ]
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    description: 'Unified access to many frontier and open models',
+    requiresApiKey: true,
+    models: []
   },
   {
     id: 'sambanova',
@@ -98,7 +110,7 @@ class OpenAIProvider implements AIProvider {
   id = 'openai';
   name = 'OpenAI GPT';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: 'text' | 'image' = 'text'): Promise<string> {
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
     if (!apiKey) throw new Error('OpenAI API key is required');
 
     const messages: any[] = [
@@ -126,7 +138,9 @@ class OpenAIProvider implements AIProvider {
       },
       body: JSON.stringify({
         model: modelId,
-        messages
+        messages,
+        temperature: options?.temperature,
+        max_tokens: options?.maxTokens
       })
     });
 
@@ -139,8 +153,8 @@ class OpenAIProvider implements AIProvider {
     return data.choices[0].message.content || '';
   }
 
-  async processBatch(texts: string[], prompt?: string, apiKey?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: 'text' | 'image' = 'text'): Promise<string[]> {
-    const promises = texts.map(text => this.processText(text, prompt, apiKey, modelId, baseUrl, type));
+  async processBatch(texts: string[], prompt?: string, apiKey?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string[]> {
+    const promises = texts.map(text => this.processText(text, prompt, apiKey, modelId, baseUrl, type, options));
     return Promise.all(promises);
   }
 }
@@ -149,7 +163,7 @@ class AnthropicProvider implements AIProvider {
   id = 'anthropic';
   name = 'Anthropic Claude';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'claude-3-5-sonnet-20240620', baseUrl?: string, type: 'text' | 'image' = 'text'): Promise<string> {
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'claude-3-5-sonnet-20240620', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
     if (!apiKey) throw new Error('Anthropic API key is required');
 
     const messages: any[] = [];
@@ -213,7 +227,8 @@ class AnthropicProvider implements AIProvider {
       },
       body: JSON.stringify({
         model: modelId,
-        max_tokens: 1024,
+        max_tokens: options?.maxTokens ?? 1024,
+        temperature: options?.temperature,
         system: prompt || "You are a helpful data labeling assistant.",
         messages
       })
@@ -233,7 +248,7 @@ class SambaNovaProvider implements AIProvider {
   id = 'sambanova';
   name = 'SambaNova Cloud';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'Meta-Llama-3.1-70B-Instruct', baseUrl?: string, type: 'text' | 'image' = 'text'): Promise<string> {
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'Meta-Llama-3.1-70B-Instruct', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
     if (!apiKey) throw new Error('SambaNova API key is required');
 
     if (type === 'image') {
@@ -252,8 +267,9 @@ class SambaNovaProvider implements AIProvider {
           { role: "system", content: prompt || "You are a helpful data labeling assistant." },
           { role: "user", content: text }
         ],
-        temperature: 0.1,
-        top_p: 0.1
+        temperature: options?.temperature ?? 0.1,
+        top_p: 0.1,
+        max_tokens: options?.maxTokens
       })
     });
 
@@ -267,11 +283,49 @@ class SambaNovaProvider implements AIProvider {
   }
 }
 
+class OpenRouterProvider implements AIProvider {
+  id = 'openrouter';
+  name = 'OpenRouter';
+
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'openai/gpt-4o-mini', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
+    if (!apiKey) throw new Error('OpenRouter API key is required');
+
+    if (type === 'image') {
+      throw new Error("OpenRouter image input is not enabled in this integration.");
+    }
+
+    const response = await fetch('/api/openrouter/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: modelId,
+        messages: [
+          { role: "system", content: prompt || "You are a helpful data labeling assistant." },
+          { role: "user", content: text }
+        ],
+        temperature: options?.temperature,
+        max_tokens: options?.maxTokens
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || errorData.error || 'OpenRouter API Error');
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '';
+  }
+}
+
 class LocalProvider implements AIProvider {
   id = 'local';
   name = 'Local Model (Ollama)';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'llama3', baseUrl: string = 'http://localhost:11434', type: 'text' | 'image' = 'text'): Promise<string> {
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'llama3', baseUrl: string = 'http://localhost:11434', type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
     const systemPrompt = prompt || "You are a helpful data labeling assistant.";
 
     // Ensure baseUrl doesn't end with slash
@@ -280,7 +334,8 @@ class LocalProvider implements AIProvider {
 
     const body: any = {
       model: modelId,
-      stream: false
+      stream: false,
+      options: {}
     };
 
     if (type === 'image') {
@@ -298,6 +353,15 @@ class LocalProvider implements AIProvider {
       }
     } else {
       body.prompt = `${systemPrompt}\n\nText to analyze:\n${text}`;
+    }
+    if (options?.temperature !== undefined) {
+      body.options.temperature = options.temperature;
+    }
+    if (options?.maxTokens !== undefined) {
+      body.options.num_predict = options.maxTokens;
+    }
+    if (Object.keys(body.options).length === 0) {
+      delete body.options;
     }
 
     try {
@@ -323,6 +387,7 @@ class LocalProvider implements AIProvider {
 const providers: Record<string, AIProvider> = {
   openai: new OpenAIProvider(),
   anthropic: new AnthropicProvider(),
+  openrouter: new OpenRouterProvider(),
   sambanova: new SambaNovaProvider(),
   local: new LocalProvider()
 };

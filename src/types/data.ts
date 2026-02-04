@@ -64,6 +64,8 @@ export interface ModelProfile {
     defaultPrompt?: string;
     temperature?: number;
     maxTokens?: number;
+    inputPricePerMillion?: number;
+    outputPricePerMillion?: number;
     isActive: boolean;
     createdAt: number;
     updatedAt: number;

@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { Tiktoken } from "js-tiktoken/lite";
+import o200k_base from "js-tiktoken/ranks/o200k_base";
+import cl100k_base from "js-tiktoken/ranks/cl100k_base";
 
 import { useDataLabeling } from "@/hooks/useDataLabeling";
 import { exportService } from "@/services/exportService";
@@ -126,6 +129,11 @@ const DataLabelingWorkspace = () => {
   const [hasShownCompletion, setHasShownCompletion] = useState(false);
   const [showReRunConfirmation, setShowReRunConfirmation] = useState(false);
   const [reRunScope, setReRunScope] = useState<'all' | 'filtered' | 'current'>('all');
+  const [showTokenEstimateDialog, setShowTokenEstimateDialog] = useState(false);
+  const [pendingProcessScope, setPendingProcessScope] = useState<'all' | 'filtered' | 'current'>('all');
+  const [pendingProcessForce, setPendingProcessForce] = useState(false);
+  const [tokenEstimate, setTokenEstimate] = useState<{ inputTokens: number; items: number; models: number; perModelTokens: Record<string, number> } | null>(null);
+  const [openRouterPriceByModel, setOpenRouterPriceByModel] = useState<Record<string, { input: number | null; output: number | null }>>({});
 
   // Redirect if project not found
   useEffect(() => {
@@ -269,6 +277,95 @@ const DataLabelingWorkspace = () => {
     const allowed = new Set(projectModelPolicy.allowedModelProfileIds);
     return activeProfiles.filter(profile => allowed.has(profile.id));
   }, [modelProfiles, projectModelPolicy]);
+
+  const o200kEncoder = useMemo(() => new Tiktoken(o200k_base), []);
+  const cl100kEncoder = useMemo(() => new Tiktoken(cl100k_base), []);
+  const officialProviderInputPricePerMillion = useMemo(() => ({
+    openai: {
+      "gpt-4o": 2.5,
+      "gpt-4o-mini": 0.15,
+      "gpt-3.5-turbo": 0.5
+    },
+    anthropic: {
+      "claude-3-5-sonnet-20240620": 3,
+      "claude-3-opus-20240229": 15,
+      "claude-3-haiku-20240307": 0.25
+    }
+  }), []);
+
+  const getEncoderForProfile = useCallback(
+    (modelProfileId: string) => {
+      const profile = profileById.get(modelProfileId);
+      const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
+      const providerId = connection?.providerId || (modelProfileId.includes(':') ? modelProfileId.split(':')[0] : '');
+      const modelId = profile?.modelId || (modelProfileId.includes(':') ? modelProfileId.split(':')[1] : '');
+      if (providerId === 'openai' && modelId.startsWith('gpt-4o')) {
+        return o200kEncoder;
+      }
+      return cl100kEncoder;
+    },
+    [profileById, connectionById, o200kEncoder, cl100kEncoder]
+  );
+
+  useEffect(() => {
+    if (!showTokenEstimateDialog) return;
+    const controller = new AbortController();
+
+    const loadOpenRouterPricing = async () => {
+      const openRouterConnections = selectedModels
+        .map(modelProfileId => {
+          const profile = profileById.get(modelProfileId);
+          const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
+          if (!connection || !connection.isActive || connection.providerId !== 'openrouter' || !connection.apiKey) {
+            return null;
+          }
+          return connection;
+        })
+        .filter(Boolean) as ProviderConnection[];
+
+      const uniqueConnections = Array.from(new Map(openRouterConnections.map(connection => [connection.id, connection])).values());
+      if (uniqueConnections.length === 0) {
+        setOpenRouterPriceByModel({});
+        return;
+      }
+
+      const pricingMap: Record<string, { input: number | null; output: number | null }> = {};
+
+      await Promise.all(uniqueConnections.map(async connection => {
+        try {
+          const response = await fetch('/api/openrouter/models', {
+            method: 'GET',
+            signal: controller.signal,
+            headers: {
+              Authorization: `Bearer ${connection.apiKey}`
+            }
+          });
+          if (!response.ok) return;
+          const payload = await response.json();
+          const models = Array.isArray(payload?.data) ? payload.data : [];
+          models.forEach((item: unknown) => {
+            const record = item as { id?: string; pricing?: { prompt?: string | number; completion?: string | number } };
+            if (!record.id) return;
+            const promptRaw = record.pricing?.prompt;
+            const completionRaw = record.pricing?.completion;
+            const promptPerToken = promptRaw === undefined ? null : Number(promptRaw);
+            const completionPerToken = completionRaw === undefined ? null : Number(completionRaw);
+            pricingMap[record.id] = {
+              input: promptPerToken !== null && Number.isFinite(promptPerToken) ? promptPerToken * 1_000_000 : null,
+              output: completionPerToken !== null && Number.isFinite(completionPerToken) ? completionPerToken * 1_000_000 : null
+            };
+          });
+        } catch {
+          // Ignore lookup errors and rely on manual pricing fallback.
+        }
+      }));
+
+      setOpenRouterPriceByModel(pricingMap);
+    };
+
+    loadOpenRouterPricing();
+    return () => controller.abort();
+  }, [showTokenEstimateDialog, selectedModels, profileById, connectionById]);
 
   useEffect(() => {
     if (availableModelProfiles.length === 0) return;
@@ -799,8 +896,193 @@ const DataLabelingWorkspace = () => {
     const key = connection.apiKey?.trim() || '';
     const baseUrl = connection.baseUrl?.trim() || (connection.providerId === 'local' ? defaultLocalBaseUrl : undefined);
 
-    return await provider.processText(dataPoint.content, promptToUse, key, profile.modelId, baseUrl, dataPoint.type);
+    return await provider.processText(
+      dataPoint.content,
+      promptToUse,
+      key,
+      profile.modelId,
+      baseUrl,
+      dataPoint.type,
+      {
+        temperature: profile.temperature,
+        maxTokens: profile.maxTokens
+      }
+    );
   };
+
+  const validateSelectedProfiles = () => {
+    if (selectedModels.length === 0) {
+      setUploadError('Please select at least one AI model in settings');
+      return null;
+    }
+
+    const selectedProfiles = selectedModels
+      .map(modelProfileId => profileById.get(modelProfileId))
+      .filter(Boolean) as ModelProfile[];
+
+    if (selectedProfiles.length === 0) {
+      setUploadError('Selected models are not available. Please update model settings.');
+      return null;
+    }
+
+    const providerRequirements = new Map(availableProviders.map(provider => [provider.id, provider.requiresApiKey]));
+    for (const profile of selectedProfiles) {
+      const connection = connectionById.get(profile.providerConnectionId);
+      if (!connection || !connection.isActive) {
+        setUploadError(`Connection for ${profile.displayName} is missing or inactive`);
+        return null;
+      }
+      if (providerRequirements.get(connection.providerId) && !connection.apiKey) {
+        setUploadError(`Missing API key for ${connection.name}`);
+        return null;
+      }
+    }
+
+    return selectedProfiles;
+  };
+
+  const getScopeDataPoints = (scope: 'all' | 'filtered' | 'current') => {
+    if (scope === 'filtered') return filteredDataPoints;
+    if (scope === 'current') return currentDataPoint ? [currentDataPoint] : [];
+    return dataPoints;
+  };
+
+  const getPendingDataPoints = (scopeDataPoints: DataPoint[], force: boolean) => {
+    return scopeDataPoints.filter(dp => {
+      if (force) return dp.status !== 'accepted' && dp.status !== 'edited';
+      return dp.status !== 'accepted' && dp.status !== 'edited'
+        && selectedModels.some(modelId => !dp.aiSuggestions || !dp.aiSuggestions[modelId]);
+    });
+  };
+
+  const estimateInputTokens = (scopeDataPoints: DataPoint[], force: boolean) => {
+    if (selectedModels.length === 0) {
+      return { inputTokens: 0, items: 0, models: 0, perModelTokens: {} };
+    }
+    const pendingDataPoints = getPendingDataPoints(scopeDataPoints, force);
+    let totalTokens = 0;
+    const perModelTokens: Record<string, number> = {};
+    for (const modelProfileId of selectedModels) {
+      const profile = profileById.get(modelProfileId);
+      const promptSeed = profile?.defaultPrompt || '';
+      const encoder = getEncoderForProfile(modelProfileId);
+      let modelTokens = 0;
+      for (const dp of pendingDataPoints) {
+        const promptToUse = getInterpolatedPrompt(dp.uploadPrompt || promptSeed || '', dp.metadata);
+        const combined = promptToUse ? `${promptToUse}\n\n${dp.content}` : dp.content;
+        const tokens = encoder.encode(combined || '').length;
+        totalTokens += tokens;
+        modelTokens += tokens;
+      }
+      perModelTokens[modelProfileId] = modelTokens;
+    }
+    return { inputTokens: totalTokens, items: pendingDataPoints.length, models: selectedModels.length, perModelTokens };
+  };
+
+  const requestProcessScope = (scope: 'all' | 'filtered' | 'current', force: boolean = false) => {
+    const selectedProfiles = validateSelectedProfiles();
+    if (!selectedProfiles) return;
+    const scopeDataPoints = getScopeDataPoints(scope);
+    const pendingDataPoints = getPendingDataPoints(scopeDataPoints, force);
+
+    if (!force) {
+      const alreadyProcessedCount = scopeDataPoints.filter(dp =>
+        (dp.status !== 'accepted' && dp.status !== 'edited') &&
+        selectedModels.some(modelId => dp.aiSuggestions && dp.aiSuggestions[modelId])
+      ).length;
+
+      if (alreadyProcessedCount > 0 && pendingDataPoints.length < scopeDataPoints.length && pendingDataPoints.length === 0) {
+        setReRunScope(scope);
+        setShowReRunConfirmation(true);
+        return;
+      }
+    }
+
+    if (pendingDataPoints.length === 0) {
+      toast({
+        title: "Nothing to process",
+        description: "All selected models have already been run for this scope."
+      });
+      return;
+    }
+
+    setPendingProcessScope(scope);
+    setPendingProcessForce(force);
+    setTokenEstimate(estimateInputTokens(scopeDataPoints, force));
+    setShowTokenEstimateDialog(true);
+  };
+
+  const getInputPriceForProfile = useCallback((modelProfileId: string) => {
+    const profile = profileById.get(modelProfileId);
+    if (profile?.inputPricePerMillion !== undefined) {
+      return { input: profile.inputPricePerMillion, source: 'override' as const };
+    }
+    const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
+    if (!connection || !profile) return null;
+
+    if (connection.providerId === 'openai' || connection.providerId === 'anthropic') {
+      const officialProviderPricing = officialProviderInputPricePerMillion[connection.providerId];
+      const officialPrice = officialProviderPricing?.[profile.modelId as keyof typeof officialProviderPricing];
+      if (officialPrice !== undefined) {
+        return { input: officialPrice, source: 'official' as const };
+      }
+    }
+
+    if (connection.providerId === 'openrouter') {
+      const openRouterPrice = openRouterPriceByModel[profile.modelId];
+      if (openRouterPrice?.input !== null && openRouterPrice?.input !== undefined) {
+        return { input: openRouterPrice.input, source: 'openrouter' as const };
+      }
+    }
+
+    return null;
+  }, [profileById, connectionById, officialProviderInputPricePerMillion, openRouterPriceByModel]);
+
+  const estimatedInputCost = useMemo(() => {
+    if (!tokenEstimate) return null;
+    let total = 0;
+    const missing: string[] = [];
+    let pricedCount = 0;
+
+    for (const [modelProfileId, tokens] of Object.entries(tokenEstimate.perModelTokens)) {
+      const priceInfo = getInputPriceForProfile(modelProfileId);
+      if (!priceInfo || priceInfo.input === null || priceInfo.input === undefined) {
+        missing.push(modelProfileId);
+        continue;
+      }
+      pricedCount += 1;
+      total += (tokens / 1_000_000) * priceInfo.input;
+    }
+
+    if (pricedCount === 0) return null;
+    return { total, missing };
+  }, [tokenEstimate, getInputPriceForProfile]);
+
+  const perModelCostBreakdown = useMemo(() => {
+    if (!tokenEstimate) return [];
+    return Object.entries(tokenEstimate.perModelTokens).map(([modelProfileId, tokens]) => {
+      const priceInfo = getInputPriceForProfile(modelProfileId);
+      const cost = priceInfo?.input != null ? (tokens / 1_000_000) * priceInfo.input : null;
+      const profile = profileById.get(modelProfileId);
+      const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
+      const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
+      const legacyParts = modelProfileId.includes(':') ? modelProfileId.split(':') : null;
+      const legacyProvider = legacyParts ? availableProviders.find(p => p.id === legacyParts[0]) : null;
+      const legacyModel = legacyProvider?.models.find(m => m.id === legacyParts?.[1]);
+      const displayName =
+        profile?.displayName
+        || (legacyModel ? `${legacyProvider?.name} - ${legacyModel.name}` : legacyProvider?.name)
+        || provider?.name
+        || modelProfileId;
+      return {
+        id: modelProfileId,
+        displayName,
+        tokens,
+        cost,
+        source: priceInfo?.source ?? 'missing'
+      };
+    });
+  }, [tokenEstimate, getInputPriceForProfile, profileById, connectionById, availableProviders]);
 
   // Process all data points with AI using batch processing
   const processScopeWithAI = async (scopeDataPoints: DataPoint[], force: boolean = false) => {
@@ -811,45 +1093,11 @@ const DataLabelingWorkspace = () => {
       });
       return;
     }
-    if (selectedModels.length === 0) {
-      setUploadError('Please select at least one AI model in settings');
-      return;
-    }
-
-    const selectedProfiles = selectedModels
-      .map(modelProfileId => profileById.get(modelProfileId))
-      .filter(Boolean) as ModelProfile[];
-
-    if (selectedProfiles.length === 0) {
-      setUploadError('Selected models are not available. Please update model settings.');
-      return;
-    }
-
-    const providerRequirements = new Map(availableProviders.map(provider => [provider.id, provider.requiresApiKey]));
-    for (const profile of selectedProfiles) {
-      const connection = connectionById.get(profile.providerConnectionId);
-      if (!connection || !connection.isActive) {
-        setUploadError(`Connection for ${profile.displayName} is missing or inactive`);
-        return;
-      }
-      if (providerRequirements.get(connection.providerId) && !connection.apiKey) {
-        setUploadError(`Missing API key for ${connection.name}`);
-        return;
-      }
-    }
+    const selectedProfiles = validateSelectedProfiles();
+    if (!selectedProfiles) return;
     await logProjectAction('ai_process', `Models: ${selectedProfiles.map(p => p.displayName).join(', ')}`);
 
-    // Identify data points that need processing for the selected models
-    // We want to process any data point that is missing a suggestion for ANY of the selected models
-    // UNLESS we are forcing a re-run, in which case we process everything
-    const pendingDataPoints = scopeDataPoints.filter(dp => {
-      // If force is true, we re-process everything that isn't manually finalized (accepted/edited)
-      if (force) return dp.status !== 'accepted' && dp.status !== 'edited';
-
-      // Otherwise, check if any selected model is missing
-      return dp.status !== 'accepted' && dp.status !== 'edited'
-        && selectedModels.some(modelId => !dp.aiSuggestions || !dp.aiSuggestions[modelId]);
-    });
+    const pendingDataPoints = getPendingDataPoints(scopeDataPoints, force);
 
     // If not forcing, check if we are about to re-run any models on already processed items
     // This happens if the user selects a model that has already been run on some pending items
@@ -860,17 +1108,7 @@ const DataLabelingWorkspace = () => {
       ).length;
 
       if (alreadyProcessedCount > 0 && pendingDataPoints.length < scopeDataPoints.length) {
-        // We have some overlap. The user might want to re-run or just fill in gaps.
-        // But wait, the logic above (pendingDataPoints) ONLY selects items that are MISSING suggestions.
-        // So pendingDataPoints will NOT include items that already have ALL selected models.
-
-        // However, if the user explicitly wants to RE-RUN a model they already ran, 
-        // they might be confused why nothing happens if they select ONLY that model.
-
         if (pendingDataPoints.length === 0) {
-          // Nothing to do based on "missing" logic. 
-          // This implies all selected models have been run on all available items.
-          // Ask user if they want to re-run.
           setShowReRunConfirmation(true);
           return;
         }
@@ -886,6 +1124,7 @@ const DataLabelingWorkspace = () => {
 
     try {
       let capturedError: Error | null = null;
+      let outputTokens = 0;
 
       const batchSize = 20; // Increased batch size for faster throughput
       const concurrentBatches = 3; // Process this many batches concurrently
@@ -939,6 +1178,10 @@ const DataLabelingWorkspace = () => {
         await Promise.all(batchPromises);
 
         if (batchResults.length > 0) {
+          for (const item of batchResults) {
+            const encoder = getEncoderForProfile(item.compositeId);
+            outputTokens += encoder.encode(item.result || '').length;
+          }
           const resultsById = new Map<string, Record<string, string>>();
           for (const item of batchResults) {
             const entry = resultsById.get(item.id) || {};
@@ -983,7 +1226,12 @@ const DataLabelingWorkspace = () => {
       if (capturedError) {
         throw capturedError;
       }
-
+      if (outputTokens > 0) {
+        toast({
+          title: "AI processing completed",
+          description: `Estimated output tokens: ${outputTokens.toLocaleString()}`
+        });
+      }
     } catch (error) {
       console.error('Error in batch processing:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -1000,21 +1248,6 @@ const DataLabelingWorkspace = () => {
     }
   };
 
-  const processAllWithAI = async (force: boolean = false) => {
-    setReRunScope('all');
-    return processScopeWithAI(dataPoints, force);
-  };
-
-  const processFilteredWithAI = async (force: boolean = false) => {
-    setReRunScope('filtered');
-    return processScopeWithAI(filteredDataPoints, force);
-  };
-
-  const processCurrentWithAI = async (force: boolean = false) => {
-    if (!currentDataPoint) return;
-    setReRunScope('current');
-    return processScopeWithAI([currentDataPoint], force);
-  };
 
   // Navigation handlers
 
@@ -1337,7 +1570,7 @@ const DataLabelingWorkspace = () => {
         case 'p':
           e.preventDefault();
           if (!isProcessing && dataPoints.length > 0) {
-            processAllWithAI();
+            requestProcessScope('current');
           }
           break;
         case 's':
@@ -1805,15 +2038,82 @@ const DataLabelingWorkspace = () => {
                       </Button>
                       <Button onClick={() => {
                         setShowReRunConfirmation(false);
-                        if (reRunScope === 'filtered') {
-                          processFilteredWithAI(true);
-                        } else if (reRunScope === 'current') {
-                          processCurrentWithAI();
-                        } else {
-                          processAllWithAI(true);
-                        }
+                        requestProcessScope(reRunScope, true);
                       }}>
                         Yes, Re-run
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Token Estimate Dialog */}
+                <Dialog open={showTokenEstimateDialog} onOpenChange={setShowTokenEstimateDialog}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Confirm AI Processing</DialogTitle>
+                      <DialogDescription>
+                        Review the estimated input tokens before processing.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span>Scope</span>
+                        <span className="font-medium capitalize">{pendingProcessScope}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Items</span>
+                        <span className="font-medium">{tokenEstimate?.items ?? 0}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Models</span>
+                        <span className="font-medium">{tokenEstimate?.models ?? 0}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Estimated input tokens</span>
+                        <span className="font-medium">{(tokenEstimate?.inputTokens ?? 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Estimated input cost</span>
+                        <span className="font-medium">
+                          {estimatedInputCost ? `$${estimatedInputCost.total.toFixed(4)}` : 'Unavailable'}
+                        </span>
+                      </div>
+                      {perModelCostBreakdown.length > 0 && (
+                        <div className="rounded-md border border-border/60 p-3 text-xs space-y-2">
+                          <div className="font-medium text-foreground">Per-model breakdown</div>
+                          {perModelCostBreakdown.map(item => (
+                            <div key={item.id} className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground truncate">{item.displayName}</span>
+                              <span className="font-medium whitespace-nowrap">
+                                {item.cost === null ? 'N/A' : `$${item.cost.toFixed(4)}`} - {item.tokens.toLocaleString()} tok
+                                {item.source !== 'missing' ? ` (${item.source})` : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {estimatedInputCost?.missing?.length ? (
+                        <p className="text-xs text-muted-foreground">
+                          Pricing unavailable for {estimatedInputCost.missing.length} model(s).
+                        </p>
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        OpenAI and Anthropic use built-in official pricing. OpenRouter pricing is loaded from OpenRouter API. Other providers require manual profile pricing.
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Token counts are estimates and may differ from provider billing.
+                      </p>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowTokenEstimateDialog(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={() => {
+                        setShowTokenEstimateDialog(false);
+                        setReRunScope(pendingProcessScope);
+                        processScopeWithAI(getScopeDataPoints(pendingProcessScope), pendingProcessForce);
+                      }}>
+                        Proceed
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -2823,7 +3123,7 @@ const DataLabelingWorkspace = () => {
                     <div className="space-y-2">
                       <Button
                         className="w-full"
-                        onClick={() => processCurrentWithAI()}
+                        onClick={() => requestProcessScope('current')}
                         disabled={!canProcessAI || isProcessing || !currentDataPoint}
                         title={!canProcessAI ? "Requires manager or admin role" : undefined}
                       >
@@ -3007,7 +3307,7 @@ const DataLabelingWorkspace = () => {
                       </Button>
                       <Button
                         className="w-full"
-                        onClick={() => processAllWithAI(false)}
+                        onClick={() => requestProcessScope('all')}
                         disabled={!canProcessAI || isProcessing || dataPoints.length === 0}
                         title={!canProcessAI ? "Requires manager or admin role" : undefined}
                       >
@@ -3028,7 +3328,7 @@ const DataLabelingWorkspace = () => {
                       <Button
                         variant="outline"
                         className="w-full"
-                        onClick={() => processFilteredWithAI(false)}
+                        onClick={() => requestProcessScope('filtered')}
                         disabled={!canProcessAI || isProcessing || filteredDataPoints.length === 0}
                         title={!canProcessAI ? "Requires manager or admin role" : undefined}
                       >
