@@ -45,6 +45,39 @@ export interface ModelProvider {
     models: AIModel[];
 }
 
+export interface ProviderConnection {
+    id: string;
+    providerId: ModelProvider['id'];
+    name: string;
+    apiKey?: string;
+    baseUrl?: string;
+    isActive: boolean;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface ModelProfile {
+    id: string;
+    providerConnectionId: string;
+    modelId: AIModel['id'];
+    displayName: string;
+    defaultPrompt?: string;
+    temperature?: number;
+    maxTokens?: number;
+    inputPricePerMillion?: number;
+    outputPricePerMillion?: number;
+    isActive: boolean;
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface ProjectModelPolicy {
+    projectId: string;
+    allowedModelProfileIds: string[];
+    defaultModelProfileIds: string[];
+    updatedAt: number;
+}
+
 export interface AnnotationStats {
     totalAccepted: number;
     totalRejected: number;

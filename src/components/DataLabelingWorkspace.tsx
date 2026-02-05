@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { Tiktoken } from "js-tiktoken/lite";
+import o200k_base from "js-tiktoken/ranks/o200k_base";
+import cl100k_base from "js-tiktoken/ranks/cl100k_base";
 
 import { useDataLabeling } from "@/hooks/useDataLabeling";
 import { exportService } from "@/services/exportService";
 import { huggingFaceService } from "@/services/huggingFaceService";
-import { getInterpolatedPrompt } from "@/utils/dataUtils";
-import { DataPoint, ModelProvider, Project } from "@/types/data";
+import { DataPoint, ModelProfile, ModelProvider, Project, ProjectModelPolicy, ProviderConnection } from "@/types/data";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -40,7 +42,6 @@ import {
   Edit3,
   RefreshCw,
   Target,
-  Key,
   FileText,
   Brain,
   Save,
@@ -67,6 +68,7 @@ import {
 } from "lucide-react";
 import { VersionHistory } from "@/components/VersionHistory";
 import { projectService } from "@/services/projectService";
+import { modelManagementService } from "@/services/modelManagementService";
 
 type AnnotationStatusFilter = 'all' | 'has_final' | DataPoint['status'];
 
@@ -126,7 +128,12 @@ const DataLabelingWorkspace = () => {
   const [showCompletionButton, setShowCompletionButton] = useState(false);
   const [hasShownCompletion, setHasShownCompletion] = useState(false);
   const [showReRunConfirmation, setShowReRunConfirmation] = useState(false);
-  const [pendingProcessingModels, setPendingProcessingModels] = useState<string[]>([]);
+  const [reRunScope, setReRunScope] = useState<'all' | 'filtered' | 'current'>('all');
+  const [showTokenEstimateDialog, setShowTokenEstimateDialog] = useState(false);
+  const [pendingProcessScope, setPendingProcessScope] = useState<'all' | 'filtered' | 'current'>('all');
+  const [pendingProcessForce, setPendingProcessForce] = useState(false);
+  const [tokenEstimate, setTokenEstimate] = useState<{ inputTokens: number; items: number; models: number; perModelTokens: Record<string, number> } | null>(null);
+  const [openRouterPriceByModel, setOpenRouterPriceByModel] = useState<Record<string, { input: number | null; output: number | null }>>({});
 
   // Redirect if project not found
   useEffect(() => {
@@ -177,11 +184,11 @@ const DataLabelingWorkspace = () => {
   }, [projectAccess, currentUser, canViewProject]);
 
   // Configuration state
-  const [selectedModels, setSelectedModels] = useState<string[]>(['openai:gpt-4o-mini']);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('databayt-api-key') || '');
-  const [anthropicApiKey, setAnthropicApiKey] = useState(() => localStorage.getItem('databayt-anthropic-key') || '');
-  const [sambaNovaApiKey, setSambaNovaApiKey] = useState(() => localStorage.getItem('databayt-sambanova-key') || '');
-  const [ollamaUrl, setOllamaUrl] = useState(() => localStorage.getItem('databayt-ollama-url') || 'http://localhost:11434');
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [providerConnections, setProviderConnections] = useState<ProviderConnection[]>([]);
+  const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([]);
+  const [projectModelPolicy, setProjectModelPolicy] = useState<ProjectModelPolicy | null>(null);
+  const defaultLocalBaseUrl = 'http://localhost:11434';
   const [availableColumns, setAvailableColumns] = useState<string[]>([]);
   const [selectedContentColumn, setSelectedContentColumn] = useState<string>('');
   const [selectedDisplayColumns, setSelectedDisplayColumns] = useState<string[]>([]);
@@ -190,7 +197,7 @@ const DataLabelingWorkspace = () => {
   const [annotationQuery, setAnnotationQuery] = useState('');
   const [annotationStatusFilter, setAnnotationStatusFilter] = useState<AnnotationStatusFilter>('all');
   const [annotationPage, setAnnotationPage] = useState(1);
-  const [annotationPageSize, setAnnotationPageSize] = useState(10);
+  const [annotationPageSize, setAnnotationPageSize] = useState(12);
   const [viewMode, setViewMode] = useState<'list' | 'record'>('list');
   const [listLayout, setListLayout] = useState<'grid' | 'list'>('grid');
   const [metadataFilters, setMetadataFilters] = useState<Record<string, string[]>>({});
@@ -221,6 +228,150 @@ const DataLabelingWorkspace = () => {
   const [annotationFieldValuesMap, setAnnotationFieldValuesMap] = useState<Record<string, Record<string, string | boolean>>>({});
   const [showXmlEditor, setShowXmlEditor] = useState(false);
   const [xmlEditorContent, setXmlEditorContent] = useState('');
+
+  const dataPointsRef = useRef<DataPoint[]>(dataPoints);
+  const inflightRef = useRef(0);
+  const inflightQueueRef = useRef<Array<() => void>>([]);
+  const maxInflightRef = useRef(12);
+
+  useEffect(() => {
+    dataPointsRef.current = dataPoints;
+  }, [dataPoints]);
+
+  const runWithInflightLimit = useCallback(
+    <T,>(fn: () => Promise<T>): Promise<T> => {
+      return new Promise<T>((resolve, reject) => {
+        const run = () => {
+          inflightRef.current += 1;
+          fn()
+            .then(resolve)
+            .catch(reject)
+            .finally(() => {
+              inflightRef.current -= 1;
+              const next = inflightQueueRef.current.shift();
+              if (next) next();
+            });
+        };
+
+        if (inflightRef.current < maxInflightRef.current) {
+          run();
+        } else {
+          inflightQueueRef.current.push(run);
+        }
+      });
+    },
+    []
+  );
+
+  const connectionById = useMemo(
+    () => new Map(providerConnections.map(connection => [connection.id, connection])),
+    [providerConnections]
+  );
+  const profileById = useMemo(
+    () => new Map(modelProfiles.map(profile => [profile.id, profile])),
+    [modelProfiles]
+  );
+  const availableModelProfiles = useMemo(() => {
+    const activeProfiles = modelProfiles.filter(profile => profile.isActive);
+    if (!projectModelPolicy?.allowedModelProfileIds?.length) return activeProfiles;
+    const allowed = new Set(projectModelPolicy.allowedModelProfileIds);
+    return activeProfiles.filter(profile => allowed.has(profile.id));
+  }, [modelProfiles, projectModelPolicy]);
+
+  const o200kEncoder = useMemo(() => new Tiktoken(o200k_base), []);
+  const cl100kEncoder = useMemo(() => new Tiktoken(cl100k_base), []);
+  const officialProviderInputPricePerMillion = useMemo(() => ({
+    openai: {
+      "gpt-4o": 2.5,
+      "gpt-4o-mini": 0.15,
+      "gpt-3.5-turbo": 0.5
+    },
+    anthropic: {
+      "claude-3-5-sonnet-20240620": 3,
+      "claude-3-opus-20240229": 15,
+      "claude-3-haiku-20240307": 0.25
+    }
+  }), []);
+
+  const getEncoderForProfile = useCallback(
+    (modelProfileId: string) => {
+      const profile = profileById.get(modelProfileId);
+      const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
+      const providerId = connection?.providerId || (modelProfileId.includes(':') ? modelProfileId.split(':')[0] : '');
+      const modelId = profile?.modelId || (modelProfileId.includes(':') ? modelProfileId.split(':')[1] : '');
+      if (providerId === 'openai' && modelId.startsWith('gpt-4o')) {
+        return o200kEncoder;
+      }
+      return cl100kEncoder;
+    },
+    [profileById, connectionById, o200kEncoder, cl100kEncoder]
+  );
+
+  useEffect(() => {
+    if (!showTokenEstimateDialog) return;
+    const controller = new AbortController();
+
+    const loadOpenRouterPricing = async () => {
+      const openRouterConnections = selectedModels
+        .map(modelProfileId => {
+          const profile = profileById.get(modelProfileId);
+          const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
+          if (!connection || !connection.isActive || connection.providerId !== 'openrouter' || !connection.apiKey) {
+            return null;
+          }
+          return connection;
+        })
+        .filter(Boolean) as ProviderConnection[];
+
+      const uniqueConnections = Array.from(new Map(openRouterConnections.map(connection => [connection.id, connection])).values());
+      if (uniqueConnections.length === 0) {
+        setOpenRouterPriceByModel({});
+        return;
+      }
+
+      const pricingMap: Record<string, { input: number | null; output: number | null }> = {};
+
+      await Promise.all(uniqueConnections.map(async connection => {
+        try {
+          const response = await fetch('/api/openrouter/models', {
+            method: 'GET',
+            signal: controller.signal,
+            headers: {
+              Authorization: `Bearer ${connection.apiKey}`
+            }
+          });
+          if (!response.ok) return;
+          const payload = await response.json();
+          const models = Array.isArray(payload?.data) ? payload.data : [];
+          models.forEach((item: unknown) => {
+            const record = item as { id?: string; pricing?: { prompt?: string | number; completion?: string | number } };
+            if (!record.id) return;
+            const promptRaw = record.pricing?.prompt;
+            const completionRaw = record.pricing?.completion;
+            const promptPerToken = promptRaw === undefined ? null : Number(promptRaw);
+            const completionPerToken = completionRaw === undefined ? null : Number(completionRaw);
+            pricingMap[record.id] = {
+              input: promptPerToken !== null && Number.isFinite(promptPerToken) ? promptPerToken * 1_000_000 : null,
+              output: completionPerToken !== null && Number.isFinite(completionPerToken) ? completionPerToken * 1_000_000 : null
+            };
+          });
+        } catch {
+          // Ignore lookup errors and rely on manual pricing fallback.
+        }
+      }));
+
+      setOpenRouterPriceByModel(pricingMap);
+    };
+
+    loadOpenRouterPricing();
+    return () => controller.abort();
+  }, [showTokenEstimateDialog, selectedModels, profileById, connectionById]);
+
+  useEffect(() => {
+    if (availableModelProfiles.length === 0) return;
+    const allowed = new Set(availableModelProfiles.map(profile => profile.id));
+    setSelectedModels(prev => prev.filter(id => allowed.has(id)));
+  }, [availableModelProfiles]);
 
   const allowedDataFileExtensions = ['.json', '.csv', '.txt'];
 
@@ -260,6 +411,20 @@ const DataLabelingWorkspace = () => {
       setAvailableProviders(module.AVAILABLE_PROVIDERS);
     });
   }, []);
+
+  useEffect(() => {
+    const connections = modelManagementService.getConnections();
+    const profiles = modelManagementService.getProfiles();
+    setProviderConnections(connections);
+    setModelProfiles(profiles);
+    if (projectId) {
+      const policy = modelManagementService.getProjectPolicy(projectId);
+      setProjectModelPolicy(policy);
+      if (selectedModels.length === 0 && policy?.defaultModelProfileIds?.length) {
+        setSelectedModels(policy.defaultModelProfileIds);
+      }
+    }
+  }, [projectId, selectedModels.length]);
 
   // Load annotation config on mount (from localStorage or default)
   useEffect(() => {
@@ -713,24 +878,214 @@ const DataLabelingWorkspace = () => {
     return interpolated;
   };
 
-  // AI processing function for a single provider/model
-  const processWithModel = async (dataPoint: DataPoint, providerId: string, modelId: string): Promise<string> => {
+  // AI processing function for a single model profile
+  const processWithProfile = async (dataPoint: DataPoint, modelProfileId: string): Promise<string> => {
+    const profile = profileById.get(modelProfileId);
+    if (!profile) throw new Error(`Model profile ${modelProfileId} not found`);
+    const connection = connectionById.get(profile.providerConnectionId);
+    if (!connection || !connection.isActive) {
+      throw new Error(`Provider connection for ${profile.displayName} is missing or inactive`);
+    }
+
     const { getAIProvider } = await import('@/services/aiProviders');
-    const provider = getAIProvider(providerId);
+    const provider = getAIProvider(connection.providerId);
 
-    // Use upload prompt if available
-    const promptToUse = getInterpolatedPrompt(dataPoint.uploadPrompt || '', dataPoint.metadata);
+    const promptSeed = dataPoint.uploadPrompt || profile.defaultPrompt || '';
+    const promptToUse = getInterpolatedPrompt(promptSeed, dataPoint.metadata);
 
-    let key = '';
-    if (providerId === 'openai') key = apiKey.trim();
-    else if (providerId === 'anthropic') key = anthropicApiKey.trim();
-    else if (providerId === 'sambanova') key = sambaNovaApiKey.trim();
+    const key = connection.apiKey?.trim() || '';
+    const baseUrl = connection.baseUrl?.trim() || (connection.providerId === 'local' ? defaultLocalBaseUrl : undefined);
 
-    return await provider.processText(dataPoint.content, promptToUse, key, modelId, ollamaUrl, dataPoint.type);
+    return await provider.processText(
+      dataPoint.content,
+      promptToUse,
+      key,
+      profile.modelId,
+      baseUrl,
+      dataPoint.type,
+      {
+        temperature: profile.temperature,
+        maxTokens: profile.maxTokens
+      }
+    );
   };
 
+  const validateSelectedProfiles = () => {
+    if (selectedModels.length === 0) {
+      setUploadError('Please select at least one AI model in settings');
+      return null;
+    }
+
+    const selectedProfiles = selectedModels
+      .map(modelProfileId => profileById.get(modelProfileId))
+      .filter(Boolean) as ModelProfile[];
+
+    if (selectedProfiles.length === 0) {
+      setUploadError('Selected models are not available. Please update model settings.');
+      return null;
+    }
+
+    const providerRequirements = new Map(availableProviders.map(provider => [provider.id, provider.requiresApiKey]));
+    for (const profile of selectedProfiles) {
+      const connection = connectionById.get(profile.providerConnectionId);
+      if (!connection || !connection.isActive) {
+        setUploadError(`Connection for ${profile.displayName} is missing or inactive`);
+        return null;
+      }
+      if (providerRequirements.get(connection.providerId) && !connection.apiKey) {
+        setUploadError(`Missing API key for ${connection.name}`);
+        return null;
+      }
+    }
+
+    return selectedProfiles;
+  };
+
+  const getScopeDataPoints = (scope: 'all' | 'filtered' | 'current') => {
+    if (scope === 'filtered') return filteredDataPoints;
+    if (scope === 'current') return currentDataPoint ? [currentDataPoint] : [];
+    return dataPoints;
+  };
+
+  const getPendingDataPoints = (scopeDataPoints: DataPoint[], force: boolean) => {
+    return scopeDataPoints.filter(dp => {
+      if (force) return dp.status !== 'accepted' && dp.status !== 'edited';
+      return dp.status !== 'accepted' && dp.status !== 'edited'
+        && selectedModels.some(modelId => !dp.aiSuggestions || !dp.aiSuggestions[modelId]);
+    });
+  };
+
+  const estimateInputTokens = (scopeDataPoints: DataPoint[], force: boolean) => {
+    if (selectedModels.length === 0) {
+      return { inputTokens: 0, items: 0, models: 0, perModelTokens: {} };
+    }
+    const pendingDataPoints = getPendingDataPoints(scopeDataPoints, force);
+    let totalTokens = 0;
+    const perModelTokens: Record<string, number> = {};
+    for (const modelProfileId of selectedModels) {
+      const profile = profileById.get(modelProfileId);
+      const promptSeed = profile?.defaultPrompt || '';
+      const encoder = getEncoderForProfile(modelProfileId);
+      let modelTokens = 0;
+      for (const dp of pendingDataPoints) {
+        const promptToUse = getInterpolatedPrompt(dp.uploadPrompt || promptSeed || '', dp.metadata);
+        const combined = promptToUse ? `${promptToUse}\n\n${dp.content}` : dp.content;
+        const tokens = encoder.encode(combined || '').length;
+        totalTokens += tokens;
+        modelTokens += tokens;
+      }
+      perModelTokens[modelProfileId] = modelTokens;
+    }
+    return { inputTokens: totalTokens, items: pendingDataPoints.length, models: selectedModels.length, perModelTokens };
+  };
+
+  const requestProcessScope = (scope: 'all' | 'filtered' | 'current', force: boolean = false) => {
+    const selectedProfiles = validateSelectedProfiles();
+    if (!selectedProfiles) return;
+    const scopeDataPoints = getScopeDataPoints(scope);
+    const pendingDataPoints = getPendingDataPoints(scopeDataPoints, force);
+
+    if (!force) {
+      const alreadyProcessedCount = scopeDataPoints.filter(dp =>
+        (dp.status !== 'accepted' && dp.status !== 'edited') &&
+        selectedModels.some(modelId => dp.aiSuggestions && dp.aiSuggestions[modelId])
+      ).length;
+
+      if (alreadyProcessedCount > 0 && pendingDataPoints.length < scopeDataPoints.length && pendingDataPoints.length === 0) {
+        setReRunScope(scope);
+        setShowReRunConfirmation(true);
+        return;
+      }
+    }
+
+    if (pendingDataPoints.length === 0) {
+      toast({
+        title: "Nothing to process",
+        description: "All selected models have already been run for this scope."
+      });
+      return;
+    }
+
+    setPendingProcessScope(scope);
+    setPendingProcessForce(force);
+    setTokenEstimate(estimateInputTokens(scopeDataPoints, force));
+    setShowTokenEstimateDialog(true);
+  };
+
+  const getInputPriceForProfile = useCallback((modelProfileId: string) => {
+    const profile = profileById.get(modelProfileId);
+    if (profile?.inputPricePerMillion !== undefined) {
+      return { input: profile.inputPricePerMillion, source: 'override' as const };
+    }
+    const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
+    if (!connection || !profile) return null;
+
+    if (connection.providerId === 'openai' || connection.providerId === 'anthropic') {
+      const officialProviderPricing = officialProviderInputPricePerMillion[connection.providerId];
+      const officialPrice = officialProviderPricing?.[profile.modelId as keyof typeof officialProviderPricing];
+      if (officialPrice !== undefined) {
+        return { input: officialPrice, source: 'official' as const };
+      }
+    }
+
+    if (connection.providerId === 'openrouter') {
+      const openRouterPrice = openRouterPriceByModel[profile.modelId];
+      if (openRouterPrice?.input !== null && openRouterPrice?.input !== undefined) {
+        return { input: openRouterPrice.input, source: 'openrouter' as const };
+      }
+    }
+
+    return null;
+  }, [profileById, connectionById, officialProviderInputPricePerMillion, openRouterPriceByModel]);
+
+  const estimatedInputCost = useMemo(() => {
+    if (!tokenEstimate) return null;
+    let total = 0;
+    const missing: string[] = [];
+    let pricedCount = 0;
+
+    for (const [modelProfileId, tokens] of Object.entries(tokenEstimate.perModelTokens)) {
+      const priceInfo = getInputPriceForProfile(modelProfileId);
+      if (!priceInfo || priceInfo.input === null || priceInfo.input === undefined) {
+        missing.push(modelProfileId);
+        continue;
+      }
+      pricedCount += 1;
+      total += (tokens / 1_000_000) * priceInfo.input;
+    }
+
+    if (pricedCount === 0) return null;
+    return { total, missing };
+  }, [tokenEstimate, getInputPriceForProfile]);
+
+  const perModelCostBreakdown = useMemo(() => {
+    if (!tokenEstimate) return [];
+    return Object.entries(tokenEstimate.perModelTokens).map(([modelProfileId, tokens]) => {
+      const priceInfo = getInputPriceForProfile(modelProfileId);
+      const cost = priceInfo?.input != null ? (tokens / 1_000_000) * priceInfo.input : null;
+      const profile = profileById.get(modelProfileId);
+      const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
+      const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
+      const legacyParts = modelProfileId.includes(':') ? modelProfileId.split(':') : null;
+      const legacyProvider = legacyParts ? availableProviders.find(p => p.id === legacyParts[0]) : null;
+      const legacyModel = legacyProvider?.models.find(m => m.id === legacyParts?.[1]);
+      const displayName =
+        profile?.displayName
+        || (legacyModel ? `${legacyProvider?.name} - ${legacyModel.name}` : legacyProvider?.name)
+        || provider?.name
+        || modelProfileId;
+      return {
+        id: modelProfileId,
+        displayName,
+        tokens,
+        cost,
+        source: priceInfo?.source ?? 'missing'
+      };
+    });
+  }, [tokenEstimate, getInputPriceForProfile, profileById, connectionById, availableProviders]);
+
   // Process all data points with AI using batch processing
-  const processAllWithAI = async (force: boolean = false) => {
+  const processScopeWithAI = async (scopeDataPoints: DataPoint[], force: boolean = false) => {
     if (!canProcessAI) {
       toast({
         title: "Permission denied",
@@ -738,59 +1093,22 @@ const DataLabelingWorkspace = () => {
       });
       return;
     }
-    await logProjectAction('ai_process', `Models: ${selectedModels.join(', ')}`);
-    if (selectedModels.length === 0) {
-      setUploadError('Please select at least one AI model in settings');
-      return;
-    }
+    const selectedProfiles = validateSelectedProfiles();
+    if (!selectedProfiles) return;
+    await logProjectAction('ai_process', `Models: ${selectedProfiles.map(p => p.displayName).join(', ')}`);
 
-    // Check keys
-    const providersUsed = new Set(selectedModels.map(m => m.split(':')[0]));
-    if (providersUsed.has('openai') && !apiKey) {
-      setUploadError('Please set your OpenAI API key in settings');
-      return;
-    }
-    if (providersUsed.has('anthropic') && !anthropicApiKey) {
-      setUploadError('Please set your Anthropic API key in settings');
-      return;
-    }
-    if (providersUsed.has('sambanova') && !sambaNovaApiKey) {
-      setUploadError('Please set your SambaNova API key in settings');
-      return;
-    }
-
-    // Identify data points that need processing for the selected models
-    // We want to process any data point that is missing a suggestion for ANY of the selected models
-    // UNLESS we are forcing a re-run, in which case we process everything
-    const pendingDataPoints = dataPoints.filter(dp => {
-      // If force is true, we re-process everything that isn't manually finalized (accepted/edited)
-      if (force) return dp.status !== 'accepted' && dp.status !== 'edited';
-
-      // Otherwise, check if any selected model is missing
-      return selectedModels.some(modelId => !dp.aiSuggestions || !dp.aiSuggestions[modelId]);
-    });
+    const pendingDataPoints = getPendingDataPoints(scopeDataPoints, force);
 
     // If not forcing, check if we are about to re-run any models on already processed items
     // This happens if the user selects a model that has already been run on some pending items
     if (!force) {
-      const alreadyProcessedCount = dataPoints.filter(dp =>
+      const alreadyProcessedCount = scopeDataPoints.filter(dp =>
         (dp.status !== 'accepted' && dp.status !== 'edited') &&
         selectedModels.some(modelId => dp.aiSuggestions && dp.aiSuggestions[modelId])
       ).length;
 
-      if (alreadyProcessedCount > 0 && pendingDataPoints.length < dataPoints.length) {
-        // We have some overlap. The user might want to re-run or just fill in gaps.
-        // But wait, the logic above (pendingDataPoints) ONLY selects items that are MISSING suggestions.
-        // So pendingDataPoints will NOT include items that already have ALL selected models.
-
-        // However, if the user explicitly wants to RE-RUN a model they already ran, 
-        // they might be confused why nothing happens if they select ONLY that model.
-
+      if (alreadyProcessedCount > 0 && pendingDataPoints.length < scopeDataPoints.length) {
         if (pendingDataPoints.length === 0) {
-          // Nothing to do based on "missing" logic. 
-          // This implies all selected models have been run on all available items.
-          // Ask user if they want to re-run.
-          setPendingProcessingModels(selectedModels);
           setShowReRunConfirmation(true);
           return;
         }
@@ -805,8 +1123,8 @@ const DataLabelingWorkspace = () => {
     setIsProcessing(true);
 
     try {
-      const { getAIProvider } = await import('@/services/aiProviders');
       let capturedError: Error | null = null;
+      let outputTokens = 0;
 
       const batchSize = 20; // Increased batch size for faster throughput
       const concurrentBatches = 3; // Process this many batches concurrently
@@ -821,52 +1139,32 @@ const DataLabelingWorkspace = () => {
 
       setProcessingProgress({ current: 0, total: pendingDataPoints.length });
 
-      // We need to work with the latest state
-      let currentDataPoints = [...dataPoints];
-
       // Helper function to process a single batch
       const processBatch = async (batch: typeof pendingDataPoints, batchIndex: number) => {
         const batchPromises: Promise<void>[] = [];
+        const batchResults: { id: string; compositeId: string; result: string }[] = [];
 
         // Process ALL selected models for the batch in PARALLEL
-        for (const compositeId of selectedModels) {
-          const [providerId, modelId] = compositeId.split(':');
+        for (const modelProfileId of selectedModels) {
+          const profile = profileById.get(modelProfileId);
+          if (!profile) continue;
 
           // Filter items for this specific model
           const itemsToProcessForModel = force
             ? batch
-            : batch.filter(dp => !dp.aiSuggestions || !dp.aiSuggestions[compositeId]);
+            : batch.filter(dp => !dp.aiSuggestions || !dp.aiSuggestions[modelProfileId]);
 
           if (itemsToProcessForModel.length === 0) continue;
-
-          const provider = getAIProvider(providerId);
-
-          let key = '';
-          if (providerId === 'openai') key = apiKey.trim();
-          else if (providerId === 'anthropic') key = anthropicApiKey.trim();
-          else if (providerId === 'sambanova') key = sambaNovaApiKey.trim();
 
           // Create promises for each item for this model
           const modelPromises = itemsToProcessForModel.map(async (dp) => {
             try {
-              const result = await processWithModel(dp, providerId, modelId);
-
-              // Update the local state immediately
-              const originalIndex = currentDataPoints.findIndex(p => p.id === dp.id);
-              if (originalIndex !== -1) {
-                const currentSuggestions = currentDataPoints[originalIndex].aiSuggestions || {};
-                currentDataPoints[originalIndex] = {
-                  ...currentDataPoints[originalIndex],
-                  aiSuggestions: {
-                    ...currentSuggestions,
-                    [compositeId]: result
-                  },
-                  status: 'ai_processed',
-                  confidence: Math.random() * 0.3 + 0.7
-                };
-              }
+              const result = await runWithInflightLimit(() =>
+                processWithProfile(dp, modelProfileId)
+              );
+              batchResults.push({ id: dp.id, compositeId: modelProfileId, result });
             } catch (err) {
-              console.error(`Error processing ${dp.id} with ${compositeId}:`, err);
+              console.error(`Error processing ${dp.id} with ${profile.displayName}:`, err);
               if (!capturedError) {
                 capturedError = err instanceof Error ? err : new Error(String(err));
               }
@@ -878,6 +1176,35 @@ const DataLabelingWorkspace = () => {
 
         // Wait for ALL requests in this batch to complete
         await Promise.all(batchPromises);
+
+        if (batchResults.length > 0) {
+          for (const item of batchResults) {
+            const encoder = getEncoderForProfile(item.compositeId);
+            outputTokens += encoder.encode(item.result || '').length;
+          }
+          const resultsById = new Map<string, Record<string, string>>();
+          for (const item of batchResults) {
+            const entry = resultsById.get(item.id) || {};
+            entry[item.compositeId] = item.result;
+            resultsById.set(item.id, entry);
+          }
+
+          const merged = dataPointsRef.current.map(dp => {
+            const updates = resultsById.get(dp.id);
+            if (!updates) return dp;
+            const aiSuggestions = { ...(dp.aiSuggestions || {}), ...updates };
+            const shouldUpdateStatus = dp.status !== 'accepted' && dp.status !== 'edited';
+            return {
+              ...dp,
+              aiSuggestions,
+              status: shouldUpdateStatus ? 'ai_processed' : dp.status,
+              confidence: dp.confidence
+            };
+          });
+
+          dataPointsRef.current = merged;
+          setDataPoints(merged);
+        }
         return batchIndex;
       };
 
@@ -887,9 +1214,6 @@ const DataLabelingWorkspace = () => {
         const windowPromises = batchWindow.map((batch, idx) => processBatch(batch, i + idx));
 
         await Promise.all(windowPromises);
-
-        // Update UI after each window completes
-        setDataPoints([...currentDataPoints]);
 
         // Update progress
         const processed = Math.min((i + concurrentBatches) * batchSize, pendingDataPoints.length);
@@ -902,7 +1226,12 @@ const DataLabelingWorkspace = () => {
       if (capturedError) {
         throw capturedError;
       }
-
+      if (outputTokens > 0) {
+        toast({
+          title: "AI processing completed",
+          description: `Estimated output tokens: ${outputTokens.toLocaleString()}`
+        });
+      }
     } catch (error) {
       console.error('Error in batch processing:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -918,6 +1247,7 @@ const DataLabelingWorkspace = () => {
       setProcessingProgress({ current: 0, total: 0 });
     }
   };
+
 
   // Navigation handlers
 
@@ -1197,15 +1527,11 @@ const DataLabelingWorkspace = () => {
     }
   }, [isEditMode, currentIndex]);
 
-  // Save API keys to localStorage
+  // Save HF credentials to localStorage
   useEffect(() => {
-    if (apiKey) localStorage.setItem('databayt-api-key', apiKey);
-    if (anthropicApiKey) localStorage.setItem('databayt-anthropic-key', anthropicApiKey);
-    if (sambaNovaApiKey) localStorage.setItem('databayt-sambanova-key', sambaNovaApiKey);
-    if (ollamaUrl) localStorage.setItem('databayt-ollama-url', ollamaUrl);
     if (hfUsername) localStorage.setItem('databayt-hf-username', hfUsername);
     if (hfToken) localStorage.setItem('databayt-hf-token', hfToken);
-  }, [apiKey, anthropicApiKey, sambaNovaApiKey, ollamaUrl, hfUsername, hfToken]);
+  }, [hfUsername, hfToken]);
 
 
   // Keyboard shortcuts
@@ -1244,7 +1570,7 @@ const DataLabelingWorkspace = () => {
         case 'p':
           e.preventDefault();
           if (!isProcessing && dataPoints.length > 0) {
-            processAllWithAI();
+            requestProcessScope('current');
           }
           break;
         case 's':
@@ -1442,115 +1768,58 @@ const DataLabelingWorkspace = () => {
                       <Settings className="w-4 h-4" />
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>Configuration</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-6">
-                      <div>
-                        <Label className="mb-2 block">Model Selection</Label>
-                        <div className="space-y-4">
-                          {availableProviders.map(provider => (
-                            <div key={provider.id} className="border rounded-lg p-3">
-                              <div className="font-medium mb-2 flex items-center gap-2">
-                                {provider.name}
-                                <span className="text-xs text-muted-foreground font-normal">
-                                  ({provider.description})
-                                </span>
-                              </div>
-                              <div className="pl-2 space-y-2">
-                                {provider.models.map(model => {
-                                  const compositeId = `${provider.id}:${model.id}`;
-                                  return (
-                                    <div key={model.id} className="flex items-center space-x-2">
-                                      <Checkbox
-                                        id={compositeId}
-                                        checked={selectedModels.includes(compositeId)}
-                                        onCheckedChange={(checked) => {
-                                          if (checked) {
-                                            setSelectedModels([...selectedModels, compositeId]);
-                                          } else {
-                                            setSelectedModels(selectedModels.filter(id => id !== compositeId));
-                                          }
-                                        }}
-                                      />
-                                      <Label htmlFor={compositeId} className="text-sm font-normal cursor-pointer">
-                                        {model.name}
-                                      </Label>
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                    <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Model Selection</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-6">
+                        <div>
+                          <Label className="mb-2 block">Available Model Profiles</Label>
+                          {availableModelProfiles.length === 0 ? (
+                            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                              No model profiles assigned to this project yet.
                             </div>
-                          ))}
+                          ) : (
+                            <div className="space-y-2">
+                              {availableModelProfiles.map(profile => {
+                                const connection = connectionById.get(profile.providerConnectionId);
+                                const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
+                                return (
+                                  <div key={profile.id} className="flex items-center space-x-2">
+                                    <Checkbox
+                                      id={profile.id}
+                                      checked={selectedModels.includes(profile.id)}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          setSelectedModels([...selectedModels, profile.id]);
+                                        } else {
+                                          setSelectedModels(selectedModels.filter(id => id !== profile.id));
+                                        }
+                                      }}
+                                    />
+                                    <Label htmlFor={profile.id} className="text-sm font-normal cursor-pointer">
+                                      {profile.displayName}
+                                      {provider && (
+                                        <span className="ml-2 text-xs text-muted-foreground">
+                                          {provider.name}
+                                        </span>
+                                      )}
+                                    </Label>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
+
+                        {canProcessAI && (
+                          <Button variant="outline" onClick={() => navigate('/model-management')}>
+                            Manage Model Profiles
+                          </Button>
+                        )}
                       </div>
-
-                      <div className="space-y-4">
-                        {selectedModels.some(m => m.startsWith('openai:')) && (
-                          <div>
-                            <Label htmlFor="apikey" className="flex items-center gap-2">
-                              <Key className="w-4 h-4" />
-                              OpenAI API Key
-                            </Label>
-                            <Input
-                              id="apikey"
-                              type="password"
-                              value={apiKey}
-                              onChange={(e) => {
-                                setApiKey(e.target.value);
-                              }}
-                              placeholder="sk-..."
-                              className="mt-1.5"
-                            />
-                          </div>
-                        )}
-
-                        {selectedModels.some(m => m.startsWith('anthropic:')) && (
-                          <div>
-                            <Label htmlFor="anthropic-key" className="flex items-center gap-2">
-                              <Key className="w-4 h-4" />
-                              Anthropic API Key
-                            </Label>
-                            <Input
-                              id="anthropic-key"
-                              type="password"
-                              value={anthropicApiKey}
-                              onChange={(e) => {
-                                setAnthropicApiKey(e.target.value);
-                              }}
-                              placeholder="sk-ant-..."
-                              className="mt-1.5"
-                            />
-                          </div>
-                        )}
-
-                        {selectedModels.some(m => m.startsWith('sambanova:')) && (
-                          <div>
-                            <Label htmlFor="sambanova-key" className="flex items-center gap-2">
-                              <Key className="w-4 h-4" />
-                              SambaNova API Key
-                            </Label>
-                            <Input
-                              id="sambanova-key"
-                              type="password"
-                              value={sambaNovaApiKey}
-                              onChange={(e) => {
-                                setSambaNovaApiKey(e.target.value);
-                              }}
-                              placeholder="Enter SambaNova API Key"
-                              className="mt-1.5"
-                            />
-                          </div>
-                        )}
-
-                        <p className="text-xs text-muted-foreground">
-                          API keys are stored locally in your browser.
-                        </p>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                    </DialogContent>
+                  </Dialog>
 
                 {/* Upload Prompt Dialog */}
                 <Dialog open={showUploadPrompt} onOpenChange={setShowUploadPrompt}>
@@ -1769,9 +2038,82 @@ const DataLabelingWorkspace = () => {
                       </Button>
                       <Button onClick={() => {
                         setShowReRunConfirmation(false);
-                        processAllWithAI(true);
+                        requestProcessScope(reRunScope, true);
                       }}>
                         Yes, Re-run
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Token Estimate Dialog */}
+                <Dialog open={showTokenEstimateDialog} onOpenChange={setShowTokenEstimateDialog}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Confirm AI Processing</DialogTitle>
+                      <DialogDescription>
+                        Review the estimated input tokens before processing.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span>Scope</span>
+                        <span className="font-medium capitalize">{pendingProcessScope}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Items</span>
+                        <span className="font-medium">{tokenEstimate?.items ?? 0}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Models</span>
+                        <span className="font-medium">{tokenEstimate?.models ?? 0}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Estimated input tokens</span>
+                        <span className="font-medium">{(tokenEstimate?.inputTokens ?? 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Estimated input cost</span>
+                        <span className="font-medium">
+                          {estimatedInputCost ? `$${estimatedInputCost.total.toFixed(4)}` : 'Unavailable'}
+                        </span>
+                      </div>
+                      {perModelCostBreakdown.length > 0 && (
+                        <div className="rounded-md border border-border/60 p-3 text-xs space-y-2">
+                          <div className="font-medium text-foreground">Per-model breakdown</div>
+                          {perModelCostBreakdown.map(item => (
+                            <div key={item.id} className="flex items-center justify-between gap-3">
+                              <span className="text-muted-foreground truncate">{item.displayName}</span>
+                              <span className="font-medium whitespace-nowrap">
+                                {item.cost === null ? 'N/A' : `$${item.cost.toFixed(4)}`} - {item.tokens.toLocaleString()} tok
+                                {item.source !== 'missing' ? ` (${item.source})` : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {estimatedInputCost?.missing?.length ? (
+                        <p className="text-xs text-muted-foreground">
+                          Pricing unavailable for {estimatedInputCost.missing.length} model(s).
+                        </p>
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        OpenAI and Anthropic use built-in official pricing. OpenRouter pricing is loaded from OpenRouter API. Other providers require manual profile pricing.
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Token counts are estimates and may differ from provider billing.
+                      </p>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowTokenEstimateDialog(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={() => {
+                        setShowTokenEstimateDialog(false);
+                        setReRunScope(pendingProcessScope);
+                        processScopeWithAI(getScopeDataPoints(pendingProcessScope), pendingProcessForce);
+                      }}>
+                        Proceed
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -1883,18 +2225,6 @@ const DataLabelingWorkspace = () => {
                         />
                         <p className="text-xs text-muted-foreground">
                           Get your token from <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" className="underline text-primary">huggingface.co/settings/tokens</a> (must have WRITE permissions).
-                        </p>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="ollama-url">Ollama URL (Local)</Label>
-                        <Input
-                          id="ollama-url"
-                          placeholder="http://localhost:11434"
-                          value={ollamaUrl}
-                          onChange={(e) => setOllamaUrl(e.target.value)}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Default is http://localhost:11434. Change if running on a different port or machine.
                         </p>
                       </div>
                       <div className="space-y-2">
@@ -2224,15 +2554,21 @@ const DataLabelingWorkspace = () => {
 
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {/* AI Provider Cards */}
-                                {Object.entries(currentDataPoint?.aiSuggestions || {}).map(([compositeId, suggestion]) => {
-                                  const [providerId, modelId] = compositeId.includes(':') ? compositeId.split(':') : [compositeId, ''];
-                                  const provider = availableProviders.find(p => p.id === providerId);
-                                  const model = provider?.models.find(m => m.id === modelId);
-
-                                  const displayName = model ? `${provider?.name} - ${model.name}` : (provider?.name || providerId);
+                                {Object.entries(currentDataPoint?.aiSuggestions || {}).map(([modelProfileId, suggestion]) => {
+                                  const profile = profileById.get(modelProfileId);
+                                  const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
+                                  const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
+                                  const legacyParts = modelProfileId.includes(':') ? modelProfileId.split(':') : null;
+                                  const legacyProvider = legacyParts ? availableProviders.find(p => p.id === legacyParts[0]) : null;
+                                  const legacyModel = legacyProvider?.models.find(m => m.id === legacyParts?.[1]);
+                                  const displayName =
+                                    profile?.displayName
+                                    || (legacyModel ? `${legacyProvider?.name} - ${legacyModel.name}` : legacyProvider?.name)
+                                    || provider?.name
+                                    || modelProfileId;
 
                                   return (
-                                    <Card key={compositeId} className="p-4 border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/10 transition-all hover:shadow-md">
+                                    <Card key={modelProfileId} className="p-4 border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/10 transition-all hover:shadow-md">
                                       <div className="flex items-center justify-between mb-3">
                                         <Badge variant="outline" className="bg-background">
                                           {displayName}
@@ -2266,11 +2602,11 @@ const DataLabelingWorkspace = () => {
                                           {[1, 2, 3, 4, 5].map((star) => (
                                             <button
                                               key={star}
-                                              onClick={() => handleRateModel(compositeId, star)}
+                                              onClick={() => handleRateModel(modelProfileId, star)}
                                               className="focus:outline-none p-0.5 hover:scale-110 transition-transform"
                                             >
                                               <Star
-                                                className={`w-4 h-4 ${(currentDataPoint.ratings?.[compositeId] || 0) >= star
+                                                className={`w-4 h-4 ${(currentDataPoint.ratings?.[modelProfileId] || 0) >= star
                                                   ? "fill-yellow-400 text-yellow-400"
                                                   : "text-muted-foreground/30 hover:text-yellow-400"
                                                   }`}
@@ -2787,22 +3123,19 @@ const DataLabelingWorkspace = () => {
                     <div className="space-y-2">
                       <Button
                         className="w-full"
-                        onClick={() => processAllWithAI(false)}
-                        disabled={!canProcessAI || isProcessing || dataPoints.length === 0}
+                        onClick={() => requestProcessScope('current')}
+                        disabled={!canProcessAI || isProcessing || !currentDataPoint}
                         title={!canProcessAI ? "Requires manager or admin role" : undefined}
                       >
                         {isProcessing ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            {processingProgress.total > 0
-                              ? `Processing... (${processingProgress.current}/${processingProgress.total})`
-                              : 'Processing...'
-                            }
+                            Processing...
                           </>
                         ) : (
                           <>
                             <Brain className="w-4 h-4 mr-2" />
-                            Process All with AI
+                            Process Current
                           </>
                         )}
                       </Button>
@@ -2974,7 +3307,7 @@ const DataLabelingWorkspace = () => {
                       </Button>
                       <Button
                         className="w-full"
-                        onClick={() => processAllWithAI(false)}
+                        onClick={() => requestProcessScope('all')}
                         disabled={!canProcessAI || isProcessing || dataPoints.length === 0}
                         title={!canProcessAI ? "Requires manager or admin role" : undefined}
                       >
@@ -2989,6 +3322,25 @@ const DataLabelingWorkspace = () => {
                           <>
                             <Brain className="w-4 h-4 mr-2" />
                             Process All with AI
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => requestProcessScope('filtered')}
+                        disabled={!canProcessAI || isProcessing || filteredDataPoints.length === 0}
+                        title={!canProcessAI ? "Requires manager or admin role" : undefined}
+                      >
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <Brain className="w-4 h-4 mr-2" />
+                            Process Filtered with AI
                           </>
                         )}
                       </Button>
