@@ -75,7 +75,7 @@ type AnnotationStatusFilter = 'all' | 'has_final' | DataPoint['status'];
 const DataLabelingWorkspace = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, getUserById } = useAuth();
   const annotatorMeta = currentUser ? { id: currentUser.id, name: currentUser.username } : undefined;
 
   // Use custom hook for core logic
@@ -155,6 +155,7 @@ const DataLabelingWorkspace = () => {
   const isManagerForProject = currentUser?.roles?.includes("manager") && projectAccess?.managerId === currentUser.id;
   const isAnnotatorForProject = currentUser?.roles?.includes("annotator") && (projectAccess?.annotatorIds || []).includes(currentUser.id);
   const canViewProject = !!currentUser && (isAdmin || isManagerForProject || isAnnotatorForProject);
+  const canViewIaaDetails = isAdmin || isManagerForProject;
   const canUpload = isAdmin || isManagerForProject;
   const canProcessAI = isAdmin || isManagerForProject;
   const canExport = isAdmin || isManagerForProject;
@@ -539,9 +540,111 @@ const DataLabelingWorkspace = () => {
     return Math.round((totalCompleted / annotationStats.sessionTime) * 3600); // per hour
   };
 
+  const getAssignmentForCurrentUser = useCallback((dataPoint: DataPoint) => {
+    if (!currentUser) return undefined;
+    return dataPoint.assignments?.find(a => a.annotatorId === currentUser.id);
+  }, [currentUser]);
+
+
+  const getVisibleFinalAnnotation = useCallback((dataPoint?: DataPoint) => {
+    if (!dataPoint) return '';
+    if (isAnnotatorForProject) {
+      const assignment = getAssignmentForCurrentUser(dataPoint);
+      return assignment?.value || '';
+    }
+    if (dataPoint.assignments && dataPoint.assignments.length > 0) {
+      const values = dataPoint.assignments
+        .map(assignment => {
+          const value = assignment.value?.trim();
+          if (!value) return null;
+          const user = getUserById(assignment.annotatorId);
+          const name = user?.username || assignment.annotatorId;
+          return `${name}: ${value}`;
+        })
+        .filter((value): value is string => !!value);
+      if (values.length > 0) {
+        return values.join('\n');
+      }
+    }
+    return dataPoint.finalAnnotation || '';
+  }, [getAssignmentForCurrentUser, getUserById, isAnnotatorForProject]);
+
+  const getVisibleDraftAnnotation = useCallback((dataPoint?: DataPoint) => {
+    if (!dataPoint) return '';
+    if (isAnnotatorForProject && currentUser) {
+      return dataPoint.annotationDrafts?.[currentUser.id] || '';
+    }
+    return dataPoint.humanAnnotation || '';
+  }, [currentUser, isAnnotatorForProject]);
+
+  const getIaaRequiredCount = useCallback((dataPoint?: DataPoint) => {
+    if (!dataPoint?.isIAA) return 1;
+    return Math.max(2, Math.floor(dataPoint.iaaRequiredCount ?? projectAccess?.iaaConfig?.annotatorsPerIAAItem ?? 2));
+  }, [projectAccess?.iaaConfig?.annotatorsPerIAAItem]);
+
+  const getDoneCount = useCallback((dataPoint?: DataPoint) => {
+    if (!dataPoint) return 0;
+    const doneAssignments = (dataPoint.assignments || []).filter(a => a.status === 'done' && (a.value ?? '').trim().length > 0);
+    if (doneAssignments.length > 0) return doneAssignments.length;
+    if ((dataPoint.finalAnnotation || '').trim().length > 0) return 1;
+    return 0;
+  }, []);
+
+  const getPrimaryAnnotatorName = useCallback((dataPoint?: DataPoint) => {
+    if (!dataPoint?.assignments || dataPoint.assignments.length === 0) return '';
+    const done = dataPoint.assignments.find(a => a.status === 'done' && (a.value ?? '').trim().length > 0);
+    if (!done) return '';
+    const user = getUserById(done.annotatorId);
+    return user?.username || done.annotatorId;
+  }, [getUserById]);
+
+  const getDoneAnnotatorNames = useCallback((dataPoint?: DataPoint) => {
+    if (!dataPoint?.assignments || dataPoint.assignments.length === 0) return [];
+    const names = dataPoint.assignments
+      .filter(a => a.status === 'done' && (a.value ?? '').trim().length > 0)
+      .map(a => {
+        const user = getUserById(a.annotatorId);
+        return user?.username || a.annotatorId;
+      });
+    return Array.from(new Set(names));
+  }, [getUserById]);
+
+  const isCompleteByRequirement = useCallback((dataPoint?: DataPoint) => {
+    if (!dataPoint) return false;
+    return getDoneCount(dataPoint) >= getIaaRequiredCount(dataPoint);
+  }, [getDoneCount, getIaaRequiredCount]);
+
+  const getDisplayStatus = useCallback((dataPoint: DataPoint) => {
+    if (isAnnotatorForProject) {
+      const assignment = getAssignmentForCurrentUser(dataPoint);
+      if (assignment?.status === 'done') {
+        return { code: 'accepted' as const, label: 'done' };
+      }
+      if (!dataPoint.isIAA && getDoneCount(dataPoint) > 0) {
+        return { code: 'accepted' as const, label: 'done' };
+      }
+      return { code: 'pending' as const, label: 'pending' };
+    }
+    const complete = isCompleteByRequirement(dataPoint);
+    return complete
+      ? { code: 'accepted' as const, label: 'done' }
+      : { code: 'pending' as const, label: 'pending' };
+  }, [getAssignmentForCurrentUser, getDoneCount, isAnnotatorForProject, isCompleteByRequirement]);
+
+  const getStatusVariant = (statusCode: DataPoint['status']) => {
+    if (statusCode === 'accepted') return 'default';
+    if (statusCode === 'edited') return 'secondary';
+    if (statusCode === 'ai_processed') return 'outline';
+    if (statusCode === 'partial') return 'outline';
+    if (statusCode === 'needs_adjudication') return 'destructive';
+    return 'destructive';
+  };
+
   const getAnnotationPreview = (dataPoint: DataPoint) => {
-    if (dataPoint.finalAnnotation) return { label: 'Final', text: dataPoint.finalAnnotation };
-    if (dataPoint.humanAnnotation) return { label: 'Human', text: dataPoint.humanAnnotation };
+    const visibleFinal = getVisibleFinalAnnotation(dataPoint);
+    const visibleDraft = getVisibleDraftAnnotation(dataPoint);
+    if (visibleFinal) return { label: 'Final', text: visibleFinal };
+    if (visibleDraft) return { label: 'Human', text: visibleDraft };
     if (dataPoint.originalAnnotation) return { label: 'Original', text: dataPoint.originalAnnotation };
     if (dataPoint.customField) return { label: dataPoint.customFieldName || 'Custom', text: dataPoint.customField };
     const aiSuggestion = Object.values(dataPoint.aiSuggestions || {})[0];
@@ -692,6 +795,62 @@ const DataLabelingWorkspace = () => {
   };
 
   // Process the file after prompt is confirmed
+  const hashStringToSeed = (value: string) => {
+    let hash = 0;
+    for (let i = 0; i < value.length; i += 1) {
+      hash = (hash << 5) - hash + value.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  };
+
+  const mulberry32 = (seed: number) => {
+    let t = seed;
+    return () => {
+      t += 0x6D2B79F5;
+      let r = Math.imul(t ^ (t >>> 15), t | 1);
+      r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+
+  const shuffleWithRng = <T,>(items: T[], rng: () => number) => {
+    const arr = [...items];
+    for (let i = arr.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(rng() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+
+  const applyAssignmentsToDataPoints = (points: DataPoint[]) => {
+    const config = projectAccess?.iaaConfig;
+    const enabled = !!config?.enabled && (config.portionPercent ?? 0) > 0;
+    const portion = Math.max(0, Math.min(100, Math.floor(config?.portionPercent ?? 0)));
+    const annotatorsPerItem = Math.max(2, Math.floor(config?.annotatorsPerIAAItem ?? 2));
+    const seedBase = (config?.seed ?? 0) + hashStringToSeed(projectId ?? '');
+    const rng = mulberry32(seedBase);
+
+    const total = points.length;
+    const iaaCount = enabled ? Math.min(total, Math.ceil((total * portion) / 100)) : 0;
+    const indices = shuffleWithRng(Array.from({ length: total }, (_, i) => i), rng);
+    const iaaSet = new Set(indices.slice(0, iaaCount));
+
+    return points.map((dp, index) => {
+      const isIAA = enabled && iaaSet.has(index);
+      return {
+        ...dp,
+        isIAA,
+        iaaRequiredCount: isIAA ? annotatorsPerItem : 1,
+        assignments: [],
+        status: 'pending' as const,
+        finalAnnotation: '',
+        humanAnnotation: '',
+        annotationDrafts: {}
+      };
+    });
+  };
+
   const processFileUpload = async (file: File, prompt: string, customField: string) => {
     setIsUploading(true);
     setShowUploadPrompt(false);
@@ -840,7 +999,8 @@ const DataLabelingWorkspace = () => {
         }));
       }
 
-      loadNewData(parsedData);
+      const assignedData = applyAssignmentsToDataPoints(parsedData);
+      loadNewData(assignedData);
       await logProjectAction('upload', `File: ${file.name}, Items: ${parsedData.length}`);
     } catch (error) {
       const errorMessage = `Failed to parse file: ${error instanceof Error ? error.message : 'Unknown error'}`;
@@ -1193,7 +1353,7 @@ const DataLabelingWorkspace = () => {
             const updates = resultsById.get(dp.id);
             if (!updates) return dp;
             const aiSuggestions = { ...(dp.aiSuggestions || {}), ...updates };
-            const shouldUpdateStatus = dp.status !== 'accepted' && dp.status !== 'edited';
+            const shouldUpdateStatus = dp.status === 'pending' || dp.status === 'ai_processed' || dp.status === 'rejected';
             return {
               ...dp,
               aiSuggestions,
@@ -1255,11 +1415,19 @@ const DataLabelingWorkspace = () => {
   // Annotation handlers
 
 
-  // Derived state for completed count
-  const completedCount = dataPoints.filter(dp => dp.status === 'accepted' || dp.status === 'edited').length;
-
   const normalizedAnnotationQuery = useMemo(() => annotationQuery.trim().toLowerCase(), [annotationQuery]);
-  const annotationEntries = useMemo(() => dataPoints.map((dataPoint, index) => ({ dataPoint, index })), [dataPoints]);
+  const annotationEntries = useMemo(() => {
+    return dataPoints.map((dataPoint, index) => ({ dataPoint, index }));
+  }, [dataPoints]);
+
+  // Derived state for completed count
+  const completedCount = useMemo(
+    () => annotationEntries.filter(({ dataPoint }) => {
+      const code = getDisplayStatus(dataPoint).code;
+      return code === 'accepted' || code === 'edited';
+    }).length,
+    [annotationEntries, getDisplayStatus]
+  );
 
   const matchesMetadataFilters = (
     dataPoint: DataPoint,
@@ -1276,9 +1444,10 @@ const DataLabelingWorkspace = () => {
 
   const statusAndQueryFilteredEntries = useMemo(() => {
     return annotationEntries.filter(({ dataPoint }) => {
+      const displayStatus = getDisplayStatus(dataPoint);
       if (annotationStatusFilter === 'has_final') {
-        if (!dataPoint.finalAnnotation) return false;
-      } else if (annotationStatusFilter !== 'all' && dataPoint.status !== annotationStatusFilter) {
+        if (!getVisibleFinalAnnotation(dataPoint)) return false;
+      } else if (annotationStatusFilter !== 'all' && displayStatus.code !== annotationStatusFilter) {
         return false;
       }
 
@@ -1286,8 +1455,8 @@ const DataLabelingWorkspace = () => {
 
       const searchText = [
         dataPoint.content,
-        dataPoint.finalAnnotation,
-        dataPoint.humanAnnotation,
+        getVisibleFinalAnnotation(dataPoint),
+        getVisibleDraftAnnotation(dataPoint),
         dataPoint.originalAnnotation,
         dataPoint.customField,
         ...(dataPoint.metadata ? Object.values(dataPoint.metadata) : []),
@@ -1300,7 +1469,7 @@ const DataLabelingWorkspace = () => {
 
       return searchText.includes(normalizedAnnotationQuery);
     });
-  }, [annotationEntries, annotationStatusFilter, normalizedAnnotationQuery]);
+  }, [annotationEntries, annotationStatusFilter, normalizedAnnotationQuery, getDisplayStatus, getVisibleFinalAnnotation, getVisibleDraftAnnotation]);
 
   const eligibleMetadataKeys = useMemo(() => {
     const keyValues = annotationEntries.reduce((acc, { dataPoint }) => {
@@ -1397,14 +1566,25 @@ const DataLabelingWorkspace = () => {
     [filteredAnnotationEntries]
   );
   const pendingIndices = useMemo(
-    () => dataPoints.map((dp, index) => (dp.status === 'pending' ? index : -1)).filter(index => index >= 0),
-    [dataPoints]
+    () => annotationEntries.map(({ dataPoint, index }) => (getDisplayStatus(dataPoint).code === 'pending' ? index : -1)).filter(index => index >= 0),
+    [annotationEntries, getDisplayStatus]
   );
+
+  const currentAssignment = currentDataPoint ? getAssignmentForCurrentUser(currentDataPoint) : undefined;
+  const canAnnotateCurrent = !!currentDataPoint && (!isCompleteByRequirement(currentDataPoint) || !!currentAssignment);
+  const annotatorCanViewCompleted = !!currentDataPoint
+    && isCompleteByRequirement(currentDataPoint)
+    && (
+      !currentDataPoint.assignments
+      || currentDataPoint.assignments.length === 0
+      || getDoneCount(currentDataPoint) >= currentDataPoint.assignments.length
+    );
   const scopedPosition = useMemo(
     () => filteredNavigationIndices.indexOf(currentIndex),
     [filteredNavigationIndices, currentIndex]
   );
-  const scopedCanNavigate = useFilteredNavigation && filteredNavigationIndices.length > 0;
+  const effectiveUseFilteredNavigation = isAnnotatorForProject || useFilteredNavigation;
+  const scopedCanNavigate = effectiveUseFilteredNavigation && filteredNavigationIndices.length > 0;
   const scopedHasPrevious = scopedCanNavigate && (scopedPosition > 0 || scopedPosition === -1);
   const scopedHasNext = scopedCanNavigate && scopedPosition < filteredNavigationIndices.length - 1;
 
@@ -1419,40 +1599,51 @@ const DataLabelingWorkspace = () => {
   }, [annotationPage, safeAnnotationPage]);
 
   useEffect(() => {
-    if (!hasActiveFilters && useFilteredNavigation) {
-      setUseFilteredNavigation(false);
+    if (!isAnnotatorForProject || !currentUser) return;
+    if (dataPoints.length === 0) return;
+    const current = dataPoints[currentIndex];
+    if (current) return;
+    const firstAssigned = annotationEntries[0]?.index;
+    if (firstAssigned !== undefined) {
+      setCurrentIndex(firstAssigned);
     }
-  }, [hasActiveFilters, useFilteredNavigation]);
+  }, [annotationEntries, currentIndex, currentUser, dataPoints, isAnnotatorForProject, setCurrentIndex]);
 
   useEffect(() => {
-    if (viewMode === 'record' && hasActiveFilters) {
+    if (!hasActiveFilters && useFilteredNavigation && !isAnnotatorForProject) {
+      setUseFilteredNavigation(false);
+    }
+  }, [hasActiveFilters, useFilteredNavigation, isAnnotatorForProject]);
+
+  useEffect(() => {
+    if (viewMode === 'record' && hasActiveFilters && !isAnnotatorForProject) {
       setUseFilteredNavigation(true);
     }
-  }, [viewMode, hasActiveFilters]);
+  }, [viewMode, hasActiveFilters, isAnnotatorForProject]);
 
   const navigatePrevious = useCallback(() => {
-    if (useFilteredNavigation && scopedPosition > 0) {
+    if (effectiveUseFilteredNavigation && scopedPosition > 0) {
       setCurrentIndex(filteredNavigationIndices[scopedPosition - 1]);
       return;
     }
-    if (useFilteredNavigation && scopedPosition === -1 && filteredNavigationIndices.length > 0) {
+    if (effectiveUseFilteredNavigation && scopedPosition === -1 && filteredNavigationIndices.length > 0) {
       setCurrentIndex(filteredNavigationIndices[0]);
       return;
     }
     handlePrevious();
-  }, [useFilteredNavigation, scopedPosition, filteredNavigationIndices, setCurrentIndex, handlePrevious]);
+  }, [effectiveUseFilteredNavigation, scopedPosition, filteredNavigationIndices, setCurrentIndex, handlePrevious]);
 
   const navigateNext = useCallback(() => {
-    if (useFilteredNavigation && scopedPosition >= 0 && scopedPosition < filteredNavigationIndices.length - 1) {
+    if (effectiveUseFilteredNavigation && scopedPosition >= 0 && scopedPosition < filteredNavigationIndices.length - 1) {
       setCurrentIndex(filteredNavigationIndices[scopedPosition + 1]);
       return;
     }
-    if (useFilteredNavigation && scopedPosition === -1 && filteredNavigationIndices.length > 0) {
+    if (effectiveUseFilteredNavigation && scopedPosition === -1 && filteredNavigationIndices.length > 0) {
       setCurrentIndex(filteredNavigationIndices[0]);
       return;
     }
     handleNext();
-  }, [useFilteredNavigation, scopedPosition, filteredNavigationIndices, setCurrentIndex, handleNext]);
+  }, [effectiveUseFilteredNavigation, scopedPosition, filteredNavigationIndices, setCurrentIndex, handleNext]);
 
   const startFilteredScope = () => {
     if (filteredNavigationIndices.length === 0) {
@@ -1480,7 +1671,7 @@ const DataLabelingWorkspace = () => {
     const randomIndex = pendingIndices[Math.floor(Math.random() * pendingIndices.length)];
     setCurrentIndex(randomIndex);
     setViewMode('record');
-    setUseFilteredNavigation(hasActiveFilters);
+    setUseFilteredNavigation(isAnnotatorForProject ? true : hasActiveFilters);
   };
 
 
@@ -1523,7 +1714,7 @@ const DataLabelingWorkspace = () => {
   useEffect(() => {
     if (isEditMode && currentDataPoint) {
       // If editing existing final annotation, use that. Otherwise empty.
-      setTempAnnotation(currentDataPoint.finalAnnotation || '');
+      setTempAnnotation(getVisibleFinalAnnotation(currentDataPoint));
     }
   }, [isEditMode, currentIndex]);
 
@@ -2502,11 +2693,14 @@ const DataLabelingWorkspace = () => {
                           <div className="space-y-6">
                             <div className="flex items-center justify-between">
                               <h2 className="text-lg font-semibold">Data Point</h2>
-                              <Badge variant={currentDataPoint?.status === 'accepted' ? 'default' :
-                                currentDataPoint?.status === 'edited' ? 'secondary' :
-                                  currentDataPoint?.status === 'ai_processed' ? 'outline' : 'destructive'}>
-                                {currentDataPoint?.status?.replace('_', ' ')}
-                              </Badge>
+                              {currentDataPoint && (() => {
+                                const displayStatus = getDisplayStatus(currentDataPoint);
+                                return (
+                                  <Badge variant={getStatusVariant(displayStatus.code)}>
+                                    {displayStatus.label}
+                                  </Badge>
+                                );
+                              })()}
                             </div>
 
                             <div className="bg-muted/50 p-4 rounded-lg">
@@ -2579,6 +2773,7 @@ const DataLabelingWorkspace = () => {
                                             variant="secondary"
                                             className="h-7 text-xs"
                                             onClick={() => handleEditAnnotation(suggestion)}
+                                            disabled={!canAnnotateCurrent}
                                           >
                                             <Edit3 className="w-3 h-3 mr-1" />
                                             Edit
@@ -2587,6 +2782,7 @@ const DataLabelingWorkspace = () => {
                                             size="sm"
                                             className="h-7 text-xs"
                                             onClick={() => handleAcceptAnnotation(suggestion, annotatorMeta)}
+                                            disabled={!canAnnotateCurrent}
                                           >
                                             <Check className="w-3 h-3 mr-1" />
                                             Use This
@@ -2641,11 +2837,12 @@ const DataLabelingWorkspace = () => {
                                         </TooltipTrigger>
                                         <TooltipContent>Customize annotation fields</TooltipContent>
                                       </Tooltip>
-                                      {currentDataPoint?.humanAnnotation && (
+                                      {getVisibleDraftAnnotation(currentDataPoint) && (
                                         <Button
                                           size="sm"
                                           className="h-7 text-xs"
-                                          onClick={() => handleAcceptAnnotation(currentDataPoint.humanAnnotation!, annotatorMeta)}
+                                          onClick={() => handleAcceptAnnotation(getVisibleDraftAnnotation(currentDataPoint), annotatorMeta)}
+                                          disabled={!canAnnotateCurrent}
                                         >
                                           <Check className="w-3 h-3 mr-1" />
                                           Use This
@@ -2674,13 +2871,11 @@ const DataLabelingWorkspace = () => {
                                             handleAcceptAnnotation(annotation, annotatorMeta);
                                           }}
                                           className="bg-green-600 hover:bg-green-700"
-                                          disabled={
-                                            // Disable if any required field is empty
-                                            annotationConfig?.fields.some(field =>
+                                          disabled={!canAnnotateCurrent ||
+                                            (annotationConfig?.fields.some(field =>
                                               field.required &&
                                               !currentDataPoint?.customFieldValues?.[field.id]
-                                            ) ?? false
-                                          }
+                                            ) ?? false)}
                                         >
                                           <Check className="w-4 h-4 mr-2" />
                                           Submit Annotation
@@ -2689,10 +2884,11 @@ const DataLabelingWorkspace = () => {
                                     </>
                                   ) : (
                                     <Textarea
-                                      value={currentDataPoint?.humanAnnotation || ''}
-                                      onChange={(e) => handleHumanAnnotationChange(e.target.value)}
+                                      value={getVisibleDraftAnnotation(currentDataPoint) || ''}
+                                      onChange={(e) => handleHumanAnnotationChange(e.target.value, annotatorMeta)}
                                       placeholder="Type your own annotation here..."
                                       className="min-h-[100px] mb-2 bg-background/50"
+                                      disabled={!canAnnotateCurrent}
                                     />
                                   )}
                                   <p className="text-xs text-muted-foreground mt-2">
@@ -2729,7 +2925,7 @@ const DataLabelingWorkspace = () => {
                             )}
 
                             {/* Final Annotation Display */}
-                            {currentDataPoint?.finalAnnotation && !isEditMode && (
+                            {getVisibleFinalAnnotation(currentDataPoint) && !isEditMode && (
                               <div className="bg-green-50 dark:bg-green-950/20 p-4 rounded-lg border border-green-200 dark:border-green-800 animate-in fade-in slide-in-from-bottom-2">
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="flex items-center gap-2">
@@ -2740,13 +2936,95 @@ const DataLabelingWorkspace = () => {
                                     variant="ghost"
                                     size="sm"
                                     className="h-6 text-xs text-green-700 hover:text-green-800 hover:bg-green-100"
-                                    onClick={() => handleEditAnnotation(currentDataPoint.finalAnnotation!)}
+                                    onClick={() => handleEditAnnotation(getVisibleFinalAnnotation(currentDataPoint))}
+                                    disabled={!canAnnotateCurrent}
                                   >
                                     <Edit3 className="w-3 h-3 mr-1" />
                                     Edit
                                   </Button>
                                 </div>
-                                <p className="text-foreground whitespace-pre-wrap">{currentDataPoint.finalAnnotation}</p>
+                                <p className="text-foreground whitespace-pre-wrap">{getVisibleFinalAnnotation(currentDataPoint)}</p>
+                              </div>
+                            )}
+
+                            {isAnnotatorForProject && currentDataPoint && (annotatorCanViewCompleted || (!currentDataPoint.isIAA && getDoneCount(currentDataPoint) > 0)) && (
+                              <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-lg border border-slate-200 dark:border-slate-800">
+                                <div className="flex items-center gap-2 mb-3">
+                                  <CheckCircle className="w-4 h-4 text-slate-600" />
+                                  <Label className="text-sm font-medium">Completed Annotations</Label>
+                                </div>
+                                <div className="space-y-2">
+                                  {currentDataPoint.assignments && currentDataPoint.assignments.length > 0 ? (
+                                    currentDataPoint.assignments.filter(a => a.status === 'done' && (a.value ?? '').trim().length > 0).map((assignment, idx) => {
+                                      const user = getUserById(assignment.annotatorId);
+                                      return (
+                                        <div key={`${assignment.annotatorId}-${idx}`} className="rounded-md border border-border/60 bg-background p-3">
+                                          <div className="flex items-center justify-between">
+                                            <div className="text-sm font-medium">
+                                              {user?.username || assignment.annotatorId}
+                                            </div>
+                                            <Badge variant={assignment.status === 'done' ? "default" : "outline"}>
+                                              {assignment.status}
+                                            </Badge>
+                                          </div>
+                                          <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
+                                            {assignment.value || <span className="text-muted-foreground">No annotation yet.</span>}
+                                          </p>
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+                                      No annotator records yet.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {canViewIaaDetails && currentDataPoint?.isIAA && (
+                              <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-lg border border-slate-200 dark:border-slate-800">
+                                <div className="flex items-center justify-between mb-3">
+                                  <div className="flex items-center gap-2">
+                                    <Target className="w-4 h-4 text-slate-600" />
+                                    <Label className="text-sm font-medium">IAA & Annotation Details</Label>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant={currentDataPoint.isIAA ? "default" : "secondary"}>
+                                      {currentDataPoint.isIAA ? "IAA" : "Not IAA"}
+                                    </Badge>
+                                    <Badge variant="outline">
+                                      {getDoneCount(currentDataPoint)}/{getIaaRequiredCount(currentDataPoint)} done
+                                    </Badge>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                  {currentDataPoint.assignments && currentDataPoint.assignments.length > 0 ? (
+                                    currentDataPoint.assignments.map((assignment, idx) => {
+                                      const user = getUserById(assignment.annotatorId);
+                                      return (
+                                        <div key={`${assignment.annotatorId}-${idx}`} className="rounded-md border border-border/60 bg-background p-3">
+                                          <div className="flex items-center justify-between">
+                                            <div className="text-sm font-medium">
+                                              {user?.username || assignment.annotatorId}
+                                            </div>
+                                            <Badge variant={assignment.status === 'done' ? "default" : "outline"}>
+                                              {assignment.status}
+                                            </Badge>
+                                          </div>
+                                          <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
+                                            {assignment.value || <span className="text-muted-foreground">No annotation yet.</span>}
+                                          </p>
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+                                      No annotator records yet.
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             )}
 
@@ -3009,35 +3287,55 @@ const DataLabelingWorkspace = () => {
                                   onClick={() => {
                                     setCurrentIndex(index);
                                     setViewMode('record');
-                                    setUseFilteredNavigation(hasActiveFilters);
+                                    setUseFilteredNavigation(isAnnotatorForProject ? true : hasActiveFilters);
                                   }}
                                 >
                                   {/* Section 1: Badges & Status */}
                                   <div className={listLayout === 'list' ? "sm:w-[140px] flex-shrink-0" : "w-full"}>
                                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                                      <Badge
-                                        variant={
-                                          dataPoint.status === 'accepted'
-                                            ? 'default'
-                                            : dataPoint.status === 'edited'
-                                              ? 'secondary'
-                                              : dataPoint.status === 'ai_processed'
-                                                ? 'outline'
-                                                : 'destructive'
-                                        }
-                                      >
-                                        {dataPoint.status.replace('_', ' ')}
-                                      </Badge>
+                                      {(() => {
+                                        const displayStatus = getDisplayStatus(dataPoint);
+                                        return (
+                                          <Badge variant={getStatusVariant(displayStatus.code)}>
+                                            {displayStatus.label}
+                                          </Badge>
+                                        );
+                                      })()}
                                       <Badge variant="outline">
                                         #{index + 1}
                                       </Badge>
+                                      {canViewIaaDetails && dataPoint.isIAA && (
+                                        <Badge variant="default">IAA</Badge>
+                                      )}
                                       {preview.label !== 'None' && (
                                         <Badge variant="secondary">{preview.label}</Badge>
                                       )}
-                                      {dataPoint.annotatorName && (
+                                      {!isAnnotatorForProject && (
+                                        (() => {
+                                          const names = getDoneAnnotatorNames(dataPoint);
+                                          if (names.length > 0) {
+                                            return (
+                                              <Badge variant="outline" className="flex items-center gap-1">
+                                                <User className="w-3 h-3" />
+                                                {names.join(', ')}
+                                              </Badge>
+                                            );
+                                          }
+                                          if (dataPoint.annotatorName) {
+                                            return (
+                                              <Badge variant="outline" className="flex items-center gap-1">
+                                                <User className="w-3 h-3" />
+                                                {dataPoint.annotatorName}
+                                              </Badge>
+                                            );
+                                          }
+                                          return null;
+                                        })()
+                                      )}
+                                      {isAnnotatorForProject && getDoneCount(dataPoint) > 0 && (
                                         <Badge variant="outline" className="flex items-center gap-1">
                                           <User className="w-3 h-3" />
-                                          {dataPoint.annotatorName}
+                                          {(getDoneAnnotatorNames(dataPoint).join(', ')) || "Annotated"}
                                         </Badge>
                                       )}
                                     </div>
@@ -3165,8 +3463,8 @@ const DataLabelingWorkspace = () => {
                         size="sm"
                         variant="destructive"
                         className="w-full"
-                        onClick={handleRejectAnnotation}
-                        disabled={!currentDataPoint?.finalAnnotation && Object.keys(currentDataPoint?.aiSuggestions || {}).length === 0}
+                        onClick={() => handleRejectAnnotation(annotatorMeta)}
+                        disabled={!currentAssignment}
                       >
                         <X className="w-4 h-4 mr-2" />
                         Clear / Reject

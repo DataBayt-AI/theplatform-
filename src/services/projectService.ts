@@ -1,4 +1,4 @@
-import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry } from "@/types/data";
+import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry, ProjectIAAConfig } from "@/types/data";
 import { dbService } from "./db";
 
 export const projectService = {
@@ -11,7 +11,12 @@ export const projectService = {
             ...project,
             managerId: project.managerId ?? null,
             annotatorIds: project.annotatorIds ?? [],
-            auditLog: project.auditLog ?? []
+            auditLog: project.auditLog ?? [],
+            iaaConfig: project.iaaConfig ?? {
+                enabled: false,
+                portionPercent: 0,
+                annotatorsPerIAAItem: 2
+            }
         };
     },
 
@@ -25,13 +30,18 @@ export const projectService = {
         return project ? projectService.normalize(project) : undefined;
     },
 
-    create: async (name: string, description?: string): Promise<Project> => {
+    create: async (name: string, description?: string, iaaConfig?: ProjectIAAConfig): Promise<Project> => {
         const newProject: Project = {
             id: crypto.randomUUID(),
             name,
             description,
             managerId: null,
             annotatorIds: [],
+            iaaConfig: iaaConfig ?? {
+                enabled: false,
+                portionPercent: 0,
+                annotatorsPerIAAItem: 2
+            },
             createdAt: Date.now(),
             updatedAt: Date.now(),
             dataPoints: [],

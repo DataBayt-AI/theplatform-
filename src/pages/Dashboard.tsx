@@ -26,6 +26,9 @@ const Dashboard = () => {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
     const [newProjectDesc, setNewProjectDesc] = useState("");
+    const [iaaEnabled, setIaaEnabled] = useState(false);
+    const [iaaPortion, setIaaPortion] = useState(20);
+    const [iaaAnnotatorsPerItem, setIaaAnnotatorsPerItem] = useState(2);
     const [isLoading, setIsLoading] = useState(true);
     const [accessProject, setAccessProject] = useState<Project | null>(null);
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
@@ -185,11 +188,20 @@ const Dashboard = () => {
         if (!newProjectName.trim()) return;
 
         try {
-            const project = await projectService.create(newProjectName, newProjectDesc);
+            const normalizedPortion = Math.max(0, Math.min(100, Math.floor(iaaPortion)));
+            const normalizedAnnotators = Math.max(2, Math.floor(iaaAnnotatorsPerItem));
+            const project = await projectService.create(newProjectName, newProjectDesc, {
+                enabled: iaaEnabled && normalizedPortion > 0,
+                portionPercent: iaaEnabled ? normalizedPortion : 0,
+                annotatorsPerIAAItem: normalizedAnnotators
+            });
             await loadProjects();
             setIsCreateDialogOpen(false);
             setNewProjectName("");
             setNewProjectDesc("");
+            setIaaEnabled(false);
+            setIaaPortion(20);
+            setIaaAnnotatorsPerItem(2);
             navigate(`/project/${project.id}`);
             toast({
                 title: "Success",
@@ -472,6 +484,50 @@ const Dashboard = () => {
                                                 value={newProjectDesc}
                                                 onChange={(e) => setNewProjectDesc(e.target.value)}
                                             />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-sm">IAA Settings</Label>
+                                            <div className="flex items-center gap-2">
+                                                <Checkbox
+                                                    id="iaa-enabled"
+                                                    checked={iaaEnabled}
+                                                    onCheckedChange={(checked) => setIaaEnabled(!!checked)}
+                                                />
+                                                <Label htmlFor="iaa-enabled" className="text-sm font-normal">
+                                                    Enable inter-annotator agreement (IAA)
+                                                </Label>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                <div className="space-y-1.5">
+                                                    <Label htmlFor="iaa-portion" className="text-xs text-muted-foreground">IAA Portion (%)</Label>
+                                                    <Input
+                                                        id="iaa-portion"
+                                                        type="number"
+                                                        min={0}
+                                                        max={100}
+                                                        step={1}
+                                                        value={iaaPortion}
+                                                        onChange={(e) => setIaaPortion(Number(e.target.value || 0))}
+                                                        disabled={!iaaEnabled}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label htmlFor="iaa-annotators" className="text-xs text-muted-foreground">Annotators per IAA Item</Label>
+                                                    <Input
+                                                        id="iaa-annotators"
+                                                        type="number"
+                                                        min={2}
+                                                        max={10}
+                                                        step={1}
+                                                        value={iaaAnnotatorsPerItem}
+                                                        onChange={(e) => setIaaAnnotatorsPerItem(Number(e.target.value || 2))}
+                                                        disabled={!iaaEnabled}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">
+                                                A random portion of items will be assigned to multiple annotators. Individual annotators cannot see that an item is IAA.
+                                            </p>
                                         </div>
                                     </div>
                                     <DialogFooter>
