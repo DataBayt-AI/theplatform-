@@ -102,6 +102,7 @@ const Dashboard = () => {
     };
 
     const isAdmin = currentUser?.roles?.includes("admin");
+    const isManager = currentUser?.roles?.includes("manager") || isAdmin;
 
     const visibleProjects = useMemo(() => {
         if (!currentUser) return [];
@@ -241,6 +242,11 @@ const Dashboard = () => {
                     </div>
 
                     <div className="flex items-center gap-3">
+                        {isManager && (
+                            <Button variant="outline" size="sm" onClick={() => navigate("/model-management")}>
+                                Model Management
+                            </Button>
+                        )}
                         {isAdmin && (
                             <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
                                 <DialogTrigger asChild>
