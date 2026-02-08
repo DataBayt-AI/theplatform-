@@ -32,6 +32,12 @@ export const useDataLabeling = (projectId?: string) => {
     const [customFieldName, setCustomFieldName] = useState('');
     const [isLoading, setIsLoading] = useState(true);
 
+    // Pagination State
+    const [page, setPage] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
+    const [limit] = useState(50); // Default limit
+    const [isLoadingData, setIsLoadingData] = useState(false);
+
     // Stats
     const [sessionStart] = useState(Date.now());
     const [annotationStats, setAnnotationStats] = useState<AnnotationStats>({
@@ -54,39 +60,47 @@ export const useDataLabeling = (projectId?: string) => {
             if (projectId) {
                 setIsLoading(true);
                 try {
+                    // 1. Get Project Metadata (fast)
                     const project = await projectService.getById(projectId);
                     if (project) {
                         setProjectName(project.name);
-                        // Reset undo history when loading new project
-                        resetWorkspaceState({
-                            dataPoints: project.dataPoints,
-                            currentIndex: 0 // Or save/load last index if desired
-                        });
                         setAnnotationStats(project.stats);
-
-                        if (project.dataPoints.length > 0 && project.dataPoints[0].customFieldName) {
-                            setCustomFieldName(project.dataPoints[0].customFieldName);
-                        }
                     } else {
                         setProjectNotFound(true);
+                        return;
+                    }
+
+                    // 2. Get Data Points for current page
+                    setIsLoadingData(true);
+                    const { dataPoints: loadedData, pagination } = await projectService.getData(projectId, page, limit);
+
+                    if (loadedData) {
+                        // Reset undo history when loading new project or page
+                        resetWorkspaceState({
+                            dataPoints: loadedData,
+                            currentIndex: 0
+                        });
+                        setTotalItems(pagination.total || 0);
+
+                        if (loadedData.length > 0 && loadedData[0].customFieldName) {
+                            setCustomFieldName(loadedData[0].customFieldName);
+                        }
                     }
                 } catch (error) {
                     console.error("Failed to load project:", error);
                     setProjectNotFound(true);
                 } finally {
                     setIsLoading(false);
+                    setIsLoadingData(false);
                 }
             }
         };
         loadProject();
-    }, [projectId, resetWorkspaceState]);
+    }, [projectId, page, limit, resetWorkspaceState]);
 
-    // Save progress
-    useEffect(() => {
-        if (projectId && dataPoints.length > 0) {
-            projectService.saveProgress(projectId, dataPoints, annotationStats);
-        }
-    }, [dataPoints, annotationStats, projectId]);
+    // Save progress - REMOVED auto-save effect
+    // We now save individual data points as they change
+    // effectively "optimistic UI" with immediate backend sync
 
     // Calculate stats
     const calculateStats = useCallback(() => {
@@ -149,6 +163,11 @@ export const useDataLabeling = (projectId?: string) => {
             });
             setIsEditMode(false);
             setTempAnnotation('');
+        } else if (page * limit < totalItems) {
+            // Next Page
+            setPage(p => p + 1);
+            setIsEditMode(false);
+            setTempAnnotation('');
         }
     };
 
@@ -160,6 +179,13 @@ export const useDataLabeling = (projectId?: string) => {
             });
             setIsEditMode(false);
             setTempAnnotation('');
+        } else if (page > 1) {
+            // Previous Page
+            setPage(p => p - 1);
+            setIsEditMode(false);
+            setTempAnnotation('');
+            // Note: When going back, we land on currentIndex 0 of previous page. 
+            // Ideally should land on last index of previous page, but 0 is simpler for now.
         }
     };
 
@@ -184,6 +210,17 @@ export const useDataLabeling = (projectId?: string) => {
             dataPoints: updated,
             currentIndex: nextIndex
         });
+
+        // Granular update
+        if (projectId) {
+            projectService.updateDataPoint(projectId, currentDataPoint.id, {
+                finalAnnotation: content,
+                status: 'accepted',
+                annotatorId: annotator?.id ?? currentDataPoint.annotatorId,
+                annotatorName: annotator?.name ?? currentDataPoint.annotatorName,
+                annotatedAt: annotator ? Date.now() : currentDataPoint.annotatedAt
+            }).catch(console.error);
+        }
     };
 
     const handleEditAnnotation = (content: string) => {
@@ -209,6 +246,17 @@ export const useDataLabeling = (projectId?: string) => {
         });
         setIsEditMode(false);
         setTempAnnotation('');
+
+        // Granular update
+        if (projectId) {
+            projectService.updateDataPoint(projectId, currentDataPoint.id, {
+                finalAnnotation: tempAnnotation,
+                status: 'edited',
+                annotatorId: annotator?.id ?? currentDataPoint.annotatorId,
+                annotatorName: annotator?.name ?? currentDataPoint.annotatorName,
+                annotatedAt: annotator ? Date.now() : currentDataPoint.annotatedAt
+            }).catch(console.error);
+        }
     };
 
     const handleRejectAnnotation = () => {
@@ -230,6 +278,17 @@ export const useDataLabeling = (projectId?: string) => {
             dataPoints: updated,
             currentIndex: nextIndex
         });
+
+        // Granular update
+        if (projectId) {
+            projectService.updateDataPoint(projectId, currentDataPoint.id, {
+                finalAnnotation: '',
+                status: 'pending',
+                annotatorId: null,
+                annotatorName: null,
+                annotatedAt: null
+            } as any).catch(console.error);
+        }
     };
 
     const handleRateModel = (providerId: string, rating: number) => {
@@ -244,6 +303,13 @@ export const useDataLabeling = (projectId?: string) => {
             dataPoints: updated,
             currentIndex
         });
+
+        // Granular update
+        if (projectId) {
+            projectService.updateDataPoint(projectId, currentDataPoint.id, {
+                ratings: { ...currentDataPoint.ratings, [providerId]: rating }
+            }).catch(console.error);
+        }
     };
 
     const handleHumanAnnotationChange = (content: string) => {
@@ -255,6 +321,13 @@ export const useDataLabeling = (projectId?: string) => {
             dataPoints: updated,
             currentIndex
         });
+
+        // Granular update (debounce this if possible, but for now simple)
+        if (projectId) {
+            projectService.updateDataPoint(projectId, currentDataPoint.id, {
+                humanAnnotation: content
+            }).catch(console.error);
+        }
     };
 
     // Helper to update data points directly (e.g. from AI processing)
@@ -300,6 +373,11 @@ export const useDataLabeling = (projectId?: string) => {
         setTempAnnotation,
         projectNotFound,
         isLoading,
+        isLoadingData,
+        page,
+        totalItems,
+        totalPages: Math.ceil(totalItems / limit),
+        setPage,
 
         // Undo/Redo
         undo,
@@ -331,10 +409,21 @@ export const useDataLabeling = (projectId?: string) => {
                     [fieldId]: value
                 }
             };
+
             setWorkspaceState({
                 dataPoints: updated,
                 currentIndex
             });
+
+            // Granular update
+            if (projectId) {
+                projectService.updateDataPoint(projectId, currentDataPoint.id, {
+                    customFieldValues: {
+                        ...(currentDataPoint.customFieldValues || {}),
+                        [fieldId]: value
+                    }
+                }).catch(console.error);
+            }
         }
     };
 };

@@ -93,10 +93,14 @@ export interface Project {
     description?: string;
     managerId?: string | null;
     annotatorIds?: string[];
+    xmlConfig?: string;
+    uploadPrompt?: string;
+    customFieldName?: string;
     auditLog?: ProjectAuditEntry[];
     createdAt: number;
     updatedAt: number;
     dataPoints: DataPoint[];
+    totalDataPoints?: number; // Total number of data points (useful when dataPoints is empty in list view)
     stats: AnnotationStats;
 }
 

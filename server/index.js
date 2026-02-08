@@ -3,9 +3,15 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
 import { attachUser, requireRole, requireProjectRole, loadProject } from './middleware/auth.js';
-import { projectStore } from './services/projectStore.js';
+import { initDatabase } from './services/database.js';
+import { registerProjectRoutes } from './routes/projects.js';
+import { registerUserRoutes } from './routes/users.js';
+import { registerModelRoutes } from './routes/models.js';
 
 dotenv.config();
+
+// Initialize database
+initDatabase();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,57 +20,18 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(attachUser);
 
-// Project routes (scaffolded for auth enforcement)
+// Register API routes
+registerProjectRoutes(app);
+registerUserRoutes(app);
+registerModelRoutes(app);
+
+// Legacy project param handler (for existing routes)
 app.param('id', async (req, _res, next, id) => {
-    try {
-        req.project = await projectStore.get(id);
-        next();
-    } catch (error) {
-        next(error);
+    // Skip if already handled by new routes
+    if (req.project !== undefined) {
+        return next();
     }
-});
-
-app.post('/api/projects', requireRole(['admin']), async (req, res) => {
-    // TODO: persist project in DB
-    const { name, description, managerId, annotatorIds } = req.body || {};
-    if (!name) {
-        return res.status(400).json({ error: 'Project name is required' });
-    }
-    const project = await projectStore.create({
-        id: crypto.randomUUID(),
-        name,
-        description,
-        managerId: managerId || null,
-        annotatorIds: Array.isArray(annotatorIds) ? annotatorIds : []
-    });
-    return res.status(201).json({
-        ...project,
-        createdAt: Date.now()
-    });
-});
-
-app.post('/api/projects/:id/access', requireRole(['admin']), async (req, res) => {
-    const { id } = req.params;
-    const project = await projectStore.get(id);
-    if (!project) return res.status(404).json({ error: 'Project not found' });
-    const { managerId, annotatorIds } = req.body || {};
-    const updated = await projectStore.updateAccess(id, {
-        managerId: managerId ?? project.managerId,
-        annotatorIds: Array.isArray(annotatorIds) ? annotatorIds : project.annotatorIds
-    });
-    return res.status(200).json(updated);
-});
-
-app.post('/api/projects/:id/upload', loadProject, requireProjectRole(['manager']), async (req, res) => {
-    // TODO: accept file payload + validate membership
-    const { id } = req.params;
-    return res.status(200).json({ ok: true, projectId: id });
-});
-
-app.post('/api/projects/:id/export', loadProject, requireProjectRole(['manager']), async (req, res) => {
-    // TODO: export logic + validate membership
-    const { id } = req.params;
-    return res.status(200).json({ ok: true, projectId: id });
+    next();
 });
 
 // Helper to get API key (prefer header, fallback to env)
@@ -84,7 +51,7 @@ app.post('/api/openai/chat', async (req, res) => {
             return res.status(401).json({ error: 'OpenAI API key is required' });
         }
 
-	        const { model, messages, temperature, top_p, max_tokens } = req.body;
+        const { model, messages, temperature, top_p, max_tokens } = req.body;
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -92,7 +59,7 @@ app.post('/api/openai/chat', async (req, res) => {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             },
-	            body: JSON.stringify({ model, messages, temperature, top_p, max_tokens })
+            body: JSON.stringify({ model, messages, temperature, top_p, max_tokens })
         });
 
         const data = await response.json();
@@ -145,7 +112,7 @@ app.post('/api/sambanova/chat', async (req, res) => {
             return res.status(401).json({ error: 'SambaNova API key is required' });
         }
 
-	        const { model, messages, temperature, top_p, max_tokens } = req.body;
+        const { model, messages, temperature, top_p, max_tokens } = req.body;
 
         const response = await fetch('https://api.sambanova.ai/v1/chat/completions', {
             method: 'POST',
@@ -153,7 +120,7 @@ app.post('/api/sambanova/chat', async (req, res) => {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             },
-	            body: JSON.stringify({ model, messages, temperature, top_p, max_tokens })
+            body: JSON.stringify({ model, messages, temperature, top_p, max_tokens })
         });
 
         const data = await response.json();
@@ -175,7 +142,7 @@ app.post('/api/openrouter/chat', async (req, res) => {
             return res.status(401).json({ error: 'OpenRouter API key is required' });
         }
 
-	        const { model, messages, temperature, top_p, max_tokens } = req.body;
+        const { model, messages, temperature, top_p, max_tokens } = req.body;
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -183,7 +150,7 @@ app.post('/api/openrouter/chat', async (req, res) => {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             },
-	            body: JSON.stringify({ model, messages, temperature, top_p, max_tokens })
+            body: JSON.stringify({ model, messages, temperature, top_p, max_tokens })
         });
 
         const data = await response.json();
