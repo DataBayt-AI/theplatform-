@@ -146,6 +146,10 @@ const DataLabelingWorkspace = () => {
   useEffect(() => {
     const loadAccess = async () => {
       if (!projectId) return;
+
+      // Initialize model management first so connections/profiles are available
+      await modelManagementService.initialize();
+
       const project = await projectService.getById(projectId);
       setProjectAccess(project ?? null);
     };
@@ -1003,6 +1007,12 @@ const DataLabelingWorkspace = () => {
 
       const assignedData = applyAssignmentsToDataPoints(parsedData);
       loadNewData(assignedData);
+
+      // Persist newly uploaded data to backend
+      if (projectId) {
+        await projectService.saveProgress(projectId, assignedData, annotationStats);
+      }
+
       await logProjectAction('upload', `File: ${file.name}, Items: ${parsedData.length}`);
     } catch (error) {
       const errorMessage = `Failed to parse file: ${error instanceof Error ? error.message : 'Unknown error'}`;

@@ -80,16 +80,17 @@ export const AVAILABLE_PROVIDERS: ModelProvider[] = [
 
 // Helper to resolve image content (URL or Base64)
 const resolveImageContent = async (text: string): Promise<string> => {
-  // If it's a data URL or a full HTTP URL (and we assume it's public), return as is
-  // But for OpenAI/Anthropic, localhost URLs won't work.
-  // So if it starts with '/' (relative) or 'http://localhost', we fetch and convert to base64.
+  // If it's a data URL, return as is
   if (text.startsWith('data:')) return text;
 
+  // For OpenAI/Anthropic/OpenRouter, localhost URLs won't work if they are calling from their servers.
+  // We MUST convert to base64 if it's local or if we want to ensure the provider gets the data directly.
   const isLocal = text.startsWith('/') || text.includes('localhost') || text.includes('127.0.0.1');
 
-  if (isLocal) {
+  if (isLocal || text.startsWith('http')) {
     try {
       const response = await fetch(text);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const blob = await response.blob();
       return new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -98,8 +99,9 @@ const resolveImageContent = async (text: string): Promise<string> => {
         reader.readAsDataURL(blob);
       });
     } catch (e) {
-      console.error("Failed to convert local image to base64:", e);
-      throw new Error(`Failed to load local image: ${text}`);
+      console.error("Failed to resolve image content:", e);
+      if (text.startsWith('http')) return text; // Fallback to URL if fetch fails but it looks like a URL
+      throw new Error(`Failed to load image: ${text}`);
     }
   }
 
@@ -122,8 +124,8 @@ class OpenAIProvider implements AIProvider {
       messages.push({
         role: "user",
         content: [
-          { type: "text", text: "Analyze this image." },
-          { type: "image_url", image_url: { url: imageUrl } }
+          { type: "image_url", image_url: { url: imageUrl } },
+          { type: "text", text: "Please analyze the image provided according to the system instructions." }
         ]
       });
     } else {
@@ -180,7 +182,7 @@ class AnthropicProvider implements AIProvider {
             role: "user",
             content: [
               { type: "image", source: { type: "base64", media_type: mediaType, data: data } },
-              { type: "text", text: "Analyze this image." }
+              { type: "text", text: "Please analyze the image provided." }
             ]
           });
         } else {
@@ -207,7 +209,7 @@ class AnthropicProvider implements AIProvider {
               role: "user",
               content: [
                 { type: "image", source: { type: "base64", media_type: matches[1], data: matches[2] } },
-                { type: "text", text: "Analyze this image." }
+                { type: "text", text: "Please analyze the image provided." }
               ]
             });
           }
@@ -252,7 +254,42 @@ class SambaNovaProvider implements AIProvider {
     if (!apiKey) throw new Error('SambaNova API key is required');
 
     if (type === 'image') {
-      throw new Error("SambaNova does not currently support image input in this integration.");
+      const imageUrl = await resolveImageContent(text);
+      const messages: any[] = [
+        { role: "system", content: prompt || "You are a helpful data labeling assistant." }
+      ];
+
+      // Assuming SambaNova follows OpenAI format for vision if supported
+      messages.push({
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: imageUrl } },
+          { type: "text", text: "Please analyze the image provided." }
+        ]
+      });
+
+      const response = await fetch('/api/sambanova/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: modelId,
+          messages,
+          temperature: options?.temperature ?? 0.1,
+          top_p: 0.1,
+          max_tokens: options?.maxTokens
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'SambaNova Vision API Error');
+      }
+
+      const data = await response.json();
+      return data.choices[0].message.content || '';
     }
 
     const response = await fetch('/api/sambanova/chat', {
@@ -290,8 +327,21 @@ class OpenRouterProvider implements AIProvider {
   async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'openai/gpt-4o-mini', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
     if (!apiKey) throw new Error('OpenRouter API key is required');
 
+    const messages: any[] = [
+      { role: "system", content: prompt || "You are a helpful data labeling assistant." }
+    ];
+
     if (type === 'image') {
-      throw new Error("OpenRouter image input is not enabled in this integration.");
+      const imageUrl = await resolveImageContent(text);
+      messages.push({
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: imageUrl } },
+          { type: "text", text: "Please analyze the image provided above." }
+        ]
+      });
+    } else {
+      messages.push({ role: "user", content: text });
     }
 
     const response = await fetch('/api/openrouter/chat', {
@@ -302,10 +352,7 @@ class OpenRouterProvider implements AIProvider {
       },
       body: JSON.stringify({
         model: modelId,
-        messages: [
-          { role: "system", content: prompt || "You are a helpful data labeling assistant." },
-          { role: "user", content: text }
-        ],
+        messages,
         temperature: options?.temperature,
         max_tokens: options?.maxTokens
       })

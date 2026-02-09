@@ -304,6 +304,14 @@ export function registerProjectRoutes(app) {
 
     // Update project
     app.put('/api/projects/:id', (req, res) => {
+        handleUpdateProject(req, res);
+    });
+
+    app.patch('/api/projects/:id', (req, res) => {
+        handleUpdateProject(req, res);
+    });
+
+    function handleUpdateProject(req, res) {
         try {
             const { id } = req.params;
             const { name, description, managerId, annotatorIds, xmlConfig, uploadPrompt, customFieldName, dataPoints, stats } = req.body;
@@ -431,7 +439,7 @@ export function registerProjectRoutes(app) {
             console.error('Error updating project:', error);
             res.status(500).json({ error: 'Failed to update project' });
         }
-    });
+    }
 
     // Delete project
     app.delete('/api/projects/:id', (req, res) => {

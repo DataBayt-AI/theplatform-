@@ -60,12 +60,18 @@ const ModelManagement = () => {
   const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
 
   useEffect(() => {
-    projectService.initialize().then(async () => {
+    const init = async () => {
+      await Promise.all([
+        projectService.initialize(),
+        modelManagementService.initialize()
+      ]);
+
       const loadedProjects = await projectService.getAll();
       setProjects(loadedProjects);
-    });
-    setConnections(modelManagementService.getConnections());
-    setProfiles(modelManagementService.getProfiles());
+      setConnections(modelManagementService.getConnections());
+      setProfiles(modelManagementService.getProfiles());
+    };
+    init();
   }, []);
 
   useEffect(() => {
