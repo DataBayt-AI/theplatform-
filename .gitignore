@@ -23,6 +23,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+server/data/
+server/logs
 
 # Environment variables
 .env

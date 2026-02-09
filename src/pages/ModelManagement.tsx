@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { UserMenu } from "@/components/UserMenu";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { toast } from "@/components/ui/use-toast";
 import { Loader2 } from "lucide-react";
 
@@ -258,6 +259,7 @@ const ModelManagement = () => {
                 <p className="text-sm text-muted-foreground">Manager role required.</p>
               </div>
             </div>
+            <ThemeToggle />
             <UserMenu />
           </div>
           <Card className="p-6">
@@ -397,6 +399,7 @@ const ModelManagement = () => {
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" onClick={() => navigate("/")}>Back to Dashboard</Button>
+            <ThemeToggle />
             <UserMenu />
           </div>
         </div>
@@ -503,17 +506,17 @@ const ModelManagement = () => {
                   || selectedProfileConnection.providerId === "anthropic"
                   || selectedProfileConnection.providerId === "openrouter"
                 ) && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => fetchOfficialModels(selectedProfileConnection, true)}
-                    disabled={isLoadingRemoteModels}
-                  >
-                    {isLoadingRemoteModels ? "Loading..." : "Refresh"}
-                  </Button>
-                )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => fetchOfficialModels(selectedProfileConnection, true)}
+                      disabled={isLoadingRemoteModels}
+                    >
+                      {isLoadingRemoteModels ? "Loading..." : "Refresh"}
+                    </Button>
+                  )}
               </div>
               <Select value={profileModelId} onValueChange={setProfileModelId}>
                 <SelectTrigger>
@@ -530,14 +533,14 @@ const ModelManagement = () => {
                 || selectedProfileConnection.providerId === "anthropic"
                 || selectedProfileConnection.providerId === "openrouter"
               ) && (
-                <p className="text-xs text-muted-foreground">
-                  {remoteModelsError
-                    ? `Could not load provider models: ${remoteModelsError}`
-                    : modelsForSelectedConnection.length === 0
-                      ? "No models loaded yet. Check API key and click Refresh."
-                      : "Loaded from provider API."}
-                </p>
-              )}
+                  <p className="text-xs text-muted-foreground">
+                    {remoteModelsError
+                      ? `Could not load provider models: ${remoteModelsError}`
+                      : modelsForSelectedConnection.length === 0
+                        ? "No models loaded yet. Check API key and click Refresh."
+                        : "Loaded from provider API."}
+                  </p>
+                )}
             </div>
             <div className="space-y-3">
               <Label>Display Name</Label>

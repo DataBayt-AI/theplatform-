@@ -27,6 +27,7 @@ import { DynamicAnnotationForm } from "@/components/DynamicAnnotationForm";
 import { AnnotationConfig, loadDefaultAnnotationConfig, loadAnnotationConfigFromFile, parseAnnotationConfigXML } from "@/services/xmlConfigService";
 import { useAuth } from "@/contexts/AuthContext";
 import { UserMenu } from "@/components/UserMenu";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   Upload,
   Settings,
@@ -390,6 +391,7 @@ const DataLabelingWorkspace = () => {
                 <p className="text-sm text-muted-foreground">You are not assigned to this project.</p>
               </div>
             </div>
+            <ThemeToggle />
             <UserMenu />
           </div>
           <Card className="p-6">
@@ -879,7 +881,7 @@ const DataLabelingWorkspace = () => {
           }
 
           parsedData = jsonData.map((item: any, index: number) => ({
-            id: `data_${index}`,
+            id: crypto.randomUUID(),
             content: typeof item === 'string' ? item : item.text || item.content || JSON.stringify(item),
             type: item.type || 'text',
             originalAnnotation: item.annotation || item.label || '',
@@ -968,7 +970,7 @@ const DataLabelingWorkspace = () => {
           }
 
           return {
-            id: `data_${index}`,
+            id: crypto.randomUUID(),
             content: contentIndex >= 0 ? values[contentIndex]?.trim() : (values[0]?.trim() || line),
             originalAnnotation: annotationIndex >= 0 ? values[annotationIndex]?.trim() : '',
             aiSuggestions: {},
@@ -988,7 +990,7 @@ const DataLabelingWorkspace = () => {
           throw new Error('TXT file is empty.');
         }
         parsedData = lines.map((line, index) => ({
-          id: `data_${index}`,
+          id: crypto.randomUUID(),
           content: line.trim(),
           status: 'pending' as const,
           aiSuggestions: {},
@@ -1959,58 +1961,58 @@ const DataLabelingWorkspace = () => {
                       <Settings className="w-4 h-4" />
                     </Button>
                   </DialogTrigger>
-                    <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
-                      <DialogHeader>
-                        <DialogTitle>Model Selection</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-6">
-                        <div>
-                          <Label className="mb-2 block">Available Model Profiles</Label>
-                          {availableModelProfiles.length === 0 ? (
-                            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                              No model profiles assigned to this project yet.
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              {availableModelProfiles.map(profile => {
-                                const connection = connectionById.get(profile.providerConnectionId);
-                                const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
-                                return (
-                                  <div key={profile.id} className="flex items-center space-x-2">
-                                    <Checkbox
-                                      id={profile.id}
-                                      checked={selectedModels.includes(profile.id)}
-                                      onCheckedChange={(checked) => {
-                                        if (checked) {
-                                          setSelectedModels([...selectedModels, profile.id]);
-                                        } else {
-                                          setSelectedModels(selectedModels.filter(id => id !== profile.id));
-                                        }
-                                      }}
-                                    />
-                                    <Label htmlFor={profile.id} className="text-sm font-normal cursor-pointer">
-                                      {profile.displayName}
-                                      {provider && (
-                                        <span className="ml-2 text-xs text-muted-foreground">
-                                          {provider.name}
-                                        </span>
-                                      )}
-                                    </Label>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-
-                        {canProcessAI && (
-                          <Button variant="outline" onClick={() => navigate('/model-management')}>
-                            Manage Model Profiles
-                          </Button>
+                  <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>Model Selection</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-6">
+                      <div>
+                        <Label className="mb-2 block">Available Model Profiles</Label>
+                        {availableModelProfiles.length === 0 ? (
+                          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                            No model profiles assigned to this project yet.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {availableModelProfiles.map(profile => {
+                              const connection = connectionById.get(profile.providerConnectionId);
+                              const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
+                              return (
+                                <div key={profile.id} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={profile.id}
+                                    checked={selectedModels.includes(profile.id)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setSelectedModels([...selectedModels, profile.id]);
+                                      } else {
+                                        setSelectedModels(selectedModels.filter(id => id !== profile.id));
+                                      }
+                                    }}
+                                  />
+                                  <Label htmlFor={profile.id} className="text-sm font-normal cursor-pointer">
+                                    {profile.displayName}
+                                    {provider && (
+                                      <span className="ml-2 text-xs text-muted-foreground">
+                                        {provider.name}
+                                      </span>
+                                    )}
+                                  </Label>
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
-                    </DialogContent>
-                  </Dialog>
+
+                      {canProcessAI && (
+                        <Button variant="outline" onClick={() => navigate('/model-management')}>
+                          Manage Model Profiles
+                        </Button>
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
 
                 {/* Upload Prompt Dialog */}
                 <Dialog open={showUploadPrompt} onOpenChange={setShowUploadPrompt}>
@@ -2646,6 +2648,7 @@ const DataLabelingWorkspace = () => {
                 )}
               </div>
               <div className="ml-2">
+                <ThemeToggle />
                 <UserMenu />
               </div>
             </div>

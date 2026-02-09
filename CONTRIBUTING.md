@@ -1,6 +1,6 @@
-# Contributing to DataBayt AI Labeler
+# Contributing to DataBayt.AI Studio
 
-Thank you for your interest in contributing to DataBayt AI Labeler! We welcome contributions from the community to help make this tool better for everyone.
+Thank you for your interest in contributing to DataBayt.AI Studio! We welcome contributions from the community to help make this tool better for everyone.
 
 ## 🚀 Getting Started
 

@@ -30,8 +30,8 @@ export const UserMenu = () => {
     }
   }, [mustChangePassword]);
 
-  const handleLogin = () => {
-    const ok = login(username, password);
+  const handleLogin = async () => {
+    const ok = await login(username, password);
     if (!ok) {
       setError("Invalid username or password");
       return;
@@ -42,12 +42,12 @@ export const UserMenu = () => {
     setPassword("");
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (newPassword !== confirmPassword) {
       setChangeError("Passwords do not match");
       return;
     }
-    const result = changePassword(currentPassword, newPassword);
+    const result = await changePassword(currentPassword, newPassword);
     if (!result.ok) {
       setChangeError(result.error || "Failed to change password");
       return;

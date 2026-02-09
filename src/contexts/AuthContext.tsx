@@ -1,12 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import type { ReactNode } from "react";
+import { apiClient } from "@/services/apiClient";
 
 export type Role = "admin" | "manager" | "annotator";
 
 export type User = {
   id: string;
   username: string;
-  password: string;
+  password?: string; // Optional since server doesn't return passwords
   roles: Role[];
   mustChangePassword?: boolean;
 };
@@ -14,181 +15,202 @@ export type User = {
 type AuthContextValue = {
   currentUser: User | null;
   users: User[];
-  login: (username: string, password: string) => boolean;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
-  createUser: (username: string, password: string, roles: Role[]) => { ok: boolean; error?: string };
-  changePassword: (currentPassword: string, newPassword: string) => { ok: boolean; error?: string };
+  createUser: (username: string, password: string, roles: Role[]) => Promise<{ ok: boolean; error?: string }>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>;
   getUserById: (id: string | null | undefined) => User | undefined;
-  deleteUser: (userId: string) => { ok: boolean; error?: string };
-  updateUserRoles: (userId: string, newRoles: Role[]) => { ok: boolean; error?: string };
-  adminResetPassword: (userId: string, newPassword: string) => { ok: boolean; error?: string };
+  deleteUser: (userId: string) => Promise<{ ok: boolean; error?: string }>;
+  updateUserRoles: (userId: string, newRoles: Role[]) => Promise<{ ok: boolean; error?: string }>;
+  adminResetPassword: (userId: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>;
+  refreshUsers: () => Promise<void>;
 };
 
-const USERS_KEY = "databayt_users";
-const SESSION_KEY = "databayt_session_user";
-
-const seedAdmin = (): User[] => [
-  { id: crypto.randomUUID(), username: "admin", password: "admin", roles: ["admin", "manager", "annotator"], mustChangePassword: false }
-];
+const SESSION_KEY = "databayt_session";
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [users, setUsers] = useState<User[]>(() => {
-    const stored = localStorage.getItem(USERS_KEY);
+  const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const stored = localStorage.getItem(SESSION_KEY);
     if (stored) {
       try {
-        const parsed = JSON.parse(stored) as User[];
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        return JSON.parse(stored);
       } catch {
-        // fall through to seed
+        return null;
       }
-    }
-    const seeded = seedAdmin();
-    localStorage.setItem(USERS_KEY, JSON.stringify(seeded));
-    return seeded;
-  });
-
-  const [currentUserId, setCurrentUserId] = useState<string | null>(() => {
-    const stored = localStorage.getItem(SESSION_KEY);
-    if (stored) return stored;
-    const admin = users.find(u => u.username === "admin");
-    if (admin) {
-      localStorage.setItem(SESSION_KEY, admin.id);
-      return admin.id;
     }
     return null;
   });
+  const [loading, setLoading] = useState(true);
+
+  // Load users from server on mount
+  const refreshUsers = useCallback(async () => {
+    try {
+      const serverUsers = await apiClient.users.getAll();
+      setUsers(serverUsers);
+    } catch (error) {
+      console.error('Failed to load users:', error);
+      // If not authorized, users list will be empty
+      setUsers([]);
+    }
+  }, []);
 
   useEffect(() => {
-    const normalized = users.map(user => {
-      const legacyRole = (user as { role?: Role }).role;
-      const roles = user.roles && user.roles.length > 0
-        ? user.roles
-        : legacyRole
-          ? legacyRole === "admin"
-            ? ["admin", "manager", "annotator"]
-            : [legacyRole]
-          : ["annotator"];
-      return {
-        ...user,
-        roles: roles as Role[],
-        mustChangePassword: user.mustChangePassword ?? false
-      };
-    });
-    const needsUpdate = users.some(user => !user.roles || user.roles.length === 0 || user.mustChangePassword === undefined || (user as { role?: Role }).role);
-    if (needsUpdate) {
-      setUsers(normalized);
-      return;
-    }
-    localStorage.setItem(USERS_KEY, JSON.stringify(normalized));
-    if (currentUserId && !users.find(u => u.id === currentUserId)) {
-      const admin = users.find(u => u.username === "admin");
-      setCurrentUserId(admin?.id ?? null);
-    }
-  }, [users, currentUserId]);
+    refreshUsers().finally(() => setLoading(false));
+  }, [refreshUsers]);
 
+  // Persist session to localStorage
   useEffect(() => {
-    if (currentUserId) {
-      localStorage.setItem(SESSION_KEY, currentUserId);
+    if (currentUser) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
     } else {
       localStorage.removeItem(SESSION_KEY);
     }
-  }, [currentUserId]);
+  }, [currentUser]);
 
-  const login = (username: string, password: string) => {
-    const user = users.find(u => u.username === username && u.password === password);
-    if (!user) return false;
-    setCurrentUserId(user.id);
-    return true;
-  };
+  const login = useCallback(async (username: string, password: string): Promise<boolean> => {
+    try {
+      const user = await apiClient.auth.login(username, password);
+      setCurrentUser(user);
+      // Refresh users list after login (may now have access)
+      await refreshUsers();
+      return true;
+    } catch (error) {
+      console.error('Login failed:', error);
+      return false;
+    }
+  }, [refreshUsers]);
 
-  const logout = () => {
-    setCurrentUserId(null);
-  };
+  const logout = useCallback(() => {
+    setCurrentUser(null);
+    localStorage.removeItem(SESSION_KEY);
+  }, []);
 
-  const createUser = (username: string, password: string, roles: Role[]) => {
+  const createUser = useCallback(async (username: string, password: string, roles: Role[]): Promise<{ ok: boolean; error?: string }> => {
     const normalized = username.trim();
     if (!normalized) return { ok: false, error: "Username is required" };
-    if (users.some(u => u.username.toLowerCase() === normalized.toLowerCase())) {
-      return { ok: false, error: "Username already exists" };
-    }
     if (!roles || roles.length === 0) {
       return { ok: false, error: "Select at least one role" };
     }
-    const effectivePassword = password.trim().length > 0 ? password : "changeme";
-    const normalizedRoles = roles.includes("admin") ? ["admin", "manager", "annotator"] : roles;
-    const user: User = {
-      id: crypto.randomUUID(),
-      username: normalized,
-      password: effectivePassword,
-      roles: normalizedRoles as Role[],
-      mustChangePassword: !normalizedRoles.includes("admin")
-    };
-    setUsers(prev => [...prev, user]);
-    return { ok: true };
-  };
 
-  const changePassword = (currentPassword: string, newPassword: string) => {
-    if (!currentUserId) return { ok: false, error: "Not logged in" };
-    const user = users.find(u => u.id === currentUserId);
-    if (!user) return { ok: false, error: "User not found" };
-    if (user.password !== currentPassword) return { ok: false, error: "Current password is incorrect" };
+    try {
+      const effectivePassword = password.trim().length > 0 ? password : "changeme";
+      const normalizedRoles = roles.includes("admin") ? ["admin", "manager", "annotator"] : roles;
+
+      await apiClient.users.create({
+        username: normalized,
+        password: effectivePassword,
+        roles: normalizedRoles,
+        mustChangePassword: !normalizedRoles.includes("admin")
+      });
+
+      await refreshUsers();
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create user";
+      return { ok: false, error: message };
+    }
+  }, [refreshUsers]);
+
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser) return { ok: false, error: "Not logged in" };
     if (newPassword.trim().length < 4) return { ok: false, error: "New password must be at least 4 characters" };
-    setUsers(prev => prev.map(u => u.id === user.id ? { ...u, password: newPassword, mustChangePassword: false } : u));
-    return { ok: true };
-  };
 
-  const getUserById = (id: string | null | undefined) => {
+    try {
+      // Verify current password by attempting login
+      await apiClient.auth.login(currentUser.username, currentPassword);
+
+      // Update password
+      await apiClient.users.update(currentUser.id, {
+        password: newPassword,
+        mustChangePassword: false
+      });
+
+      // Update local session
+      setCurrentUser(prev => prev ? { ...prev, mustChangePassword: false } : null);
+
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: "Current password is incorrect" };
+    }
+  }, [currentUser]);
+
+  const getUserById = useCallback((id: string | null | undefined): User | undefined => {
     if (!id) return undefined;
     return users.find(u => u.id === id);
-  };
+  }, [users]);
 
-  const deleteUser = (userId: string) => {
-    if (userId === currentUserId) return { ok: false, error: "Cannot delete yourself" };
+  const deleteUser = useCallback(async (userId: string): Promise<{ ok: boolean; error?: string }> => {
+    if (userId === currentUser?.id) return { ok: false, error: "Cannot delete yourself" };
+
     const user = users.find(u => u.id === userId);
     if (!user) return { ok: false, error: "User not found" };
     if (user.username === "admin") return { ok: false, error: "Cannot delete the super admin" };
 
-    setUsers(prev => prev.filter(u => u.id !== userId));
-    return { ok: true };
-  };
+    try {
+      await apiClient.users.delete(userId);
+      await refreshUsers();
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete user";
+      return { ok: false, error: message };
+    }
+  }, [currentUser, users, refreshUsers]);
 
-  const updateUserRoles = (userId: string, newRoles: Role[]) => {
+  const updateUserRoles = useCallback(async (userId: string, newRoles: Role[]): Promise<{ ok: boolean; error?: string }> => {
     const user = users.find(u => u.id === userId);
     if (!user) return { ok: false, error: "User not found" };
     if (user.username === "admin") return { ok: false, error: "Cannot change super admin roles" };
 
-    // Ensure normalization logic matches creation
-    const finalRoles = newRoles.length === 0 ? ["annotator"] : newRoles;
+    try {
+      const finalRoles = newRoles.length === 0 ? ["annotator"] : newRoles;
+      await apiClient.users.update(userId, { roles: finalRoles });
+      await refreshUsers();
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update roles";
+      return { ok: false, error: message };
+    }
+  }, [users, refreshUsers]);
 
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, roles: finalRoles as Role[] } : u));
-    return { ok: true };
-  };
-
-  const adminResetPassword = (userId: string, newPassword: string) => {
+  const adminResetPassword = useCallback(async (userId: string, newPassword: string): Promise<{ ok: boolean; error?: string }> => {
     const user = users.find(u => u.id === userId);
     if (!user) return { ok: false, error: "User not found" };
     if (newPassword.trim().length < 4) return { ok: false, error: "Password must be at least 4 characters" };
 
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: newPassword, mustChangePassword: true } : u));
-    return { ok: true };
-  };
+    try {
+      await apiClient.users.update(userId, {
+        password: newPassword,
+        mustChangePassword: true
+      });
+      await refreshUsers();
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to reset password";
+      return { ok: false, error: message };
+    }
+  }, [users, refreshUsers]);
 
-  const value = useMemo<AuthContextValue>(() => {
-    return {
-      currentUser: users.find(u => u.id === currentUserId) ?? null,
-      users,
-      login,
-      logout,
-      createUser,
-      changePassword,
-      getUserById,
-      deleteUser,
-      updateUserRoles,
-      adminResetPassword
-    };
-  }, [users, currentUserId]);
+  const value = useMemo<AuthContextValue>(() => ({
+    currentUser,
+    users,
+    login,
+    logout,
+    createUser,
+    changePassword,
+    getUserById,
+    deleteUser,
+    updateUserRoles,
+    adminResetPassword,
+    refreshUsers
+  }), [users, currentUser, login, logout, createUser, changePassword, getUserById, deleteUser, updateUserRoles, adminResetPassword, refreshUsers]);
+
+  // Show loading state briefly
+  if (loading) {
+    return null;
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
