@@ -3293,87 +3293,107 @@ const DataLabelingWorkspace = () => {
                                     setUseFilteredNavigation(isAnnotatorForProject ? true : hasActiveFilters);
                                   }}
                                 >
-                                  {/* Section 1: Badges & Status */}
-                                  <div className={listLayout === 'list' ? "sm:w-[140px] flex-shrink-0" : "w-full"}>
-                                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                                      {(() => {
-                                        const displayStatus = getDisplayStatus(dataPoint);
-                                        return (
-                                          <Badge variant={getStatusVariant(displayStatus.code)}>
-                                            {displayStatus.label}
-                                          </Badge>
-                                        );
-                                      })()}
-                                      <Badge variant="outline">
-                                        #{index + 1}
-                                      </Badge>
-                                      {canViewIaaDetails && dataPoint.isIAA && (
-                                        <Badge variant="default">IAA</Badge>
-                                      )}
-                                      {preview.label !== 'None' && (
-                                        <Badge variant="secondary">{preview.label}</Badge>
-                                      )}
-                                      {!isAnnotatorForProject && (
-                                        (() => {
-                                          const names = getDoneAnnotatorNames(dataPoint);
-                                          if (names.length > 0) {
-                                            return (
-                                              <Badge variant="outline" className="flex items-center gap-1">
-                                                <User className="w-3 h-3" />
-                                                {names.join(', ')}
-                                              </Badge>
-                                            );
-                                          }
-                                          if (dataPoint.annotatorName) {
-                                            return (
-                                              <Badge variant="outline" className="flex items-center gap-1">
-                                                <User className="w-3 h-3" />
-                                                {dataPoint.annotatorName}
-                                              </Badge>
-                                            );
-                                          }
-                                          return null;
-                                        })()
-                                      )}
-                                      {isAnnotatorForProject && getDoneCount(dataPoint) > 0 && (
-                                        <Badge variant="outline" className="flex items-center gap-1">
-                                          <User className="w-3 h-3" />
-                                          {(getDoneAnnotatorNames(dataPoint).join(', ')) || "Annotated"}
-                                        </Badge>
-                                      )}
+                                  {/* Section 0: Image Preview (If image type) */}
+                                  {dataPoint.type === 'image' && (
+                                    <div className={
+                                      listLayout === 'grid'
+                                        ? "h-40 w-full overflow-hidden rounded-md border border-border/40 bg-muted/20"
+                                        : "h-24 w-24 flex-shrink-0 overflow-hidden rounded-md border border-border/40 bg-muted/20"
+                                    }>
+                                      <img
+                                        src={dataPoint.content}
+                                        alt="Thumbnail"
+                                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).src = 'https://placehold.co/200x200?text=Error';
+                                        }}
+                                      />
                                     </div>
-                                  </div>
+                                  )}
 
-
-                                  {/* Section 2: Main Content */}
-                                  <div className={`flex-1 min-w-0 space-y-1 max-w-full ${listLayout === 'grid' ? "w-full" : ""}`}>
-                                    <p className="text-sm font-medium text-foreground line-clamp-1 w-full">
-                                      {dataPoint.content || 'Untitled content'}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground break-words whitespace-normal line-clamp-2">
-                                      {preview.text || 'No annotation yet.'}
-                                    </p>
-                                  </div>
-                                  {/* Section 3: Metadata */}
-                                  {
-                                    dataPoint.displayMetadata && Object.keys(dataPoint.displayMetadata).length > 0 && (
-                                      <div className={listLayout === 'list' ? "sm:w-[220px] flex-shrink-0" : "w-full mt-auto pt-2 border-t border-border/40"}>
-                                        <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground min-w-0">
-                                          {Object.entries(dataPoint.displayMetadata).slice(0, 6).map(([key, value]) => (
-                                            <div
-                                              key={key}
-                                              className="inline-flex max-w-[180px] min-w-0 items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5"
-                                            >
-                                              <span className="uppercase tracking-wide text-muted-foreground/80 truncate min-w-0">
-                                                {key}
-                                              </span>
-                                              <span className="truncate min-w-0">:{value}</span>
-                                            </div>
-                                          ))}
-                                        </div>
+                                  <div className="flex flex-1 flex-col justify-between min-w-0 h-full">
+                                    {/* Section 1: Badges & Status */}
+                                    <div className={listLayout === 'list' ? "flex flex-wrap items-center gap-2 mb-2" : "w-full"}>
+                                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                                        {(() => {
+                                          const displayStatus = getDisplayStatus(dataPoint);
+                                          return (
+                                            <Badge variant={getStatusVariant(displayStatus.code)}>
+                                              {displayStatus.label}
+                                            </Badge>
+                                          );
+                                        })()}
+                                        <Badge variant="outline">
+                                          #{index + 1}
+                                        </Badge>
+                                        {canViewIaaDetails && dataPoint.isIAA && (
+                                          <Badge variant="default">IAA</Badge>
+                                        )}
+                                        {preview.label !== 'None' && (
+                                          <Badge variant="secondary">{preview.label}</Badge>
+                                        )}
+                                        {!isAnnotatorForProject && (
+                                          (() => {
+                                            const names = getDoneAnnotatorNames(dataPoint);
+                                            if (names.length > 0) {
+                                              return (
+                                                <Badge variant="outline" className="flex items-center gap-1">
+                                                  <User className="w-3 h-3" />
+                                                  {names.join(', ')}
+                                                </Badge>
+                                              );
+                                            }
+                                            if (dataPoint.annotatorName) {
+                                              return (
+                                                <Badge variant="outline" className="flex items-center gap-1">
+                                                  <User className="w-3 h-3" />
+                                                  {dataPoint.annotatorName}
+                                                </Badge>
+                                              );
+                                            }
+                                            return null;
+                                          })()
+                                        )}
+                                        {isAnnotatorForProject && getDoneCount(dataPoint) > 0 && (
+                                          <Badge variant="outline" className="flex items-center gap-1">
+                                            <User className="w-3 h-3" />
+                                            {(getDoneAnnotatorNames(dataPoint).join(', ')) || "Annotated"}
+                                          </Badge>
+                                        )}
                                       </div>
-                                    )
-                                  }
+                                    </div>
+
+                                    {/* Section 2: Main Content */}
+                                    <div className={`flex-1 min-w-0 space-y-1 max-w-full ${listLayout === 'grid' ? "w-full mt-2" : ""}`}>
+                                      <p className="text-sm font-medium text-foreground line-clamp-1 w-full">
+                                        {dataPoint.type === 'image' ? (dataPoint.metadata?.filename || dataPoint.metadata?.name || 'Image content') : (dataPoint.content || 'Untitled content')}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground break-words whitespace-normal line-clamp-2">
+                                        {preview.text || 'No annotation yet.'}
+                                      </p>
+                                    </div>
+
+                                    {/* Section 3: Metadata */}
+                                    {
+                                      dataPoint.displayMetadata && Object.keys(dataPoint.displayMetadata).length > 0 && (
+                                        <div className={listLayout === 'list' ? "mt-2" : "w-full mt-auto pt-2 border-t border-border/40"}>
+                                          <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground min-w-0">
+                                            {Object.entries(dataPoint.displayMetadata).slice(0, 3).map(([key, value]) => (
+                                              <div
+                                                key={key}
+                                                className="inline-flex max-w-[150px] min-w-0 items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5"
+                                              >
+                                                <span className="uppercase tracking-wide text-muted-foreground/80 truncate min-w-0">
+                                                  {key}
+                                                </span>
+                                                <span className="truncate min-w-0">:{value}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )
+                                    }
+                                  </div>
                                 </div>
                               );
                             })
