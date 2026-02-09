@@ -53,6 +53,7 @@ export const apiClient = {
             managerId?: string;
             annotatorIds?: string[];
             iaaConfig?: ProjectIAAConfig;
+            guidelines?: string;
         }) => request<any>('/projects', {
             method: 'POST',
             body: JSON.stringify(data),

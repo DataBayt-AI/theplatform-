@@ -65,9 +65,11 @@ import {
   ArrowLeft,
   Undo2,
   Redo2,
-  History
+  History,
+  Book
 } from "lucide-react";
 import { VersionHistory } from "@/components/VersionHistory";
+import { GuidelinesDialog } from "@/components/GuidelinesDialog";
 import { projectService } from "@/services/projectService";
 import { modelManagementService } from "@/services/modelManagementService";
 
@@ -214,6 +216,7 @@ const DataLabelingWorkspace = () => {
 
   // Advanced Features State
   const [showHistoryDialog, setShowHistoryDialog] = useState(false);
+  const [showGuidelinesDialog, setShowGuidelinesDialog] = useState(false);
 
   // Hugging Face State
   const [showHFDialog, setShowHFDialog] = useState(false);
@@ -2019,6 +2022,16 @@ const DataLabelingWorkspace = () => {
                 >
                   <History className="h-5 w-5" />
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="mr-1"
+                  onClick={() => setShowGuidelinesDialog(true)}
+                  disabled={!projectId}
+                  title="Project Guidelines"
+                >
+                  <Book className="h-5 w-5" />
+                </Button>
                 {/* Settings */}
                 <Dialog open={showSettings} onOpenChange={setShowSettings}>
                   <DialogTrigger asChild>
@@ -2555,6 +2568,17 @@ const DataLabelingWorkspace = () => {
                     onOpenChange={setShowHistoryDialog}
                     projectId={projectId}
                     onRestore={handleRestoreVersion}
+                  />
+                )}
+
+                {/* Guidelines Dialog */}
+                {projectId && projectAccess && (
+                  <GuidelinesDialog
+                    project={projectAccess}
+                    isOpen={showGuidelinesDialog}
+                    onClose={() => setShowGuidelinesDialog(false)}
+                    canEdit={isAdmin || isManagerForProject}
+                    onUpdate={(updated) => setProjectAccess(updated)}
                   />
                 )}
 

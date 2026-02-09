@@ -109,6 +109,7 @@ export interface Project {
     id: string;
     name: string;
     description?: string;
+    guidelines?: string;
     managerId?: string | null;
     annotatorIds?: string[];
     xmlConfig?: string;

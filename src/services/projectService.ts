@@ -10,6 +10,7 @@ export const projectService = {
     normalize: (project: Project): Project => {
         return {
             ...project,
+            guidelines: project.guidelines ?? '',
             managerId: project.managerId ?? null,
             annotatorIds: project.annotatorIds ?? [],
             auditLog: project.auditLog ?? [],
@@ -50,7 +51,7 @@ export const projectService = {
         }
     },
 
-        getData: async (projectId: string, page: number = 1, limit: number = 50): Promise<{ dataPoints: DataPoint[]; pagination: any }> => {
+    getData: async (projectId: string, page: number = 1, limit: number = 50): Promise<{ dataPoints: DataPoint[]; pagination: any }> => {
         try {
             return await apiClient.projects.getData(projectId, page, limit);
         } catch (error) {
@@ -59,13 +60,14 @@ export const projectService = {
         }
     },
 
-    create: async (name: string, description?: string, managerId?: string, iaaConfig?: ProjectIAAConfig): Promise<Project> => {
-        const result = await apiClient.projects.create({ name, description, managerId, iaaConfig });
+    create: async (name: string, description?: string, managerId?: string, iaaConfig?: ProjectIAAConfig, guidelines?: string): Promise<Project> => {
+        const result = await apiClient.projects.create({ name, description, managerId, iaaConfig, guidelines });
         return projectService.normalize({
             ...result,
             id: crypto.randomUUID(),
             name,
             description,
+            guidelines,
             managerId: null,
             annotatorIds: [],
             iaaConfig: iaaConfig ?? {
@@ -91,6 +93,7 @@ export const projectService = {
         await apiClient.projects.update(project.id, {
             name: project.name,
             description: project.description,
+            guidelines: project.guidelines,
             managerId: project.managerId,
             annotatorIds: project.annotatorIds,
             xmlConfig: project.xmlConfig,
