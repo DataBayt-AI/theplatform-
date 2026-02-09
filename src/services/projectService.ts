@@ -1,9 +1,10 @@
 import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry, ProjectIAAConfig } from "@/types/data";
-import { dbService } from "./db";
+import { apiClient } from "./apiClient";
 
 export const projectService = {
     initialize: async () => {
-        await dbService.migrateFromLocalStorage();
+        // No longer need to migrate from localStorage - data is now on server
+        // This is kept for backwards compatibility
     },
 
     normalize: (project: Project): Project => {
@@ -12,26 +13,56 @@ export const projectService = {
             managerId: project.managerId ?? null,
             annotatorIds: project.annotatorIds ?? [],
             auditLog: project.auditLog ?? [],
+            dataPoints: project.dataPoints ?? [],
             iaaConfig: project.iaaConfig ?? {
                 enabled: false,
                 portionPercent: 0,
                 annotatorsPerIAAItem: 2
+            },
+            stats: project.stats ?? {
+                totalAccepted: 0,
+                totalRejected: 0,
+                totalEdited: 0,
+                totalProcessed: 0,
+                averageConfidence: 0,
+                sessionTime: 0,
             }
         };
     },
 
     getAll: async (): Promise<Project[]> => {
-        const projects = await dbService.getAllProjects();
-        return projects.map(projectService.normalize);
+        try {
+            const projects = await apiClient.projects.getAll();
+            return projects.map(projectService.normalize);
+        } catch (error) {
+            console.error('Failed to fetch projects:', error);
+            return [];
+        }
     },
 
     getById: async (id: string): Promise<Project | undefined> => {
-        const project = await dbService.getProject(id);
-        return project ? projectService.normalize(project) : undefined;
+        try {
+            const project = await apiClient.projects.getById(id);
+            return project ? projectService.normalize(project) : undefined;
+        } catch (error) {
+            console.error('Failed to fetch project:', error);
+            return undefined;
+        }
     },
 
-    create: async (name: string, description?: string, iaaConfig?: ProjectIAAConfig): Promise<Project> => {
-        const newProject: Project = {
+        getData: async (projectId: string, page: number = 1, limit: number = 50): Promise<{ dataPoints: DataPoint[]; pagination: any }> => {
+        try {
+            return await apiClient.projects.getData(projectId, page, limit);
+        } catch (error) {
+            console.error('Failed to fetch project data:', error);
+            return { dataPoints: [], pagination: {} };
+        }
+    },
+
+    create: async (name: string, description?: string, managerId?: string, iaaConfig?: ProjectIAAConfig): Promise<Project> => {
+        const result = await apiClient.projects.create({ name, description, managerId, iaaConfig });
+        return projectService.normalize({
+            ...result,
             id: crypto.randomUUID(),
             name,
             description,
@@ -53,20 +84,25 @@ export const projectService = {
                 averageConfidence: 0,
                 sessionTime: 0,
             },
-        };
-
-        const normalized = projectService.normalize(newProject);
-        await dbService.saveProject(normalized);
-        return normalized;
+        });
     },
 
     update: async (project: Project): Promise<void> => {
-        const updatedProject = projectService.normalize({ ...project, updatedAt: Date.now() });
-        await dbService.saveProject(updatedProject);
+        await apiClient.projects.update(project.id, {
+            name: project.name,
+            description: project.description,
+            managerId: project.managerId,
+            annotatorIds: project.annotatorIds,
+            xmlConfig: project.xmlConfig,
+            uploadPrompt: project.uploadPrompt,
+            customFieldName: project.customFieldName,
+            dataPoints: project.dataPoints,
+            stats: project.stats,
+        });
     },
 
     delete: async (id: string): Promise<void> => {
-        await dbService.deleteProject(id);
+        await apiClient.projects.delete(id);
     },
 
     updateAccess: async (projectId: string, access: { managerId?: string | null; annotatorIds?: string[] }) => {
@@ -81,28 +117,20 @@ export const projectService = {
     },
 
     appendAuditLog: async (projectId: string, entry: Omit<ProjectAuditEntry, 'id' | 'timestamp'>) => {
-        const project = await projectService.getById(projectId);
-        if (!project) throw new Error("Project not found");
-        const logEntry: ProjectAuditEntry = {
-            id: crypto.randomUUID(),
-            timestamp: Date.now(),
-            ...entry
-        };
-        const updated = {
-            ...project,
-            auditLog: [...(project.auditLog ?? []), logEntry]
-        };
-        await projectService.update(updated);
+        try {
+            await apiClient.projects.addAuditLog(projectId, entry.action, entry.details);
+        } catch (error) {
+            console.error('Failed to add audit log:', error);
+        }
     },
 
     // Helper to save just the data points and stats for a project
     saveProgress: async (projectId: string, dataPoints: DataPoint[], stats: AnnotationStats) => {
-        const project = await projectService.getById(projectId);
-        if (project) {
-            project.dataPoints = dataPoints;
-            project.stats = stats;
-            await projectService.update(project);
-        }
+        await apiClient.projects.update(projectId, { dataPoints, stats });
+    },
+
+    updateDataPoint: async (projectId: string, dataId: string, updates: Partial<DataPoint>): Promise<void> => {
+        await apiClient.projects.updateDataPoint(projectId, dataId, updates);
     },
 
     // Snapshot methods
@@ -110,39 +138,48 @@ export const projectService = {
         const project = await projectService.getById(projectId);
         if (!project) throw new Error("Project not found");
 
-        const snapshot: ProjectSnapshot = {
-            id: crypto.randomUUID(),
-            projectId: project.id,
+        const result = await apiClient.snapshots.create(projectId, {
             name,
             description,
-            createdAt: Date.now(),
-            dataPoints: [...project.dataPoints], // Deep copy if needed, but shallow copy of array is usually enough for immutable items
-            stats: { ...project.stats }
-        };
+            dataPoints: project.dataPoints,
+            stats: project.stats,
+        });
 
-        return await dbService.saveSnapshot(snapshot);
+        return result.id;
     },
 
     getSnapshots: async (projectId: string): Promise<ProjectSnapshot[]> => {
-        return await dbService.getSnapshots(projectId);
+        try {
+            return await apiClient.snapshots.getAll(projectId);
+        } catch (error) {
+            console.error('Failed to fetch snapshots:', error);
+            return [];
+        }
     },
 
     restoreSnapshot: async (snapshotId: string): Promise<void> => {
-        // 1. Get snapshot
-        const db = await dbService.getDB();
-        const snapshot = await db.get('snapshots', snapshotId);
-        if (!snapshot) throw new Error("Snapshot not found");
+        // Get all snapshots for all projects to find the one we need
+        // This is a bit inefficient but works for now
+        // In a real implementation, we'd have a direct API endpoint
+        const projects = await projectService.getAll();
 
-        // 2. Get current project
-        const project = await projectService.getById(snapshot.projectId);
-        if (!project) throw new Error("Project not found");
+        for (const project of projects) {
+            const snapshots = await apiClient.snapshots.getAll(project.id);
+            const snapshot = snapshots.find(s => s.id === snapshotId);
 
-        // 3. Update project with snapshot data
-        project.dataPoints = snapshot.dataPoints;
-        project.stats = snapshot.stats;
-        project.updatedAt = Date.now();
+            if (snapshot) {
+                await apiClient.projects.update(project.id, {
+                    dataPoints: snapshot.dataPoints,
+                    stats: snapshot.stats,
+                });
+                return;
+            }
+        }
 
-        // 4. Save project
-        await projectService.update(project);
+        throw new Error("Snapshot not found");
+    },
+
+    deleteSnapshot: async (projectId: string, snapshotId: string): Promise<void> => {
+        await apiClient.snapshots.delete(projectId, snapshotId);
     }
 };

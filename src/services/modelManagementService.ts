@@ -1,84 +1,139 @@
 import type { ModelProfile, ProjectModelPolicy, ProviderConnection } from "@/types/data";
+import { apiClient } from "./apiClient";
 
-const CONNECTIONS_KEY = "databayt-model-connections";
-const PROFILES_KEY = "databayt-model-profiles";
-const PROJECT_POLICIES_KEY = "databayt-project-model-policies";
+// Local cache for synchronous access (loaded from server on init)
+let connectionsCache: ProviderConnection[] = [];
+let profilesCache: ModelProfile[] = [];
+let policiesCache: Record<string, ProjectModelPolicy> = {};
+let initialized = false;
 
-const readList = <T>(key: string): T[] => {
-  const raw = localStorage.getItem(key);
-  if (!raw) return [];
+// Initialize by loading data from server
+async function ensureInitialized(): Promise<void> {
+  if (initialized) return;
+
   try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
-  } catch {
-    return [];
+    const [connections, profiles] = await Promise.all([
+      apiClient.connections.getAll(),
+      apiClient.profiles.getAll()
+    ]);
+    connectionsCache = connections;
+    profilesCache = profiles;
+    initialized = true;
+  } catch (error) {
+    console.error('Failed to initialize model management service:', error);
+    // Fall back to empty data
+    connectionsCache = [];
+    profilesCache = [];
+    initialized = true;
   }
-};
-
-const writeList = <T>(key: string, value: T[]) => {
-  localStorage.setItem(key, JSON.stringify(value));
-};
-
-const readPolicies = (): Record<string, ProjectModelPolicy> => {
-  const raw = localStorage.getItem(PROJECT_POLICIES_KEY);
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const writePolicies = (value: Record<string, ProjectModelPolicy>) => {
-  localStorage.setItem(PROJECT_POLICIES_KEY, JSON.stringify(value));
-};
+}
 
 export const modelManagementService = {
-  getConnections: (): ProviderConnection[] => readList<ProviderConnection>(CONNECTIONS_KEY),
+  // Async initialization
+  initialize: ensureInitialized,
+
+  // Connections
+  getConnections: (): ProviderConnection[] => connectionsCache,
+
   saveConnection: (connection: ProviderConnection): ProviderConnection => {
-    const list = readList<ProviderConnection>(CONNECTIONS_KEY);
     const now = Date.now();
-    const existingIndex = list.findIndex(item => item.id === connection.id);
+    const updated = { ...connection, updatedAt: now, createdAt: connection.createdAt || now };
+
+    // Update local cache immediately
+    const existingIndex = connectionsCache.findIndex(item => item.id === connection.id);
     if (existingIndex >= 0) {
-      list[existingIndex] = { ...connection, updatedAt: now };
+      connectionsCache[existingIndex] = updated;
     } else {
-      list.push({ ...connection, createdAt: now, updatedAt: now });
+      connectionsCache.push(updated);
     }
-    writeList(CONNECTIONS_KEY, list);
-    return list.find(item => item.id === connection.id)!;
+
+    // Sync to server in background
+    apiClient.connections.save(connection).catch(err => {
+      console.error('Failed to save connection to server:', err);
+    });
+
+    return updated;
   },
+
   deleteConnection: (id: string) => {
-    const list = readList<ProviderConnection>(CONNECTIONS_KEY).filter(item => item.id !== id);
-    writeList(CONNECTIONS_KEY, list);
+    // Update local cache immediately
+    connectionsCache = connectionsCache.filter(item => item.id !== id);
+
+    // Sync to server in background
+    apiClient.connections.delete(id).catch(err => {
+      console.error('Failed to delete connection from server:', err);
+    });
   },
-  getProfiles: (): ModelProfile[] => readList<ModelProfile>(PROFILES_KEY),
+
+  // Profiles
+  getProfiles: (): ModelProfile[] => profilesCache,
+
   saveProfile: (profile: ModelProfile): ModelProfile => {
-    const list = readList<ModelProfile>(PROFILES_KEY);
     const now = Date.now();
-    const existingIndex = list.findIndex(item => item.id === profile.id);
+    const updated = { ...profile, updatedAt: now, createdAt: profile.createdAt || now };
+
+    // Update local cache immediately
+    const existingIndex = profilesCache.findIndex(item => item.id === profile.id);
     if (existingIndex >= 0) {
-      list[existingIndex] = { ...profile, updatedAt: now };
+      profilesCache[existingIndex] = updated;
     } else {
-      list.push({ ...profile, createdAt: now, updatedAt: now });
+      profilesCache.push(updated);
     }
-    writeList(PROFILES_KEY, list);
-    return list.find(item => item.id === profile.id)!;
+
+    // Sync to server in background
+    apiClient.profiles.save(profile).catch(err => {
+      console.error('Failed to save profile to server:', err);
+    });
+
+    return updated;
   },
+
   deleteProfile: (id: string) => {
-    const list = readList<ModelProfile>(PROFILES_KEY).filter(item => item.id !== id);
-    writeList(PROFILES_KEY, list);
+    // Update local cache immediately
+    profilesCache = profilesCache.filter(item => item.id !== id);
+
+    // Sync to server in background
+    apiClient.profiles.delete(id).catch(err => {
+      console.error('Failed to delete profile from server:', err);
+    });
   },
+
+  // Policies
   getProjectPolicy: (projectId: string): ProjectModelPolicy | null => {
-    const policies = readPolicies();
-    return policies[projectId] ?? null;
+    return policiesCache[projectId] ?? null;
   },
+
+  loadProjectPolicy: async (projectId: string): Promise<ProjectModelPolicy | null> => {
+    try {
+      const policy = await apiClient.policies.get(projectId);
+      policiesCache[projectId] = policy;
+      return policy;
+    } catch (error) {
+      console.error('Failed to load project policy:', error);
+      return null;
+    }
+  },
+
   saveProjectPolicy: (policy: ProjectModelPolicy) => {
-    const policies = readPolicies();
-    policies[policy.projectId] = {
-      ...policy,
-      updatedAt: Date.now()
-    };
-    writePolicies(policies);
+    const updated = { ...policy, updatedAt: Date.now() };
+
+    // Update local cache immediately
+    policiesCache[policy.projectId] = updated;
+
+    // Sync to server in background
+    apiClient.policies.save(policy.projectId, {
+      allowedModelProfileIds: policy.allowedModelProfileIds,
+      defaultModelProfileIds: policy.defaultModelProfileIds
+    }).catch(err => {
+      console.error('Failed to save policy to server:', err);
+    });
+  },
+
+  // Refresh from server
+  refresh: async () => {
+    initialized = false;
+    await ensureInitialized();
   }
 };
+
+export default modelManagementService;

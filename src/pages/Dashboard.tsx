@@ -8,12 +8,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, FolderOpen, Trash2, Clock, BarChart3, MoreVertical, Target, Shield, Briefcase, PenTool } from "lucide-react";
+import { Plus, FolderOpen, Trash2, Clock, BarChart3, MoreVertical, Target, Shield, Briefcase, PenTool, Link, Copy, Check, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { UserMenu } from "@/components/UserMenu";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth, type User, type Role } from "@/contexts/AuthContext";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -45,11 +46,16 @@ const Dashboard = () => {
     const [editRoles, setEditRoles] = useState<Role[]>([]);
     const [resetPassword, setResetPassword] = useState("");
 
-    const handleUpdateUser = () => {
+    // Invite link state
+    const [inviteLink, setInviteLink] = useState("");
+    const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
+    const [generatingInvite, setGeneratingInvite] = useState(false);
+
+    const handleUpdateUser = async () => {
         if (!editingUser) return;
 
         // Update Roles
-        const roleResult = updateUserRoles(editingUser.id, editRoles);
+        const roleResult = await updateUserRoles(editingUser.id, editRoles);
         if (!roleResult.ok) {
             toast({ variant: "destructive", title: "Error", description: roleResult.error });
             return;
@@ -57,7 +63,7 @@ const Dashboard = () => {
 
         // Reset Password if provided
         if (resetPassword.trim()) {
-            const passResult = adminResetPassword(editingUser.id, resetPassword);
+            const passResult = await adminResetPassword(editingUser.id, resetPassword);
             if (!passResult.ok) {
                 toast({ variant: "destructive", title: "Error", description: passResult.error });
                 return;
@@ -69,9 +75,9 @@ const Dashboard = () => {
         setResetPassword("");
     };
 
-    const handleDeleteUser = (userId: string) => {
+    const handleDeleteUser = async (userId: string) => {
         if (!confirm("Are you sure you want to delete this user? This cannot be undone.")) return;
-        const result = deleteUser(userId);
+        const result = await deleteUser(userId);
         if (result.ok) {
             toast({ title: "Success", description: "User deleted successfully" });
         } else {
@@ -166,9 +172,9 @@ const Dashboard = () => {
         }
     };
 
-    const handleCreateUser = () => {
+    const handleCreateUser = async () => {
         if (!isAdmin) return;
-        const result = createUser(newUsername, newPassword, newRoles);
+        const result = await createUser(newUsername, newPassword, newRoles);
         if (!result.ok) {
             setCreateUserError(result.error || "Failed to create user");
             return;
@@ -190,7 +196,8 @@ const Dashboard = () => {
         try {
             const normalizedPortion = Math.max(0, Math.min(100, Math.floor(iaaPortion)));
             const normalizedAnnotators = Math.max(2, Math.floor(iaaAnnotatorsPerItem));
-            const project = await projectService.create(newProjectName, newProjectDesc, {
+            // Set current user as manager so they have full access
+            const project = await projectService.create(newProjectName, newProjectDesc, currentUser?.id, {
                 enabled: iaaEnabled && normalizedPortion > 0,
                 portionPercent: iaaEnabled ? normalizedPortion : 0,
                 annotatorsPerIAAItem: normalizedAnnotators
@@ -332,6 +339,59 @@ const Dashboard = () => {
                                             <div className="flex justify-end">
                                                 <Button size="sm" onClick={handleCreateUser}>Create User</Button>
                                             </div>
+                                        </div>
+
+                                        {/* Invite Link Section */}
+                                        <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                                            <div className="flex items-center gap-2">
+                                                <Link className="h-4 w-4 text-blue-600" />
+                                                <h3 className="font-semibold text-sm">Invite Link</h3>
+                                            </div>
+                                            <p className="text-sm text-muted-foreground">
+                                                Generate a link that allows new users to sign up as annotators.
+                                            </p>
+                                            {inviteLink ? (
+                                                <div className="flex gap-2">
+                                                    <Input
+                                                        value={inviteLink}
+                                                        readOnly
+                                                        className="text-sm bg-white dark:bg-background"
+                                                    />
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(inviteLink);
+                                                            setInviteLinkCopied(true);
+                                                            setTimeout(() => setInviteLinkCopied(false), 2000);
+                                                        }}
+                                                    >
+                                                        {inviteLinkCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    disabled={generatingInvite}
+                                                    onClick={async () => {
+                                                        setGeneratingInvite(true);
+                                                        try {
+                                                            const { apiClient } = await import('@/services/apiClient');
+                                                            const result = await apiClient.invite.create({ roles: ['annotator'] });
+                                                            const baseUrl = window.location.origin;
+                                                            setInviteLink(`${baseUrl}${result.inviteUrl}`);
+                                                        } catch (err) {
+                                                            toast({ variant: 'destructive', title: 'Error', description: 'Failed to generate invite link' });
+                                                        } finally {
+                                                            setGeneratingInvite(false);
+                                                        }
+                                                    }}
+                                                >
+                                                    {generatingInvite ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Link className="h-4 w-4 mr-2" />}
+                                                    Generate Invite Link
+                                                </Button>
+                                            )}
                                         </div>
 
                                         {/* User List Section */}
@@ -538,6 +598,7 @@ const Dashboard = () => {
                             </Dialog>
                         )}
 
+                        <ThemeToggle />
                         <UserMenu />
                     </div>
                 </div >
@@ -618,11 +679,11 @@ const Dashboard = () => {
                                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                                             <div className="flex items-center gap-1">
                                                 <FolderOpen className="w-4 h-4" />
-                                                <span>{project.dataPoints.length} items</span>
+                                                <span>{project.totalDataPoints ?? project.dataPoints.length} items</span>
                                             </div>
                                             <div className="flex items-center gap-1">
                                                 <BarChart3 className="w-4 h-4" />
-                                                <span>{Math.round((project.stats.totalAccepted + project.stats.totalEdited) / (project.dataPoints.length || 1) * 100)}% done</span>
+                                                <span>{Math.round((project.stats.totalAccepted + project.stats.totalEdited) / ((project.totalDataPoints ?? project.dataPoints.length) || 1) * 100)}% done</span>
                                             </div>
                                         </div>
                                         <div className="mt-2 text-xs text-muted-foreground">
