@@ -208,6 +208,8 @@ const DataLabelingWorkspace = () => {
   const [listLayout, setListLayout] = useState<'grid' | 'list'>('grid');
   const [metadataFilters, setMetadataFilters] = useState<Record<string, string[]>>({});
   const [metadataFiltersCollapsed, setMetadataFiltersCollapsed] = useState(true);
+  const [annotatedByFilter, setAnnotatedByFilter] = useState<string>('all');
+  const [annotatedTimeFilter, setAnnotatedTimeFilter] = useState<string>('all');
   const [useFilteredNavigation, setUseFilteredNavigation] = useState(false);
 
   // Advanced Features State
@@ -1432,6 +1434,34 @@ const DataLabelingWorkspace = () => {
     return dataPoints.map((dataPoint, index) => ({ dataPoint, index }));
   }, [dataPoints]);
 
+  const availableAnnotators = useMemo(() => {
+    const annotatorSet = new Map<string, string>();
+    annotationEntries.forEach(({ dataPoint }) => {
+      // From assignments
+      dataPoint.assignments?.forEach(a => {
+        if (a.status === 'done' || a.status === 'in_progress') {
+          const user = getUserById(a.annotatorId);
+          annotatorSet.set(a.annotatorId, user?.username || a.annotatorId);
+        }
+      });
+      // From top level fields
+      if (dataPoint.annotatorId) {
+        const user = getUserById(dataPoint.annotatorId);
+        annotatorSet.set(dataPoint.annotatorId, user?.username || dataPoint.annotatorName || dataPoint.annotatorId);
+      }
+    });
+
+    // Also include currently assigned annotators even if they haven't started
+    projectAccess?.annotatorIds?.forEach(id => {
+      const user = getUserById(id);
+      if (!annotatorSet.has(id)) {
+        annotatorSet.set(id, user?.username || id);
+      }
+    });
+
+    return Array.from(annotatorSet.entries()).map(([id, name]) => ({ id, name }));
+  }, [annotationEntries, getUserById, projectAccess]);
+
   // Derived state for completed count
   const completedCount = useMemo(
     () => annotationEntries.filter(({ dataPoint }) => {
@@ -1463,6 +1493,36 @@ const DataLabelingWorkspace = () => {
         return false;
       }
 
+      // Annotated By Filter
+      if (annotatedByFilter !== 'all') {
+        const itemAnnotators = new Set<string>();
+        if (dataPoint.annotatorId) itemAnnotators.add(dataPoint.annotatorId);
+        dataPoint.assignments?.forEach(a => {
+          if (a.status === 'done') itemAnnotators.add(a.annotatorId);
+        });
+        if (!itemAnnotators.has(annotatedByFilter)) return false;
+      }
+
+      // Annotated Time Filter
+      if (annotatedTimeFilter !== 'all') {
+        const now = Date.now();
+        const DayMs = 24 * 60 * 60 * 1000;
+        let threshold = 0;
+
+        if (annotatedTimeFilter === 'today') threshold = now - DayMs;
+        else if (annotatedTimeFilter === 'this_week') threshold = now - 7 * DayMs;
+        else if (annotatedTimeFilter === 'this_month') threshold = now - 30 * DayMs;
+
+        if (threshold > 0) {
+          const itemTimes = [dataPoint.annotatedAt].filter(Boolean) as number[];
+          dataPoint.assignments?.forEach(a => {
+            if (a.annotatedAt) itemTimes.push(a.annotatedAt);
+          });
+          const newest = itemTimes.length > 0 ? Math.max(...itemTimes) : 0;
+          if (newest < threshold) return false;
+        }
+      }
+
       if (!normalizedAnnotationQuery) return true;
 
       const searchText = [
@@ -1481,7 +1541,7 @@ const DataLabelingWorkspace = () => {
 
       return searchText.includes(normalizedAnnotationQuery);
     });
-  }, [annotationEntries, annotationStatusFilter, normalizedAnnotationQuery, getDisplayStatus, getVisibleFinalAnnotation, getVisibleDraftAnnotation]);
+  }, [annotationEntries, annotationStatusFilter, annotatedByFilter, annotatedTimeFilter, normalizedAnnotationQuery, getDisplayStatus, getVisibleFinalAnnotation, getVisibleDraftAnnotation]);
 
   const eligibleMetadataKeys = useMemo(() => {
     const keyValues = annotationEntries.reduce((acc, { dataPoint }) => {
@@ -1572,7 +1632,7 @@ const DataLabelingWorkspace = () => {
   );
 
   const hasActiveMetadataFilters = Object.values(metadataFilters).some(values => values?.length);
-  const hasActiveFilters = annotationStatusFilter !== 'all' || normalizedAnnotationQuery.length > 0 || hasActiveMetadataFilters;
+  const hasActiveFilters = annotationStatusFilter !== 'all' || annotatedByFilter !== 'all' || annotatedTimeFilter !== 'all' || normalizedAnnotationQuery.length > 0 || hasActiveMetadataFilters;
   const filteredNavigationIndices = useMemo(
     () => filteredAnnotationEntries.map(entry => entry.index),
     [filteredAnnotationEntries]
@@ -1602,7 +1662,7 @@ const DataLabelingWorkspace = () => {
 
   useEffect(() => {
     setAnnotationPage(1);
-  }, [annotationQuery, annotationStatusFilter, annotationPageSize, metadataFilters]);
+  }, [annotationQuery, annotationStatusFilter, annotatedByFilter, annotatedTimeFilter, annotationPageSize, metadataFilters]);
 
   useEffect(() => {
     if (annotationPage !== safeAnnotationPage) {
@@ -3089,7 +3149,7 @@ const DataLabelingWorkspace = () => {
                           </Badge>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_1fr_1fr_1fr]">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                           <div className="space-y-1">
                             <Label htmlFor="annotation-search" className="text-xs text-muted-foreground">Search</Label>
                             <Input
@@ -3117,6 +3177,44 @@ const DataLabelingWorkspace = () => {
                                 <SelectItem value="ai_processed">AI processed</SelectItem>
                                 <SelectItem value="pending">Pending</SelectItem>
                                 <SelectItem value="rejected">Rejected</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Annotated By</Label>
+                            <Select
+                              value={annotatedByFilter}
+                              onValueChange={setAnnotatedByFilter}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="All annotators" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">All annotators</SelectItem>
+                                {availableAnnotators.map(annotator => (
+                                  <SelectItem key={annotator.id} value={annotator.id}>
+                                    {annotator.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Time Frame</Label>
+                            <Select
+                              value={annotatedTimeFilter}
+                              onValueChange={setAnnotatedTimeFilter}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="All time" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">All time</SelectItem>
+                                <SelectItem value="today">Today (24h)</SelectItem>
+                                <SelectItem value="this_week">This Week</SelectItem>
+                                <SelectItem value="this_month">This Month</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
