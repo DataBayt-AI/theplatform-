@@ -2,6 +2,8 @@
  * API client for communicating with the backend server
  */
 
+import { ProjectIAAConfig } from "@/types/data";
+
 const API_BASE = '/api';
 
 async function request<T>(
@@ -50,6 +52,8 @@ export const apiClient = {
             description?: string;
             managerId?: string;
             annotatorIds?: string[];
+            iaaConfig?: ProjectIAAConfig;
+            guidelines?: string;
         }) => request<any>('/projects', {
             method: 'POST',
             body: JSON.stringify(data),

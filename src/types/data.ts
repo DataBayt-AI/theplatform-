@@ -7,7 +7,7 @@ export interface DataPoint {
     finalAnnotation?: string;
     aiSuggestions: Record<string, string>; // providerId -> suggestion
     ratings: Record<string, number>; // providerId -> rating (1-5)
-    status: 'pending' | 'ai_processed' | 'accepted' | 'edited' | 'rejected';
+    status: 'pending' | 'ai_processed' | 'accepted' | 'edited' | 'rejected' | 'partial' | 'needs_adjudication';
     confidence?: number;
     uploadPrompt?: string; // Prompt used during upload
     customField?: string; // Value of the custom field
@@ -19,6 +19,24 @@ export interface DataPoint {
     annotatorId?: string;
     annotatorName?: string;
     annotatedAt?: number;
+    isIAA?: boolean;
+    iaaRequiredCount?: number;
+    assignments?: AnnotationAssignment[];
+    annotationDrafts?: Record<string, string>;
+}
+
+export interface AnnotationAssignment {
+    annotatorId: string;
+    status: 'pending' | 'in_progress' | 'done';
+    value?: string;
+    annotatedAt?: number;
+}
+
+export interface ProjectIAAConfig {
+    enabled: boolean;
+    portionPercent: number;
+    annotatorsPerIAAItem: number;
+    seed?: number;
 }
 
 export interface ProjectSnapshot {
@@ -91,12 +109,14 @@ export interface Project {
     id: string;
     name: string;
     description?: string;
+    guidelines?: string;
     managerId?: string | null;
     annotatorIds?: string[];
     xmlConfig?: string;
     uploadPrompt?: string;
     customFieldName?: string;
     auditLog?: ProjectAuditEntry[];
+    iaaConfig?: ProjectIAAConfig;
     createdAt: number;
     updatedAt: number;
     dataPoints: DataPoint[];

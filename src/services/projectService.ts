@@ -1,4 +1,4 @@
-import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry } from "@/types/data";
+import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry, ProjectIAAConfig } from "@/types/data";
 import { apiClient } from "./apiClient";
 
 export const projectService = {
@@ -10,10 +10,16 @@ export const projectService = {
     normalize: (project: Project): Project => {
         return {
             ...project,
+            guidelines: project.guidelines ?? '',
             managerId: project.managerId ?? null,
             annotatorIds: project.annotatorIds ?? [],
             auditLog: project.auditLog ?? [],
             dataPoints: project.dataPoints ?? [],
+            iaaConfig: project.iaaConfig ?? {
+                enabled: false,
+                portionPercent: 0,
+                annotatorsPerIAAItem: 2
+            },
             stats: project.stats ?? {
                 totalAccepted: 0,
                 totalRejected: 0,
@@ -54,10 +60,23 @@ export const projectService = {
         }
     },
 
-    create: async (name: string, description?: string, managerId?: string): Promise<Project> => {
-        const result = await apiClient.projects.create({ name, description, managerId });
+    create: async (name: string, description?: string, managerId?: string, iaaConfig?: ProjectIAAConfig, guidelines?: string): Promise<Project> => {
+        const result = await apiClient.projects.create({ name, description, managerId, iaaConfig, guidelines });
         return projectService.normalize({
             ...result,
+            id: crypto.randomUUID(),
+            name,
+            description,
+            guidelines,
+            managerId: null,
+            annotatorIds: [],
+            iaaConfig: iaaConfig ?? {
+                enabled: false,
+                portionPercent: 0,
+                annotatorsPerIAAItem: 2
+            },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
             dataPoints: [],
             stats: {
                 totalAccepted: 0,
@@ -74,6 +93,7 @@ export const projectService = {
         await apiClient.projects.update(project.id, {
             name: project.name,
             description: project.description,
+            guidelines: project.guidelines,
             managerId: project.managerId,
             annotatorIds: project.annotatorIds,
             xmlConfig: project.xmlConfig,
