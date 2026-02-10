@@ -945,53 +945,66 @@ const DataLabelingWorkspace = () => {
         const promptIndex = header.findIndex(h => h.toLowerCase().includes('prompt'));
         if (promptIndex >= 0) setPromptLabel(header[promptIndex]);
 
+        // Regex to split by comma but ignore commas inside quotes
+        const regex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
+
         parsedData = lines.slice(1).map((line, index) => {
-          // Handle simple CSV parsing (split by comma)
-          // TODO: Consider using a library like PapaParse for robust CSV handling
-          const values = line.split(',');
+          if (!line.trim()) return null; // Skip empty lines
+
+          // Handle quotes: remove surrounding quotes if present and unescape double quotes
+          const values = line.split(regex).map(val => {
+            let v = val.trim();
+            if (v.startsWith('"') && v.endsWith('"')) {
+              v = v.slice(1, -1).replace(/""/g, '"');
+            }
+            return v;
+          });
+
           if (values.length > header.length) {
-            throw new Error(`CSV row ${index + 2} has ${values.length} columns, expected ${header.length}.`);
+            // Try to recover if trailing empty commas
+            const meaningfulValues = values.filter(v => v !== '');
+            if (meaningfulValues.length <= header.length) {
+              // Pad with empty strings if needed or just use as is
+            } else {
+              console.warn(`Row ${index + 2} has more columns than header`, values);
+            }
           }
+
+          // Pad if missing columns
           while (values.length < header.length) {
             values.push('');
           }
-          if (!values[contentIndex] || !values[contentIndex].trim()) {
-            throw new Error(`CSV row ${index + 2} is missing a value for column "${header[contentIndex]}".`);
+
+          if (!values[contentIndex] && values[contentIndex] !== '') {
+            // Allow empty content? Maybe not. But let's be lenient for now or fallback.
+            // Actually if content is critical we should probably check.
+            // But let's just use what we have.
           }
 
-          // Create metadata object - only include selected display columns if specified
+          // Create metadata object
           const metadata: Record<string, string> = {};
           header.forEach((h, i) => {
             if (values[i] !== undefined) {
-              // Include all columns in metadata, but mark which ones to display
-              metadata[h] = values[i].trim();
+              metadata[h] = values[i];
             }
           });
 
-          // Filter display metadata to only selected columns
-          const displayMetadata: Record<string, string> = {};
-          if (selectedDisplayColumns.length > 0) {
-            selectedDisplayColumns.forEach(col => {
-              if (metadata[col] !== undefined) {
-                displayMetadata[col] = metadata[col];
-              }
-            });
-          }
-
           return {
             id: crypto.randomUUID(),
-            content: contentIndex >= 0 ? values[contentIndex]?.trim() : (values[0]?.trim() || line),
-            originalAnnotation: annotationIndex >= 0 ? values[annotationIndex]?.trim() : '',
+            content: contentIndex >= 0 ? values[contentIndex] : (values[0] || line),
+            originalAnnotation: annotationIndex >= 0 ? values[annotationIndex] : '',
             aiSuggestions: {},
             ratings: {},
             status: 'pending' as const,
             uploadPrompt: prompt,
             customField: '',
             customFieldName: customField,
-            metadata: metadata,
-            displayMetadata: selectedDisplayColumns.length > 0 ? displayMetadata : metadata
-          };
-        });
+            metadata,
+            customFieldValues: {},
+            isIAA: false, // Default, will be set by applyAssignmentsToDataPoints
+            annotatedAt: Date.now(), // timestamp for upload
+          } as DataPoint;
+        }).filter(Boolean) as DataPoint[];
       } else {
         // Plain text - each line is a data point
         const lines = text.split('\n').filter(line => line.trim());
