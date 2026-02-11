@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/components/ui/use-toast";
 import { MetadataSidebar } from "@/components/MetadataSidebar";
@@ -124,6 +125,10 @@ const DataLabelingWorkspace = () => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadPrompt, setUploadPrompt] = useState('');
+  const [useIAA, setUseIAA] = useState(false);
+  const [iaaPercentage, setIaaPercentage] = useState(20);
+  const [iaaAnnotators, setIaaAnnotators] = useState(2);
+
 
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
@@ -834,8 +839,8 @@ const DataLabelingWorkspace = () => {
     return arr;
   };
 
-  const applyAssignmentsToDataPoints = (points: DataPoint[]) => {
-    const config = projectAccess?.iaaConfig;
+  const applyAssignmentsToDataPoints = (points: DataPoint[], overrideConfig?: { enabled: boolean; portionPercent: number; annotatorsPerIAAItem: number }) => {
+    const config = overrideConfig ?? projectAccess?.iaaConfig;
     const enabled = !!config?.enabled && (config.portionPercent ?? 0) > 0;
     const portion = Math.max(0, Math.min(100, Math.floor(config?.portionPercent ?? 0)));
     const annotatorsPerItem = Math.max(2, Math.floor(config?.annotatorsPerIAAItem ?? 2));
@@ -1023,7 +1028,13 @@ const DataLabelingWorkspace = () => {
         }));
       }
 
-      const assignedData = applyAssignmentsToDataPoints(parsedData);
+      const iaaConfig = useIAA ? {
+        enabled: true,
+        portionPercent: iaaPercentage,
+        annotatorsPerIAAItem: iaaAnnotators
+      } : { enabled: false, portionPercent: 0, annotatorsPerIAAItem: 2 };
+
+      const assignedData = applyAssignmentsToDataPoints(parsedData, iaaConfig);
       loadNewData(assignedData);
 
       // Persist newly uploaded data to backend
@@ -2163,6 +2174,59 @@ const DataLabelingWorkspace = () => {
                         </p>
                       </div>
 
+                      {/* IAA Configuration Section */}
+                      <div className="space-y-3 pt-2 border-t">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="use-iaa" className="text-base">Inter-Annotator Agreement (IAA)</Label>
+                            <p className="text-xs text-muted-foreground">
+                              Enable multiple annotators for quality control
+                            </p>
+                          </div>
+                          <Switch
+                            id="use-iaa"
+                            checked={useIAA}
+                            onCheckedChange={setUseIAA}
+                          />
+                        </div>
+
+                        {useIAA && (
+                          <div className="space-y-3 pl-4 border-l-2 border-purple-200 dark:border-purple-800">
+                            <div>
+                              <Label htmlFor="iaa-percentage">Percentage of Items (%)</Label>
+                              <Input
+                                id="iaa-percentage"
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={iaaPercentage}
+                                onChange={(e) => setIaaPercentage(Number(e.target.value))}
+                                className="mt-1"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                What percentage of items should require multiple annotations?
+                              </p>
+                            </div>
+
+                            <div>
+                              <Label htmlFor="iaa-annotators">Required Annotators per Item</Label>
+                              <Input
+                                id="iaa-annotators"
+                                type="number"
+                                min="2"
+                                max="10"
+                                value={iaaAnnotators}
+                                onChange={(e) => setIaaAnnotators(Number(e.target.value))}
+                                className="mt-1"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                How many different annotators must label each IAA item?
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Column Selection Section */}
                       {availableColumns.length > 0 && (
                         <div className="space-y-4 pt-2 border-t">
@@ -2227,6 +2291,9 @@ const DataLabelingWorkspace = () => {
                             setUploadPrompt('');
                             setSelectedContentColumn('');
                             setSelectedDisplayColumns([]);
+                            setUseIAA(false);
+                            setIaaPercentage(20);
+                            setIaaAnnotators(2);
                           }}
                         >
                           Cancel

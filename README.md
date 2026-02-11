@@ -1,249 +1,174 @@
 # DataBayt.AI Studio
 
-A powerful, modern data annotation tool that leverages AI to accelerate the data labeling process. Upload your data, choose an AI provider, and efficiently review and refine annotations.
+DataBayt.AI Studio is a team-based data annotation platform with AI-assisted labeling, project governance, and model management.
 
-## 🚀 Features
+## Demo
 
-- **Multi-format File Support**: Upload JSON, CSV, or TXT files containing your data
-- **AI-Powered Labeling**: Integration with OpenAI GPT, Anthropic Claude, and local models
-- **Custom Annotation Fields**: Create custom forms with XML configuration
-- **In-App XML Editor**: Customize your annotation interface directly in the app
-- **Custom Prompts**: Add optional custom instructions for the AI to follow
-- **Interactive Review**: Accept, edit, or completely change AI-generated annotations
-- **Progress Tracking**: Visual progress indicators and completion statistics
-- **Export Results**: Download your annotated data in JSON format (including custom fields)
-- **Keyboard Shortcuts**: Efficient navigation and workflow
-- **Modern UI**: Clean, responsive interface built with shadcn/ui
+![DataBayt demo](docs/assets/demo.gif)
 
-## 🛠️ Setup
+## Features
+
+### Annotation and Data Workflow
+
+- Multi-format upload: JSON, CSV, TXT
+- Text and image annotation tasks
+- AI-assisted labeling with human review (accept, edit, reject)
+- Manual labeling and partial-progress states
+- Confidence scores and model rating support
+- Metadata-aware datasets (raw metadata + display metadata columns)
+- Dynamic annotation forms from XML config
+- In-app XML editor and default XML template
+- Custom upload prompt and prompt interpolation using metadata placeholders (`{{columnName}}`)
+- Keyboard shortcuts, list/record views, filtered navigation
+- Undo/redo support for annotation edits
+
+### AI Providers and Model Ops
+
+- Provider support: OpenAI, Anthropic, OpenRouter, SambaNova, Local (Ollama)
+- Provider proxy routes on backend (`/api/openai/*`, `/api/anthropic/*`, `/api/openrouter/*`, `/api/sambanova/*`)
+- Central model management page for:
+  - Provider connections (API key, base URL, active state)
+  - Model profiles (model, prompt, temperature, max tokens, optional pricing)
+  - Project model policies (allowed/default profiles per project)
+- Profile test action before production use
+- Batch processing scopes: current item, filtered items, all items
+- Token estimate and cost-aware workflow support in workspace
+
+### Team Collaboration and Governance
+
+- Role-based access control: `admin`, `manager`, `annotator`
+- Project-level manager and annotator assignment
+- Invite-link onboarding with token validation, expiry, max-use limits, activate/deactivate
+- User management (create/edit/delete users, role updates, admin password reset)
+- Audit log entries for key project actions (upload, AI processing, export, assignment)
+- Annotation guidelines per project
+- Version history snapshots with restore
+- Inter-annotator agreement (IAA) configuration:
+  - Enable/disable IAA
+  - Percent of items to duplicate
+  - Annotators per IAA item
+
+### Export and Publishing
+
+- Export annotated datasets to:
+  - JSON
+  - CSV
+  - JSONL
+- Export includes content, labels, AI suggestions, ratings, metadata, custom XML fields, annotator fields, status, confidence
+- Hugging Face dataset publishing support (private dataset repo flow)
+
+### Backend and Persistence
+
+- Express backend API
+- SQLite persistence (`better-sqlite3`)
+- WAL mode and indexed tables for common query paths
+- Paginated project data API for large datasets
+- Granular single-data-point patch updates
+
+## Tech Stack
+
+- React 18 + TypeScript + Vite
+- Tailwind CSS + shadcn/ui
+- Express 5
+- SQLite (`better-sqlite3`)
+- `js-tiktoken` for token estimation
+- `@huggingface/hub` for dataset publishing
+
+## Quick Start
 
 ### Prerequisites
 
-- **Node.js**: Ensure you have Node.js 18+ installed
+- Node.js 18+
 
 ### Installation
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-2. Start the development server (runs both frontend and backend):
-   ```bash
-   npm run dev:all
-   ```
-
-3. Open your browser and navigate to the displayed local URL (usually `http://localhost:8080`)
-
-## 🔑 API Key Configuration
-
-### OpenAI API Key
-
-1. Click the Settings button (gear icon) in the top-right corner
-2. Select "OpenAI GPT" as your model provider
-3. Enter your OpenAI API key in the provided field
-4. Your API key is stored locally in your browser and never sent to our servers
-
-### Getting an OpenAI API Key
-
-1. Visit [OpenAI's website](https://platform.openai.com/)
-2. Sign in or create an account
-3. Navigate to the API section
-4. Generate a new API key
-5. Copy and paste it into the DataBayt.AI Studio settings
-
-**Important**: Your API key should start with `sk-` and is sensitive information. Keep it secure!
-
-## 📁 Data Format Support
-
-### JSON Format
-```json
-[
-  {
-    "text": "Your text content here",
-    "annotation": "Optional existing label"
-  },
-  {
-    "content": "Alternative content field name",
-    "label": "Alternative label field name"
-  }
-]
+```bash
+npm install
 ```
 
-### CSV Format
-```csv
-text,label
-"Your text content here","Optional existing label"
-"Another text sample","Another label"
+### Run frontend + backend
+
+```bash
+npm run dev:all
 ```
 
-### TXT Format
-```
-Each line represents a separate data point
-This is another data point
-And this is a third one
-```
+Default frontend URL is typically `http://localhost:8080`.
 
-## 📖 Usage Guide
+## Project Structure
 
-### 1. Upload Your Data
-
-- Click the upload button (📁) in the top toolbar
-- Select a JSON, CSV, or TXT file containing your data
-- The app will automatically parse and load your data points
-
-### 2. Configure AI Provider
-
-- Click the Settings button (⚙️)
-- Choose your preferred model provider:
-  - **OpenAI GPT**: Most accurate, requires API key
-  - **Anthropic Claude**: Alternative AI provider (placeholder implementation)
-  - **Local Model**: Simple rule-based model for testing
-
-### 3. Customize Annotation Fields (New!)
-
-You can now customize the annotation interface to match your specific needs:
-
-1. Click the **Customize** button in the "Human Annotation" section.
-2. Use the **XML Editor** to define your fields.
-3. You can add text inputs, textareas, checkboxes, radio buttons, and select dropdowns.
-4. Use `{{columnName}}` to insert values from your data file dynamically.
-
-**Example XML Config:**
-```xml
-<View>
-  <Header value="Sentiment Analysis"/>
-  <Text name="text" value="$text"/>
-  <Choices name="sentiment" toName="text" choice="single">
-    <Choice value="Positive"/>
-    <Choice value="Negative"/>
-    <Choice value="Neutral"/>
-  </Choices>
-  <TextArea name="reasoning" toName="text" placeholder="Why this sentiment?"/>
-</View>
-```
-
-### 4. Add Custom Prompt (Optional)
-
-In the settings dialog, you can add a custom prompt that will be sent to the AI along with each data point:
-
-```
-Please classify the following text as positive, negative, or neutral sentiment.
-Provide a brief explanation for your classification.
-```
-
-### 4. Process with AI
-
-- Click "Process All with AI" to send all data points to your chosen AI provider
-- The AI will generate suggested annotations for each data point
-- You'll see confidence scores for each suggestion
-
-### 5. Review and Refine
-
-For each data point, you can:
-- **Accept**: Use the AI's suggestion as-is
-- **Edit**: Modify the AI's suggestion
-- **Reject & Reset**: Discard the AI suggestion and start over
-
-### 6. Navigate and Track Progress
-
-- Use the arrow buttons or keyboard shortcuts (← →) to navigate between data points
-- Monitor your progress with the visual progress bar
-- View completion statistics in the actions panel
-
-### 7. Export Results
-
-- Click the download button (💾) to export your annotated data
-- Results are saved as a JSON file containing:
-  - Original content
-  - Original annotations (if any)
-  - AI suggestions
-  - Final annotations
-  - Status and confidence scores
-
-## ⌨️ Keyboard Shortcuts
-
-- `←` / `→`: Navigate between data points
-- `E`: Toggle edit mode
-- `S`: Save current annotation
-- `?`: Show keyboard shortcuts help
-
-## 📂 Sample Data
-
-The project includes sample data files in the `public` folder:
-
-- `sample-data.json`: JSON format with text and annotations
-- `sample-csv.csv`: CSV format with text and labels
-- `sample-text.txt`: Plain text format
-
-You can download and use these files to test the application.
-
-## 🔧 Technical Details
-
-### Built With
-
-- **React 18**: Modern React with hooks
-- **TypeScript**: Type-safe development
-- **Vite**: Fast build tool and dev server
-- **Tailwind CSS**: Utility-first CSS framework
-- **shadcn/ui**: High-quality UI components
-- **OpenAI SDK**: Official OpenAI API integration
-- **Lucide React**: Beautiful icons
-
-### Project Structure
-
-```
+```text
 src/
-├── components/
-│   ├── ui/                     # shadcn/ui components
-│   └── DataLabelingWorkspace.tsx  # Main application component
-├── services/
-│   └── aiProviders.ts          # AI provider integrations
-├── pages/
-│   └── Index.tsx              # Main page
-└── lib/
-    └── utils.ts               # Utility functions
+  components/
+    DataLabelingWorkspace.tsx
+    VersionHistory.tsx
+    GuidelinesDialog.tsx
+  pages/
+    Dashboard.tsx
+    ModelManagement.tsx
+    Signup.tsx
+  services/
+    aiProviders.ts
+    exportService.ts
+    modelManagementService.ts
+    projectService.ts
+    huggingFaceService.ts
 server/
-└── index.js                   # Backend proxy server
+  index.js
+  routes/
+    projects.js
+    users.js
+    models.js
+  services/
+    database.js
 ```
 
-## 🚨 Security Notes
+## API Key and Provider Setup
 
-- API keys are stored in browser localStorage and sent to your **local** server proxy
-- No data is sent to external servers other than the chosen AI provider
-- Requests are routed through the local server (`server/index.js`) to handle CORS and security
-- **Production**: When deploying, you must deploy the server component to handle these API requests
+You configure providers in **Model Management**:
 
-## 🐛 Troubleshooting
+1. Create a provider connection (provider, API key, optional base URL)
+2. Create one or more model profiles on top of that connection
+3. Assign allowed/default profiles per project using project model policy
 
-### Common Issues
+You can then select profiles in project workspace and process data.
 
-1. **"OpenAI API key is required" error**
-   - Make sure you've entered a valid API key starting with `sk-`
-   - Check that you've saved the settings after entering the key
+## Data Notes
 
-2. **File upload fails**
-   - Ensure your file is in JSON, CSV, or TXT format
-   - Check that JSON files contain a valid array structure
-   - Verify CSV files have appropriate column headers
+- CSV: All columns are preserved in metadata. You can select which metadata columns are displayed in workspace.
+- JSON: Supports flexible payloads, including text/image style records.
+- TXT: Each line is treated as a separate text item.
+- Image tasks: Supported through provider-specific image handling in AI provider layer.
 
-3. **AI processing fails**
-   - Verify your API key is correct and has sufficient credits
-   - Check your internet connection
-   - Try with a smaller dataset first
+## Security and Deployment Notes
 
-### Getting Help
+- API requests are routed through local backend proxy endpoints.
+- Provider keys are stored in connection config and used for proxied provider calls.
+- For production, deploy both frontend and backend together.
+- Review authentication/session strategy before public deployment.
 
-If you encounter issues:
-1. Check the browser console for error messages
-2. Verify your API key and internet connection
-3. Try with the provided sample data files
-4. Ensure you're using a supported file format
+## Troubleshooting
 
-## 📄 License
+1. Provider/model list not loading
 
-This project is part of the DataBayt.AI suite. Please refer to your license agreement for terms of use.
+- Confirm backend is running (`npm run dev:all`)
+- Verify API key in Model Management connection
+- Check provider route responses in browser network tab
 
----
+2. Upload issues
 
-**DataBayt.AI Studio** - Accelerating data annotation with AI-powered assistance.
+- Confirm file is valid JSON/CSV/TXT
+- For CSV, ensure headers are present
+
+3. AI processing errors
+
+- Verify active model profile + active provider connection
+- Verify API key credits/limits
+- For local provider, ensure Ollama endpoint is reachable (default `http://localhost:11434`)
+
+4. Access denied in project/model pages
+
+- Confirm user role and project assignment (admin/manager/annotator)
+
+## License
+
+This project is part of the DataBayt.AI suite. Refer to your license agreement for usage terms.
