@@ -266,6 +266,108 @@ app.get('/api/sambanova/models', async (req, res) => {
     }
 });
 
+
+// Hugging Face dataset import proxy
+app.post('/api/huggingface/datasets/import', async (req, res) => {
+    try {
+        const dataset = String(req.body?.dataset || '').trim();
+        const requestedConfig = String(req.body?.config || '').trim();
+        const requestedSplit = String(req.body?.split || '').trim();
+        const parsedMaxRows = Number(req.body?.maxRows);
+
+        if (!dataset) {
+            return res.status(400).json({ error: 'dataset is required (e.g. username/dataset_name)' });
+        }
+
+        const datasetParam = encodeURIComponent(dataset);
+        const splitsUrl = `https://datasets-server.huggingface.co/splits?dataset=${datasetParam}`;
+        const splitsResponse = await fetch(splitsUrl);
+        const splitsPayload = await splitsResponse.json();
+        if (!splitsResponse.ok) {
+            return res.status(splitsResponse.status).json({
+                error: splitsPayload?.error || 'Failed to fetch dataset splits from Hugging Face'
+            });
+        }
+
+        const splits = Array.isArray(splitsPayload?.splits) ? splitsPayload.splits : [];
+        if (splits.length === 0) {
+            return res.status(404).json({ error: 'No splits found for this dataset' });
+        }
+
+        const first = splits[0] || {};
+        const resolvedConfig = requestedConfig || first.config;
+        const splitForConfig = splits.find(s => s.config === resolvedConfig) || first;
+        const resolvedSplit = requestedSplit || splitForConfig.split;
+
+        if (!resolvedConfig || !resolvedSplit) {
+            return res.status(400).json({ error: 'Unable to resolve dataset config/split' });
+        }
+
+        const resolvedSplitMeta = splits.find(s => s.config === resolvedConfig && s.split === resolvedSplit) || splitForConfig || first;
+        const splitCountRaw = resolvedSplitMeta?.num_examples ?? resolvedSplitMeta?.num_rows ?? null;
+        const parsedTotalRows = splitCountRaw === null ? NaN : Number(splitCountRaw);
+        const totalRows = Number.isFinite(parsedTotalRows) && parsedTotalRows > 0 ? Math.floor(parsedTotalRows) : null;
+        const maxRows = Number.isFinite(parsedMaxRows)
+            ? Math.max(1, Math.floor(parsedMaxRows))
+            : Number.POSITIVE_INFINITY;
+
+        const chunkSize = 100;
+        const rawRows = [];
+        let offset = 0;
+
+        while (rawRows.length < maxRows) {
+            const remaining = Number.isFinite(maxRows) ? (maxRows - rawRows.length) : chunkSize;
+            const length = Math.min(chunkSize, Math.max(1, remaining));
+            const rowsUrl = `https://datasets-server.huggingface.co/rows?dataset=${datasetParam}&config=${encodeURIComponent(resolvedConfig)}&split=${encodeURIComponent(resolvedSplit)}&offset=${offset}&length=${length}`;
+            const rowsResponse = await fetch(rowsUrl);
+            const rowsPayload = await rowsResponse.json();
+            if (!rowsResponse.ok) {
+                return res.status(rowsResponse.status).json({
+                    error: rowsPayload?.error || 'Failed to fetch dataset rows from Hugging Face'
+                });
+            }
+
+            const chunkRows = Array.isArray(rowsPayload?.rows) ? rowsPayload.rows : [];
+            if (chunkRows.length === 0) {
+                break;
+            }
+
+            rawRows.push(...chunkRows);
+            offset += chunkRows.length;
+
+            if (chunkRows.length < length) {
+                break;
+            }
+        }
+
+        const normalizedRows = rawRows.map(item => {
+            const row = item && typeof item === 'object' && 'row' in item ? item.row : item;
+            if (row && typeof row === 'object' && !Array.isArray(row)) {
+                return row;
+            }
+            return { text: row == null ? '' : String(row) };
+        });
+
+        const columnsSet = new Set();
+        for (const row of normalizedRows) {
+            Object.keys(row || {}).forEach(key => columnsSet.add(key));
+        }
+
+        return res.json({
+            dataset,
+            config: resolvedConfig,
+            split: resolvedSplit,
+            columns: Array.from(columnsSet),
+            totalRows,
+            rowCount: normalizedRows.length,
+            rows: normalizedRows
+        });
+    } catch (error) {
+        console.error('Hugging Face import proxy error:', error);
+        return res.status(500).json({ error: 'Failed to import Hugging Face dataset' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

@@ -105,6 +105,17 @@ export interface AnnotationStats {
     sessionTime: number;
 }
 
+export interface ProjectDataStatusCounts {
+    total: number;
+    completed: number;
+    remaining: number;
+    accepted: number;
+    edited: number;
+    pending: number;
+    aiProcessed: number;
+    rejected: number;
+}
+
 export interface Project {
     id: string;
     name: string;
