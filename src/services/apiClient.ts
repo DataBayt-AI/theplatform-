@@ -216,6 +216,27 @@ export const apiClient = {
             body: JSON.stringify(data),
         }),
     },
+
+    // Hugging Face dataset import
+    huggingFace: {
+        importDataset: (data: {
+            dataset: string;
+            config?: string;
+            split?: string;
+            maxRows?: number;
+        }) => request<{
+            dataset: string;
+            config: string;
+            split: string;
+            columns: string[];
+            totalRows: number | null;
+            rowCount: number;
+            rows: Array<Record<string, unknown>>;
+        }>('/huggingface/datasets/import', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+    },
 };
 
 export default apiClient;

@@ -523,7 +523,7 @@ const Dashboard = () => {
                                     <DialogHeader>
                                         <DialogTitle>Create New Project</DialogTitle>
                                         <DialogDescription>
-                                            Start a new data labeling project. You can upload data later.
+                                            Start a new data labeling project and choose how you want to import data.
                                         </DialogDescription>
                                     </DialogHeader>
                                     <div className="space-y-4 py-4">

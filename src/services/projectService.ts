@@ -64,11 +64,10 @@ export const projectService = {
         const result = await apiClient.projects.create({ name, description, managerId, iaaConfig, guidelines });
         return projectService.normalize({
             ...result,
-            id: crypto.randomUUID(),
             name,
             description,
             guidelines,
-            managerId: null,
+            managerId: managerId ?? null,
             annotatorIds: [],
             iaaConfig: iaaConfig ?? {
                 enabled: false,
