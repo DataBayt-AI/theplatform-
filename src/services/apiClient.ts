@@ -111,6 +111,35 @@ export const apiClient = {
             }),
     },
 
+    // Comments
+    comments: {
+        getByDataPoint: (projectId: string, dataId: string, page: number = 1, limit: number = 20) => {
+            const params = new URLSearchParams();
+            if (page > 0) params.set('page', String(page));
+            if (limit > 0) params.set('limit', String(limit));
+            return request<{ comments: any[]; pagination: { total: number; page: number; limit: number; totalPages: number } }>(
+                `/projects/${projectId}/data/${dataId}/comments${params.toString() ? `?${params.toString()}` : ''}`
+            );
+        },
+
+        create: (projectId: string, dataId: string, data: { body: string; parentCommentId?: string | null }) =>
+            request<any>(`/projects/${projectId}/data/${dataId}/comments`, {
+                method: 'POST',
+                body: JSON.stringify(data),
+            }),
+
+        update: (projectId: string, commentId: string, data: { body: string }) =>
+            request<any>(`/projects/${projectId}/comments/${commentId}`, {
+                method: 'PATCH',
+                body: JSON.stringify(data),
+            }),
+
+        delete: (projectId: string, commentId: string) =>
+            request<{ success: boolean }>(`/projects/${projectId}/comments/${commentId}`, {
+                method: 'DELETE',
+            }),
+    },
+
     // Users
     users: {
         getAll: () => request<any[]>('/users'),

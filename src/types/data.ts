@@ -143,3 +143,17 @@ export interface ProjectAuditEntry {
     action: 'upload' | 'ai_process' | 'export' | 'assign';
     details?: string;
 }
+
+export interface DataPointComment {
+    id: string;
+    projectId: string;
+    dataPointId: string;
+    authorId: string;
+    authorName: string;
+    body: string;
+    parentCommentId?: string | null;
+    createdAt: number;
+    updatedAt: number;
+    deletedAt?: number | null;
+    isEdited: boolean;
+}

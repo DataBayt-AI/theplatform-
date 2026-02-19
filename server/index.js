@@ -7,6 +7,7 @@ import { initDatabase } from './services/database.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { registerUserRoutes } from './routes/users.js';
 import { registerModelRoutes } from './routes/models.js';
+import { registerCommentRoutes } from './routes/comments.js';
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ app.use(attachUser);
 registerProjectRoutes(app);
 registerUserRoutes(app);
 registerModelRoutes(app);
+registerCommentRoutes(app);
 
 // Legacy project param handler (for existing routes)
 app.param('id', async (req, _res, next, id) => {
