@@ -89,9 +89,11 @@ export function registerProjectRoutes(app) {
     app.get('/api/projects/:id/data', (req, res) => {
         try {
             const { id } = req.params;
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 50;
-            const offset = (page - 1) * limit;
+            const parsedPage = parseInt(req.query.page, 10);
+            const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+            const parsedLimit = parseInt(req.query.limit, 10);
+            const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
+            const offset = limit ? (page - 1) * limit : 0;
 
             // Validate project exists and user has access
             const project = db.prepare('SELECT manager_id FROM projects WHERE id = ?').get(id);
@@ -112,9 +114,22 @@ export function registerProjectRoutes(app) {
             }
 
             const total = db.prepare('SELECT COUNT(*) as count FROM data_points WHERE project_id = ?').get(id).count;
-            const dataPoints = db.prepare('SELECT * FROM data_points WHERE project_id = ? ORDER BY created_at LIMIT ? OFFSET ?').all(id, limit, offset);
+            const statusCounts = db.prepare(`
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) as accepted,
+                    SUM(CASE WHEN status = 'edited' THEN 1 ELSE 0 END) as edited,
+                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN status = 'ai_processed' THEN 1 ELSE 0 END) as aiProcessed,
+                    SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
+                FROM data_points
+                WHERE project_id = ?
+            `).get(id);
+            const dataPoints = limit
+                ? db.prepare('SELECT * FROM data_points WHERE project_id = ? ORDER BY created_at LIMIT ? OFFSET ?').all(id, limit, offset)
+                : db.prepare('SELECT * FROM data_points WHERE project_id = ? ORDER BY created_at').all(id);
 
-            const totalPages = Math.ceil(total / limit);
+            const totalPages = limit ? Math.max(1, Math.ceil(total / limit)) : 1;
 
             res.json({
                 dataPoints: dataPoints.map(dp => ({
@@ -146,6 +161,16 @@ export function registerProjectRoutes(app) {
                     page,
                     limit,
                     totalPages
+                },
+                statusCounts: {
+                    total: statusCounts.total || 0,
+                    completed: (statusCounts.accepted || 0) + (statusCounts.edited || 0),
+                    remaining: Math.max(0, (statusCounts.total || 0) - ((statusCounts.accepted || 0) + (statusCounts.edited || 0))),
+                    accepted: statusCounts.accepted || 0,
+                    edited: statusCounts.edited || 0,
+                    pending: statusCounts.pending || 0,
+                    aiProcessed: statusCounts.aiProcessed || 0,
+                    rejected: statusCounts.rejected || 0
                 }
             });
 
@@ -638,9 +663,11 @@ export function registerProjectRoutes(app) {
     app.get('/api/projects/:projectId/data', (req, res) => {
         try {
             const { projectId } = req.params;
-            const page = parseInt(req.query.page) || 1;
-            const limit = parseInt(req.query.limit) || 50;
-            const offset = (page - 1) * limit;
+            const parsedPage = parseInt(req.query.page, 10);
+            const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+            const parsedLimit = parseInt(req.query.limit, 10);
+            const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
+            const offset = limit ? (page - 1) * limit : 0;
 
             // Validate project exists and user has access (reusing logic from getById ideally, but simple check here)
             const project = db.prepare('SELECT manager_id FROM projects WHERE id = ?').get(projectId);
@@ -662,9 +689,22 @@ export function registerProjectRoutes(app) {
             }
 
             const total = db.prepare('SELECT COUNT(*) as count FROM data_points WHERE project_id = ?').get(projectId).count;
-            const dataPoints = db.prepare('SELECT * FROM data_points WHERE project_id = ? ORDER BY created_at LIMIT ? OFFSET ?').all(projectId, limit, offset);
+            const statusCounts = db.prepare(`
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) as accepted,
+                    SUM(CASE WHEN status = 'edited' THEN 1 ELSE 0 END) as edited,
+                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN status = 'ai_processed' THEN 1 ELSE 0 END) as aiProcessed,
+                    SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
+                FROM data_points
+                WHERE project_id = ?
+            `).get(projectId);
+            const dataPoints = limit
+                ? db.prepare('SELECT * FROM data_points WHERE project_id = ? ORDER BY created_at LIMIT ? OFFSET ?').all(projectId, limit, offset)
+                : db.prepare('SELECT * FROM data_points WHERE project_id = ? ORDER BY created_at').all(projectId);
 
-            const totalPages = Math.ceil(total / limit);
+            const totalPages = limit ? Math.max(1, Math.ceil(total / limit)) : 1;
 
             res.json({
                 dataPoints: dataPoints.map(dp => ({
@@ -696,6 +736,16 @@ export function registerProjectRoutes(app) {
                     page,
                     limit,
                     totalPages
+                },
+                statusCounts: {
+                    total: statusCounts.total || 0,
+                    completed: (statusCounts.accepted || 0) + (statusCounts.edited || 0),
+                    remaining: Math.max(0, (statusCounts.total || 0) - ((statusCounts.accepted || 0) + (statusCounts.edited || 0))),
+                    accepted: statusCounts.accepted || 0,
+                    edited: statusCounts.edited || 0,
+                    pending: statusCounts.pending || 0,
+                    aiProcessed: statusCounts.aiProcessed || 0,
+                    rejected: statusCounts.rejected || 0
                 }
             });
 

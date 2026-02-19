@@ -1,4 +1,4 @@
-import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry, ProjectIAAConfig } from "@/types/data";
+import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry, ProjectIAAConfig, ProjectDataStatusCounts } from "@/types/data";
 import { apiClient } from "./apiClient";
 
 export const projectService = {
@@ -51,12 +51,12 @@ export const projectService = {
         }
     },
 
-    getData: async (projectId: string, page: number = 1, limit: number = 50): Promise<{ dataPoints: DataPoint[]; pagination: any }> => {
+    getData: async (projectId: string, page: number = 1, limit?: number): Promise<{ dataPoints: DataPoint[]; pagination: any; statusCounts?: ProjectDataStatusCounts }> => {
         try {
             return await apiClient.projects.getData(projectId, page, limit);
         } catch (error) {
             console.error('Failed to fetch project data:', error);
-            return { dataPoints: [], pagination: {} };
+            return { dataPoints: [], pagination: {}, statusCounts: undefined };
         }
     },
 
@@ -64,11 +64,10 @@ export const projectService = {
         const result = await apiClient.projects.create({ name, description, managerId, iaaConfig, guidelines });
         return projectService.normalize({
             ...result,
-            id: crypto.randomUUID(),
             name,
             description,
             guidelines,
-            managerId: null,
+            managerId: managerId ?? null,
             annotatorIds: [],
             iaaConfig: iaaConfig ?? {
                 enabled: false,

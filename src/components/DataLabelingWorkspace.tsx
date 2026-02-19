@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Tiktoken } from "js-tiktoken/lite";
 import o200k_base from "js-tiktoken/ranks/o200k_base";
 import cl100k_base from "js-tiktoken/ranks/cl100k_base";
@@ -20,7 +20,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/components/ui/use-toast";
 import { MetadataSidebar } from "@/components/MetadataSidebar";
@@ -67,18 +66,21 @@ import {
   Undo2,
   Redo2,
   History,
-  Book
+  Book,
+  Database
 } from "lucide-react";
 import { VersionHistory } from "@/components/VersionHistory";
 import { GuidelinesDialog } from "@/components/GuidelinesDialog";
 import { projectService } from "@/services/projectService";
 import { modelManagementService } from "@/services/modelManagementService";
+import apiClient from "@/services/apiClient";
 
 type AnnotationStatusFilter = 'all' | 'has_final' | DataPoint['status'];
 
 const DataLabelingWorkspace = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser, getUserById } = useAuth();
   const annotatorMeta = currentUser ? { id: currentUser.id, name: currentUser.username } : undefined;
 
@@ -100,6 +102,12 @@ const DataLabelingWorkspace = () => {
     currentDataPoint,
     isCompleted,
     progress,
+    page,
+    pageSize,
+    statusCounts,
+    globalCompletedCount,
+    globalRemainingCount,
+    globalTotalItems,
     handleNext,
     handlePrevious,
     handleAcceptAnnotation,
@@ -125,10 +133,6 @@ const DataLabelingWorkspace = () => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadPrompt, setUploadPrompt] = useState('');
-  const [useIAA, setUseIAA] = useState(false);
-  const [iaaPercentage, setIaaPercentage] = useState(20);
-  const [iaaAnnotators, setIaaAnnotators] = useState(2);
-
 
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
@@ -230,6 +234,14 @@ const DataLabelingWorkspace = () => {
   const [hfUsername, setHfUsername] = useState(() => localStorage.getItem('databayt-hf-username') || '');
   const [hfToken, setHfToken] = useState(() => localStorage.getItem('databayt-hf-token') || '');
   const [hfDatasetName, setHfDatasetName] = useState('');
+  const [showHFImportDialog, setShowHFImportDialog] = useState(false);
+  const [isImportingHF, setIsImportingHF] = useState(false);
+  const [hfImportDataset, setHfImportDataset] = useState('');
+  const [hfImportConfig, setHfImportConfig] = useState('');
+  const [hfImportSplit, setHfImportSplit] = useState('');
+  const [hfImportMaxRows, setHfImportMaxRows] = useState<number | ''>('');
+  const [pendingHFRows, setPendingHFRows] = useState<Array<Record<string, unknown>> | null>(null);
+  const [handledInitialImportChoice, setHandledInitialImportChoice] = useState(false);
 
   // Dynamic Labels
   const [annotationLabel, setAnnotationLabel] = useState('Original Annotation');
@@ -390,6 +402,27 @@ const DataLabelingWorkspace = () => {
   }, [availableModelProfiles]);
 
   const allowedDataFileExtensions = ['.json', '.csv', '.txt'];
+
+  useEffect(() => {
+    if (handledInitialImportChoice || !canUpload) return;
+
+    const requestedImport = searchParams.get('import');
+    if (!requestedImport) {
+      setHandledInitialImportChoice(true);
+      return;
+    }
+
+    if (requestedImport === 'huggingface') {
+      setShowHFImportDialog(true);
+    } else if (requestedImport === 'file') {
+      document.getElementById('file-upload')?.click();
+    }
+
+    setHandledInitialImportChoice(true);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('import');
+    setSearchParams(nextParams, { replace: true });
+  }, [handledInitialImportChoice, canUpload, searchParams, setSearchParams]);
 
   if (accessDenied) {
     return (
@@ -740,6 +773,106 @@ const DataLabelingWorkspace = () => {
     });
   };
 
+  const toDisplayString = (value: unknown): string => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  };
+
+  const toMetadataRecord = (row: Record<string, unknown>) => {
+    const metadata: Record<string, string> = {};
+    Object.entries(row).forEach(([key, value]) => {
+      metadata[key] = toDisplayString(value);
+    });
+    return metadata;
+  };
+
+  const resolveContentColumn = (columns: string[]) => {
+    if (selectedContentColumn && columns.includes(selectedContentColumn)) {
+      return selectedContentColumn;
+    }
+    const contentCandidates = ['text', 'content', 'sentence', 'question', 'instruction', 'input', 'prompt'];
+    const found = columns.find(col => contentCandidates.some(candidate => col.toLowerCase().includes(candidate)));
+    if (found) return found;
+    return columns.find(col => col.toLowerCase() !== 'id') || columns[0] || '';
+  };
+
+  const resolveAnnotationColumn = (columns: string[]) => {
+    const annotationCandidates = ['label', 'annotation', 'target', 'output', 'answer', 'response'];
+    return columns.find(col => annotationCandidates.some(candidate => col.toLowerCase().includes(candidate)));
+  };
+
+  const handleImportFromHuggingFace = async () => {
+    if (!canUpload) {
+      toast({
+        title: 'Permission denied',
+        description: 'Only managers or admins can import datasets.'
+      });
+      return;
+    }
+
+    const dataset = hfImportDataset.trim();
+    if (!dataset) {
+      setUploadError('Please enter a Hugging Face dataset id (e.g. username/dataset_name).');
+      return;
+    }
+
+    setIsImportingHF(true);
+    setUploadError(null);
+
+    try {
+      const response = await apiClient.huggingFace.importDataset({
+        dataset,
+        config: hfImportConfig.trim() || undefined,
+        split: hfImportSplit.trim() || undefined,
+        maxRows: hfImportMaxRows === "" ? undefined : hfImportMaxRows
+      });
+
+      if (!Array.isArray(response.rows) || response.rows.length === 0) {
+        throw new Error('No rows returned from this dataset/split.');
+      }
+
+      const columns = response.columns || [];
+      const resolvedContent = resolveContentColumn(columns);
+
+      setPendingFile(null);
+      setPendingHFRows(response.rows);
+      setAvailableColumns(columns);
+      setSelectedContentColumn(resolvedContent);
+      setSelectedDisplayColumns(columns.filter(col => col !== resolvedContent).slice(0, 3));
+      setUploadPrompt('');
+      setCustomFieldName('');
+
+      setHfImportConfig(response.config || hfImportConfig);
+      setHfImportSplit(response.split || hfImportSplit);
+      if (response.totalRows && response.totalRows > 0) {
+        setHfImportMaxRows(response.totalRows);
+      }
+      setShowHFImportDialog(false);
+      setShowUploadPrompt(true);
+
+      toast({
+        title: 'Dataset loaded',
+        description: `Imported ${response.rowCount} rows from ${response.dataset} (${response.split}).`
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown import error';
+      setUploadError(`Hugging Face import failed: ${message}`);
+      toast({
+        title: 'Import failed',
+        description: message,
+        variant: 'destructive'
+      });
+    } finally {
+      setIsImportingHF(false);
+    }
+  };
+
   // File upload handler - now shows prompt dialog first
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!canUpload) {
@@ -801,6 +934,7 @@ const DataLabelingWorkspace = () => {
     }
 
     // Store the file and show prompt dialog
+    setPendingHFRows(null);
     setPendingFile(file);
     setUploadPrompt('');
     setCustomFieldName('');
@@ -839,8 +973,8 @@ const DataLabelingWorkspace = () => {
     return arr;
   };
 
-  const applyAssignmentsToDataPoints = (points: DataPoint[], overrideConfig?: { enabled: boolean; portionPercent: number; annotatorsPerIAAItem: number }) => {
-    const config = overrideConfig ?? projectAccess?.iaaConfig;
+  const applyAssignmentsToDataPoints = (points: DataPoint[]) => {
+    const config = projectAccess?.iaaConfig;
     const enabled = !!config?.enabled && (config.portionPercent ?? 0) > 0;
     const portion = Math.max(0, Math.min(100, Math.floor(config?.portionPercent ?? 0)));
     const annotatorsPerItem = Math.max(2, Math.floor(config?.annotatorsPerIAAItem ?? 2));
@@ -867,16 +1001,42 @@ const DataLabelingWorkspace = () => {
     });
   };
 
-  const processFileUpload = async (file: File, prompt: string, customField: string) => {
+  const processFileUpload = async (file: File | null, prompt: string, customField: string, importedRows?: Array<Record<string, unknown>>) => {
     setIsUploading(true);
     setShowUploadPrompt(false);
 
     try {
-      const text = await file.text();
+      const text = importedRows ? '' : await file!.text();
       let parsedData: DataPoint[] = [];
 
-      // Handle different file formats
-      if (file.name.endsWith('.json')) {
+      if (importedRows && importedRows.length > 0) {
+        const columns = Object.keys(importedRows[0] || {});
+        const contentColumn = resolveContentColumn(columns);
+        const annotationColumn = resolveAnnotationColumn(columns);
+
+        if (annotationColumn) {
+          setAnnotationLabel(annotationColumn);
+        } else {
+          setAnnotationLabel('Original Annotation');
+        }
+
+        parsedData = importedRows.map((row) => ({
+          id: crypto.randomUUID(),
+          content: toDisplayString(row[contentColumn]) || JSON.stringify(row),
+          type: 'text',
+          originalAnnotation: annotationColumn ? toDisplayString(row[annotationColumn]) : '',
+          aiSuggestions: {},
+          ratings: {},
+          status: 'pending' as const,
+          uploadPrompt: prompt,
+          customField: '',
+          customFieldName: customField,
+          metadata: toMetadataRecord(row),
+          customFieldValues: {},
+          isIAA: false,
+          annotatedAt: Date.now(),
+        } as DataPoint));
+      } else if (file && file.name.endsWith('.json')) {
         let jsonData: unknown;
         try {
           jsonData = JSON.parse(text);
@@ -913,7 +1073,7 @@ const DataLabelingWorkspace = () => {
         } else {
           throw new Error('JSON file must contain an array of data points');
         }
-      } else if (file.name.endsWith('.csv')) {
+      } else if (file && file.name.endsWith('.csv')) {
         const lines = text.split('\n').filter(line => line.trim());
         if (lines.length === 0) {
           throw new Error('CSV file is empty.');
@@ -1028,21 +1188,17 @@ const DataLabelingWorkspace = () => {
         }));
       }
 
-      const iaaConfig = useIAA ? {
-        enabled: true,
-        portionPercent: iaaPercentage,
-        annotatorsPerIAAItem: iaaAnnotators
-      } : { enabled: false, portionPercent: 0, annotatorsPerIAAItem: 2 };
-
-      const assignedData = applyAssignmentsToDataPoints(parsedData, iaaConfig);
+      const assignedData = applyAssignmentsToDataPoints(parsedData);
       loadNewData(assignedData);
+      setPendingHFRows(null);
 
       // Persist newly uploaded data to backend
       if (projectId) {
         await projectService.saveProgress(projectId, assignedData, annotationStats);
       }
 
-      await logProjectAction('upload', `File: ${file.name}, Items: ${parsedData.length}`);
+      const uploadSource = importedRows ? `HuggingFace: ${hfImportDataset}` : `File: ${file?.name ?? 'unknown'}`;
+      await logProjectAction('upload', `${uploadSource}, Items: ${parsedData.length}`);
     } catch (error) {
       const errorMessage = `Failed to parse file: ${error instanceof Error ? error.message : 'Unknown error'}`;
       setUploadError(errorMessage);
@@ -1489,14 +1645,15 @@ const DataLabelingWorkspace = () => {
     return Array.from(annotatorSet.entries()).map(([id, name]) => ({ id, name }));
   }, [annotationEntries, getUserById, projectAccess]);
 
-  // Derived state for completed count
-  const completedCount = useMemo(
-    () => annotationEntries.filter(({ dataPoint }) => {
-      const code = getDisplayStatus(dataPoint).code;
-      return code === 'accepted' || code === 'edited';
-    }).length,
-    [annotationEntries, getDisplayStatus]
-  );
+  const globalCurrentRecordIndex = dataPoints.length > 0
+    ? ((page - 1) * pageSize) + currentIndex + 1
+    : 0;
+
+  const hasLocalOnlyFilters = useMemo(() => {
+    const hasMetadataFilter = Object.values(metadataFilters).some(values => values.length > 0);
+    return Boolean(normalizedAnnotationQuery) || hasMetadataFilter || annotatedByFilter !== 'all' || annotatedTimeFilter !== 'all';
+  }, [metadataFilters, normalizedAnnotationQuery, annotatedByFilter, annotatedTimeFilter]);
+
 
   const matchesMetadataFilters = (
     dataPoint: DataPoint,
@@ -1622,6 +1779,18 @@ const DataLabelingWorkspace = () => {
     () => filteredAnnotationEntries.map(entry => entry.dataPoint),
     [filteredAnnotationEntries]
   );
+
+  const globalFilteredCount = useMemo(() => {
+    if (hasLocalOnlyFilters) return filteredAnnotationEntries.length;
+    if (annotationStatusFilter === 'all') return globalTotalItems;
+    if (annotationStatusFilter === 'has_final') return globalCompletedCount;
+    if (annotationStatusFilter === 'accepted') return statusCounts.accepted;
+    if (annotationStatusFilter === 'edited') return statusCounts.edited;
+    if (annotationStatusFilter === 'pending') return statusCounts.pending;
+    if (annotationStatusFilter === 'ai_processed') return statusCounts.aiProcessed;
+    if (annotationStatusFilter === 'rejected') return statusCounts.rejected;
+    return filteredAnnotationEntries.length;
+  }, [hasLocalOnlyFilters, filteredAnnotationEntries.length, annotationStatusFilter, globalTotalItems, globalCompletedCount, statusCounts]);
 
   useEffect(() => {
     if (metadataFilterOptions.length === 0 && Object.keys(metadataFilters).length === 0) return;
@@ -1981,7 +2150,7 @@ const DataLabelingWorkspace = () => {
               <div>
                 <h1 className="text-xl font-semibold text-foreground">{projectName || 'DataBayt AI Labeler'}</h1>
                 <p className="text-sm text-muted-foreground">
-                  {dataPoints.length > 0 ? `Data point ${currentIndex + 1} of ${dataPoints.length}` : 'No data loaded'}
+                  {dataPoints.length > 0 ? `Data point ${globalCurrentRecordIndex} of ${globalTotalItems}` : 'No data loaded'}
                 </p>
               </div>
             </div>
@@ -1989,7 +2158,7 @@ const DataLabelingWorkspace = () => {
             <div className="flex items-center gap-4">
               {dataPoints.length > 0 && (
                 <div className="text-right">
-                  <p className="text-sm font-medium text-foreground">{completedCount} completed</p>
+                  <p className="text-sm font-medium text-foreground">{globalCompletedCount} completed</p>
                   <div className="flex items-center gap-2">
                     <Progress value={progress} className="w-32 h-2" />
                     <span className="text-xs text-muted-foreground font-mono">{Math.round(progress)}%</span>
@@ -2000,21 +2169,6 @@ const DataLabelingWorkspace = () => {
               <Separator orientation="vertical" className="h-8" />
 
               <div className="flex gap-2">
-                {/* File Upload */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isUploading || !canUpload}
-                      title={!canUpload ? "Requires manager or admin role" : undefined}
-                      onClick={() => document.getElementById('file-upload')?.click()}
-                    >
-                      {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Upload data file (JSON, CSV, TXT)</TooltipContent>
-                </Tooltip>
                 <input
                   id="file-upload"
                   type="file"
@@ -2036,6 +2190,75 @@ const DataLabelingWorkspace = () => {
                   disabled={!canUpload}
                   className="hidden"
                 />
+
+                <Dialog open={showHFImportDialog} onOpenChange={setShowHFImportDialog}>
+                  <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>Import from Hugging Face</DialogTitle>
+                      <DialogDescription>
+                        Enter a dataset id and optionally a config/split. Data is fetched automatically.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="hf-import-dataset">Dataset ID</Label>
+                        <Input
+                          id="hf-import-dataset"
+                          placeholder="username/dataset_name"
+                          value={hfImportDataset}
+                          onChange={(e) => setHfImportDataset(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label htmlFor="hf-import-config">Config (Optional)</Label>
+                          <Input
+                            id="hf-import-config"
+                            placeholder="default"
+                            value={hfImportConfig}
+                            onChange={(e) => setHfImportConfig(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="hf-import-split">Split (Optional)</Label>
+                          <Input
+                            id="hf-import-split"
+                            placeholder="train"
+                            value={hfImportSplit}
+                            onChange={(e) => setHfImportSplit(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label htmlFor="hf-import-max-rows">Max Rows</Label>
+                        <Input
+                          id="hf-import-max-rows"
+                          type="number"
+                          min={1}
+                          value={hfImportMaxRows}
+                          placeholder="Auto: full split"
+                          onChange={(e) => {
+                            const raw = e.target.value.trim();
+                            if (!raw) {
+                              setHfImportMaxRows("");
+                              return;
+                            }
+                            const parsed = Number(raw);
+                            setHfImportMaxRows(Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : "");
+                          }}
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">Leave empty to import the entire resolved split.</p>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setShowHFImportDialog(false)} disabled={isImportingHF}>Cancel</Button>
+                        <Button onClick={handleImportFromHuggingFace} disabled={isImportingHF || !hfImportDataset.trim()}>
+                          {isImportingHF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Database className="w-4 h-4 mr-2" />}
+                          Import Dataset
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
 
                 <Button
                   variant="ghost"
@@ -2174,59 +2397,6 @@ const DataLabelingWorkspace = () => {
                         </p>
                       </div>
 
-                      {/* IAA Configuration Section */}
-                      <div className="space-y-3 pt-2 border-t">
-                        <div className="flex items-center justify-between">
-                          <div className="space-y-0.5">
-                            <Label htmlFor="use-iaa" className="text-base">Inter-Annotator Agreement (IAA)</Label>
-                            <p className="text-xs text-muted-foreground">
-                              Enable multiple annotators for quality control
-                            </p>
-                          </div>
-                          <Switch
-                            id="use-iaa"
-                            checked={useIAA}
-                            onCheckedChange={setUseIAA}
-                          />
-                        </div>
-
-                        {useIAA && (
-                          <div className="space-y-3 pl-4 border-l-2 border-purple-200 dark:border-purple-800">
-                            <div>
-                              <Label htmlFor="iaa-percentage">Percentage of Items (%)</Label>
-                              <Input
-                                id="iaa-percentage"
-                                type="number"
-                                min="1"
-                                max="100"
-                                value={iaaPercentage}
-                                onChange={(e) => setIaaPercentage(Number(e.target.value))}
-                                className="mt-1"
-                              />
-                              <p className="text-xs text-muted-foreground mt-1">
-                                What percentage of items should require multiple annotations?
-                              </p>
-                            </div>
-
-                            <div>
-                              <Label htmlFor="iaa-annotators">Required Annotators per Item</Label>
-                              <Input
-                                id="iaa-annotators"
-                                type="number"
-                                min="2"
-                                max="10"
-                                value={iaaAnnotators}
-                                onChange={(e) => setIaaAnnotators(Number(e.target.value))}
-                                className="mt-1"
-                              />
-                              <p className="text-xs text-muted-foreground mt-1">
-                                How many different annotators must label each IAA item?
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
                       {/* Column Selection Section */}
                       {availableColumns.length > 0 && (
                         <div className="space-y-4 pt-2 border-t">
@@ -2288,26 +2458,27 @@ const DataLabelingWorkspace = () => {
                           onClick={() => {
                             setShowUploadPrompt(false);
                             setPendingFile(null);
+                            setPendingHFRows(null);
                             setUploadPrompt('');
                             setSelectedContentColumn('');
                             setSelectedDisplayColumns([]);
-                            setUseIAA(false);
-                            setIaaPercentage(20);
-                            setIaaAnnotators(2);
                           }}
                         >
                           Cancel
                         </Button>
                         <Button
                           onClick={() => {
-                            if (pendingFile) {
+                            if (pendingHFRows) {
+                              processFileUpload(null, uploadPrompt, customFieldName, pendingHFRows);
+                              setPendingHFRows(null);
+                            } else if (pendingFile) {
                               processFileUpload(pendingFile, uploadPrompt, customFieldName);
                               setPendingFile(null);
                             }
                           }}
-                          disabled={availableColumns.length > 0 && !selectedContentColumn}
+                          disabled={(availableColumns.length > 0 && !selectedContentColumn) || (!pendingFile && !pendingHFRows)}
                         >
-                          Upload File
+                          {pendingHFRows ? 'Import Dataset' : 'Upload File'}
                         </Button>
                       </div>
                     </div>
@@ -2833,20 +3004,59 @@ const DataLabelingWorkspace = () => {
         <div className="flex-1 pt-20 p-6">
           {dataPoints.length === 0 ? (
             <div className="h-full flex items-center justify-center">
-              <Card className="p-8 text-center max-w-md">
-                <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No Data Loaded</h3>
-                <p className="text-muted-foreground mb-4">
-                  Upload a data file to start labeling. Supports JSON, CSV, and TXT formats.
-                </p>
-                <Button
-                  disabled={isUploading || !canUpload}
-                  title={!canUpload ? "Requires manager or admin role" : undefined}
-                  onClick={() => document.getElementById('file-upload-main')?.click()}
-                >
-                  {isUploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-                  Upload File
-                </Button>
+              <div className="w-full max-w-4xl space-y-6">
+                <div className="text-center">
+                  <h3 className="text-xl font-semibold mb-2">Import Data to Start</h3>
+                  <p className="text-muted-foreground">
+                    Choose one import source for your new project.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Card className="p-6">
+                    <div className="text-center space-y-4">
+                      <div className="w-16 h-16 rounded-xl bg-muted mx-auto flex items-center justify-center">
+                        {isUploading ? <Loader2 className="w-8 h-8 animate-spin" /> : <Upload className="w-8 h-8" />}
+                      </div>
+                      <div>
+                        <h4 className="font-semibold">Import Local File</h4>
+                        <p className="text-sm text-muted-foreground">JSON, CSV or TXT from your machine.</p>
+                      </div>
+                      <Button
+                        size="lg"
+                        className="w-full"
+                        disabled={isUploading || !canUpload}
+                        title={!canUpload ? "Requires manager or admin role" : undefined}
+                        onClick={() => document.getElementById('file-upload-main')?.click()}
+                      >
+                        Upload File
+                      </Button>
+                    </div>
+                  </Card>
+
+                  <Card className="p-6">
+                    <div className="text-center space-y-4">
+                      <div className="w-16 h-16 rounded-xl bg-muted mx-auto flex items-center justify-center">
+                        {isImportingHF ? <Loader2 className="w-8 h-8 animate-spin" /> : <Database className="w-8 h-8" />}
+                      </div>
+                      <div>
+                        <h4 className="font-semibold">Import Hugging Face</h4>
+                        <p className="text-sm text-muted-foreground">Load a dataset directly from the Hub.</p>
+                      </div>
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        className="w-full"
+                        disabled={isImportingHF || !canUpload}
+                        title={!canUpload ? "Requires manager or admin role" : undefined}
+                        onClick={() => setShowHFImportDialog(true)}
+                      >
+                        Import from Hugging Face
+                      </Button>
+                    </div>
+                  </Card>
+                </div>
+
                 <input
                   id="file-upload-main"
                   type="file"
@@ -2855,7 +3065,7 @@ const DataLabelingWorkspace = () => {
                   disabled={!canUpload}
                   className="hidden"
                 />
-              </Card>
+              </div>
             </div>
           ) : (
             <div className="flex gap-6 h-full">
@@ -3249,7 +3459,7 @@ const DataLabelingWorkspace = () => {
                             </p>
                           </div>
                           <Badge variant="secondary" className="w-fit">
-                            {filteredAnnotationEntries.length} total
+                            {globalFilteredCount} total
                           </Badge>
                         </div>
 
@@ -3718,11 +3928,11 @@ const DataLabelingWorkspace = () => {
                       {/* Progress Overview */}
                       <div className="grid grid-cols-2 gap-3">
                         <div className="text-center p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                          <div className="text-lg font-bold text-green-600">{completedCount}</div>
+                          <div className="text-lg font-bold text-green-600">{globalCompletedCount}</div>
                           <div className="text-xs text-muted-foreground">Completed</div>
                         </div>
                         <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                          <div className="text-lg font-bold text-blue-600">{dataPoints.length - completedCount}</div>
+                          <div className="text-lg font-bold text-blue-600">{globalRemainingCount}</div>
                           <div className="text-xs text-muted-foreground">Remaining</div>
                         </div>
                       </div>
@@ -3796,11 +4006,11 @@ const DataLabelingWorkspace = () => {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="text-center p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                        <div className="text-lg font-bold text-green-600">{completedCount}</div>
+                        <div className="text-lg font-bold text-green-600">{globalCompletedCount}</div>
                         <div className="text-xs text-muted-foreground">Completed</div>
                       </div>
                       <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                        <div className="text-lg font-bold text-blue-600">{dataPoints.length - completedCount}</div>
+                        <div className="text-lg font-bold text-blue-600">{globalRemainingCount}</div>
                         <div className="text-xs text-muted-foreground">Remaining</div>
                       </div>
                     </div>
@@ -3808,11 +4018,11 @@ const DataLabelingWorkspace = () => {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
                         <span>Filtered items</span>
-                        <span className="font-medium">{filteredAnnotationEntries.length}</span>
+                        <span className="font-medium">{globalFilteredCount}</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
                         <span>Total items</span>
-                        <span className="font-medium">{dataPoints.length}</span>
+                        <span className="font-medium">{globalTotalItems}</span>
                       </div>
                     </div>
 

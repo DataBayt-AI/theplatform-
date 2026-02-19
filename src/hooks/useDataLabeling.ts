@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { DataPoint, AnnotationStats, AnnotationAssignment } from "@/types/data";
+import { DataPoint, AnnotationStats, AnnotationAssignment, ProjectDataStatusCounts } from "@/types/data";
 import { projectService } from "@/services/projectService";
 import { useUndoRedo } from "./useUndoRedo";
 
@@ -9,6 +9,17 @@ interface WorkspaceState {
 }
 
 type AnnotatorMeta = { id: string; name: string };
+
+const DEFAULT_STATUS_COUNTS: ProjectDataStatusCounts = {
+    total: 0,
+    completed: 0,
+    remaining: 0,
+    accepted: 0,
+    edited: 0,
+    pending: 0,
+    aiProcessed: 0,
+    rejected: 0
+};
 
 const getAssignmentIndex = (dataPoint: DataPoint, annotatorId?: string) => {
     if (!annotatorId || !dataPoint.assignments) return -1;
@@ -48,10 +59,10 @@ export const useDataLabeling = (projectId?: string) => {
     const [isLoading, setIsLoading] = useState(true);
 
     // Pagination State
-    const [page, setPage] = useState(1);
+    const [page] = useState(1);
     const [totalItems, setTotalItems] = useState(0);
-    const [limit] = useState(50); // Default limit
     const [isLoadingData, setIsLoadingData] = useState(false);
+    const [statusCounts, setStatusCounts] = useState<ProjectDataStatusCounts>(DEFAULT_STATUS_COUNTS);
 
     // Stats
     const [sessionStart] = useState(Date.now());
@@ -87,7 +98,7 @@ export const useDataLabeling = (projectId?: string) => {
 
                     // 2. Get Data Points for current page
                     setIsLoadingData(true);
-                    const { dataPoints: loadedData, pagination } = await projectService.getData(projectId, page, limit);
+                    const { dataPoints: loadedData, pagination, statusCounts: loadedStatusCounts } = await projectService.getData(projectId, page);
 
                     if (loadedData) {
                         // Reset undo history when loading new project or page
@@ -95,7 +106,13 @@ export const useDataLabeling = (projectId?: string) => {
                             dataPoints: loadedData,
                             currentIndex: 0
                         });
-                        setTotalItems(pagination.total || 0);
+                        const globalTotal = pagination.total || 0;
+                        setTotalItems(globalTotal);
+                        setStatusCounts(loadedStatusCounts || {
+                            ...DEFAULT_STATUS_COUNTS,
+                            total: globalTotal,
+                            remaining: globalTotal
+                        });
 
                         if (loadedData.length > 0 && loadedData[0].customFieldName) {
                             setCustomFieldName(loadedData[0].customFieldName);
@@ -111,7 +128,7 @@ export const useDataLabeling = (projectId?: string) => {
             }
         };
         loadProject();
-    }, [projectId, page, limit, resetWorkspaceState]);
+    }, [projectId, page, resetWorkspaceState]);
 
     // Save progress - REMOVED auto-save effect
     // We now save individual data points as they change
@@ -143,8 +160,11 @@ export const useDataLabeling = (projectId?: string) => {
         };
     }, [dataPoints, sessionStart]);
 
-    const completedCount = dataPoints.filter(dp => dp.status === 'accepted' || dp.status === 'edited').length;
-    const isCompleted = dataPoints.length > 0 && completedCount === dataPoints.length;
+    const globalTotalItems = statusCounts.total || totalItems;
+    const globalCompletedCount = statusCounts.completed || 0;
+    const globalRemainingCount = Math.max(0, statusCounts.remaining ?? (globalTotalItems - globalCompletedCount));
+    const globalProgress = globalTotalItems > 0 ? (globalCompletedCount / globalTotalItems) * 100 : 0;
+    const isCompleted = globalTotalItems > 0 && globalCompletedCount === globalTotalItems;
 
     // Update stats effect
     useEffect(() => {
@@ -178,11 +198,6 @@ export const useDataLabeling = (projectId?: string) => {
             });
             setIsEditMode(false);
             setTempAnnotation('');
-        } else if (page * limit < totalItems) {
-            // Next Page
-            setPage(p => p + 1);
-            setIsEditMode(false);
-            setTempAnnotation('');
         }
     };
 
@@ -194,13 +209,6 @@ export const useDataLabeling = (projectId?: string) => {
             });
             setIsEditMode(false);
             setTempAnnotation('');
-        } else if (page > 1) {
-            // Previous Page
-            setPage(p => p - 1);
-            setIsEditMode(false);
-            setTempAnnotation('');
-            // Note: When going back, we land on currentIndex 0 of previous page. 
-            // Ideally should land on last index of previous page, but 0 is simpler for now.
         }
     };
 
@@ -494,8 +502,13 @@ export const useDataLabeling = (projectId?: string) => {
         isLoadingData,
         page,
         totalItems,
-        totalPages: Math.ceil(totalItems / limit),
-        setPage,
+        pageSize: Math.max(1, totalItems || dataPoints.length || 1),
+        totalPages: 1,
+        setPage: () => {},
+        statusCounts,
+        globalCompletedCount,
+        globalRemainingCount,
+        globalTotalItems,
 
         // Undo/Redo
         undo,
@@ -506,7 +519,7 @@ export const useDataLabeling = (projectId?: string) => {
         // Computed
         currentDataPoint,
         isCompleted,
-        progress: dataPoints.length > 0 ? (completedCount / dataPoints.length) * 100 : 0,
+        progress: globalProgress,
 
         // Handlers
         handleNext,

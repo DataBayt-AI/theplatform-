@@ -3,6 +3,7 @@
  */
 
 import { ProjectIAAConfig } from "@/types/data";
+import type { ProjectDataStatusCounts } from "@/types/data";
 
 const API_BASE = '/api';
 
@@ -64,8 +65,14 @@ export const apiClient = {
             body: JSON.stringify(data),
         }),
 
-        getData: (projectId: string, page: number = 1, limit: number = 50) =>
-            request<{ dataPoints: any[]; pagination: any }>(`/projects/${projectId}/data?page=${page}&limit=${limit}`),
+        getData: (projectId: string, page: number = 1, limit?: number) => {
+            const params = new URLSearchParams();
+            if (page > 0) params.set('page', String(page));
+            if (typeof limit === 'number' && limit > 0) params.set('limit', String(limit));
+            return request<{ dataPoints: any[]; pagination: any; statusCounts?: ProjectDataStatusCounts }>(
+                `/projects/${projectId}/data${params.toString() ? `?${params.toString()}` : ''}`
+            );
+        },
 
         updateDataPoint: (projectId: string, dataId: string, updates: any) =>
             request<void>(`/projects/${projectId}/data/${dataId}`, {
@@ -213,6 +220,27 @@ export const apiClient = {
             defaultModelProfileIds: string[];
         }) => request<any>(`/policies/${projectId}`, {
             method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+    },
+
+    // Hugging Face dataset import
+    huggingFace: {
+        importDataset: (data: {
+            dataset: string;
+            config?: string;
+            split?: string;
+            maxRows?: number;
+        }) => request<{
+            dataset: string;
+            config: string;
+            split: string;
+            columns: string[];
+            totalRows: number | null;
+            rowCount: number;
+            rows: Array<Record<string, unknown>>;
+        }>('/huggingface/datasets/import', {
+            method: 'POST',
             body: JSON.stringify(data),
         }),
     },
