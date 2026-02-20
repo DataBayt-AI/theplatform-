@@ -929,6 +929,25 @@ const DataLabelingWorkspace = () => {
     return metadata;
   };
 
+  const toDisplayMetadataRecord = (
+    metadata: Record<string, string>,
+    contentColumn?: string
+  ) => {
+    const resolvedContentColumn = contentColumn || selectedContentColumn;
+    const selectedColumns = selectedDisplayColumns.filter(
+      (column) => column && column !== resolvedContentColumn
+    );
+    if (selectedColumns.length === 0) return {};
+
+    const displayMetadata: Record<string, string> = {};
+    selectedColumns.forEach((column) => {
+      if (Object.prototype.hasOwnProperty.call(metadata, column)) {
+        displayMetadata[column] = metadata[column];
+      }
+    });
+    return displayMetadata;
+  };
+
   const resolveContentColumn = (columns: string[]) => {
     if (selectedContentColumn && columns.includes(selectedContentColumn)) {
       return selectedContentColumn;
@@ -1157,7 +1176,9 @@ const DataLabelingWorkspace = () => {
           setAnnotationLabel('Original Annotation');
         }
 
-        parsedData = importedRows.map((row) => ({
+        parsedData = importedRows.map((row) => {
+          const metadata = toMetadataRecord(row);
+          return {
           id: crypto.randomUUID(),
           content: toDisplayString(row[contentColumn]) || JSON.stringify(row),
           type: 'text',
@@ -1168,11 +1189,13 @@ const DataLabelingWorkspace = () => {
           uploadPrompt: prompt,
           customField: '',
           customFieldName: customField,
-          metadata: toMetadataRecord(row),
+          metadata,
+          displayMetadata: toDisplayMetadataRecord(metadata, contentColumn),
           customFieldValues: {},
           isIAA: false,
           annotatedAt: Date.now(),
-        } as DataPoint));
+        } as DataPoint;
+      });
       } else if (file && file.name.endsWith('.json')) {
         let jsonData: unknown;
         try {
@@ -1191,7 +1214,12 @@ const DataLabelingWorkspace = () => {
             if (firstItem.prompt) setPromptLabel('Prompt');
           }
 
-          parsedData = jsonData.map((item: any, index: number) => ({
+          parsedData = jsonData.map((item: any) => {
+            const metadata = Object.entries(item).reduce((acc, [key, value]) => {
+              acc[key] = String(value);
+              return acc;
+            }, {} as Record<string, string>);
+            return {
             id: crypto.randomUUID(),
             content: typeof item === 'string' ? item : item.text || item.content || JSON.stringify(item),
             type: item.type || 'text',
@@ -1202,11 +1230,10 @@ const DataLabelingWorkspace = () => {
             uploadPrompt: prompt || item.prompt, // Use item prompt if available
             customField: '',
             customFieldName: customField,
-            metadata: Object.entries(item).reduce((acc, [key, value]) => {
-              acc[key] = String(value);
-              return acc;
-            }, {} as Record<string, string>)
-          }));
+            metadata,
+            displayMetadata: toDisplayMetadataRecord(metadata)
+          };
+        });
         } else {
           throw new Error('JSON file must contain an array of data points');
         }
@@ -1302,6 +1329,7 @@ const DataLabelingWorkspace = () => {
             customField: '',
             customFieldName: customField,
             metadata,
+            displayMetadata: toDisplayMetadataRecord(metadata, header[contentIndex]),
             customFieldValues: {},
             isIAA: false, // Default, will be set by applyAssignmentsToDataPoints
             annotatedAt: Date.now(), // timestamp for upload
@@ -3582,7 +3610,7 @@ const DataLabelingWorkspace = () => {
 
                       {/* Metadata Sidebar */}
                       <MetadataSidebar
-                        metadata={currentDataPoint?.displayMetadata || currentDataPoint?.metadata}
+                        metadata={currentDataPoint?.displayMetadata}
                         isOpen={showMetadataSidebar}
                         onToggle={() => setShowMetadataSidebar(!showMetadataSidebar)}
                       />
