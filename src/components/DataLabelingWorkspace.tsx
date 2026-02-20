@@ -7,7 +7,7 @@ import cl100k_base from "js-tiktoken/ranks/cl100k_base";
 import { useDataLabeling } from "@/hooks/useDataLabeling";
 import { exportService } from "@/services/exportService";
 import { huggingFaceService } from "@/services/huggingFaceService";
-import { DataPoint, ModelProfile, ModelProvider, Project, ProjectModelPolicy, ProviderConnection } from "@/types/data";
+import { DataPoint, DataPointComment, ModelProfile, ModelProvider, Project, ProjectModelPolicy, ProviderConnection } from "@/types/data";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -67,7 +67,9 @@ import {
   Redo2,
   History,
   Book,
-  Database
+  Database,
+  MessageSquare,
+  Trash2
 } from "lucide-react";
 import { VersionHistory } from "@/components/VersionHistory";
 import { GuidelinesDialog } from "@/components/GuidelinesDialog";
@@ -76,6 +78,7 @@ import { modelManagementService } from "@/services/modelManagementService";
 import apiClient from "@/services/apiClient";
 
 type AnnotationStatusFilter = 'all' | 'has_final' | DataPoint['status'];
+const COMMENTS_PAGE_SIZE = 10;
 
 const DataLabelingWorkspace = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -146,6 +149,13 @@ const DataLabelingWorkspace = () => {
   const [pendingProcessForce, setPendingProcessForce] = useState(false);
   const [tokenEstimate, setTokenEstimate] = useState<{ inputTokens: number; items: number; models: number; perModelTokens: Record<string, number> } | null>(null);
   const [openRouterPriceByModel, setOpenRouterPriceByModel] = useState<Record<string, { input: number | null; output: number | null }>>({});
+  const [comments, setComments] = useState<DataPointComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsPage, setCommentsPage] = useState(1);
+  const [commentsTotalPages, setCommentsTotalPages] = useState(1);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentBody, setEditingCommentBody] = useState('');
 
   // Redirect if project not found
   useEffect(() => {
@@ -587,6 +597,133 @@ const DataLabelingWorkspace = () => {
     const totalCompleted = annotationStats.totalAccepted + annotationStats.totalEdited;
     if (annotationStats.sessionTime === 0 || totalCompleted === 0) return 0;
     return Math.round((totalCompleted / annotationStats.sessionTime) * 3600); // per hour
+  };
+
+  const formatCommentTime = useCallback((timestamp: number) => {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    }).format(new Date(timestamp));
+  }, []);
+
+  const canEditComment = useCallback((comment: DataPointComment) => {
+    if (!currentUser) return false;
+    return comment.authorId === currentUser.id;
+  }, [currentUser]);
+
+  const canDeleteComment = useCallback((comment: DataPointComment) => {
+    if (!currentUser) return false;
+    if (comment.authorId === currentUser.id) return true;
+    if (isAdmin) return true;
+    if (isManagerForProject) return true;
+    return false;
+  }, [currentUser, isAdmin, isManagerForProject]);
+
+  const currentDataPointId = currentDataPoint?.id;
+
+  const loadComments = useCallback(async (pageNumber: number = 1) => {
+    if (!projectId || !currentDataPointId) {
+      setComments([]);
+      setCommentsPage(1);
+      setCommentsTotalPages(1);
+      return;
+    }
+
+    setCommentsLoading(true);
+    try {
+      const response = await projectService.getComments(projectId, currentDataPointId, pageNumber, COMMENTS_PAGE_SIZE);
+      setComments(response.comments);
+      setCommentsPage(response.pagination?.page || pageNumber);
+      setCommentsTotalPages(Math.max(1, response.pagination?.totalPages || 1));
+    } catch (error) {
+      console.error("Failed to load comments:", error);
+      setComments([]);
+      setCommentsPage(1);
+      setCommentsTotalPages(1);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, [projectId, currentDataPointId]);
+
+  useEffect(() => {
+    setCommentDraft('');
+    setEditingCommentId(null);
+    setEditingCommentBody('');
+    loadComments(1);
+  }, [loadComments]);
+
+  const handleCreateComment = async () => {
+    if (!projectId || !currentDataPoint) return;
+    const trimmed = commentDraft.trim();
+    if (!trimmed) return;
+
+    try {
+      await projectService.createComment(projectId, currentDataPoint.id, trimmed);
+      setCommentDraft('');
+      await loadComments(1);
+    } catch (error) {
+      console.error("Failed to create comment:", error);
+      toast({
+        title: "Failed to add comment",
+        description: error instanceof Error ? error.message : "Could not add comment.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const startEditComment = (comment: DataPointComment) => {
+    setEditingCommentId(comment.id);
+    setEditingCommentBody(comment.body);
+  };
+
+  const cancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditingCommentBody('');
+  };
+
+  const handleUpdateComment = async (commentId: string) => {
+    if (!projectId) return;
+    const trimmed = editingCommentBody.trim();
+    if (!trimmed) return;
+
+    try {
+      await projectService.updateComment(projectId, commentId, trimmed);
+      setEditingCommentId(null);
+      setEditingCommentBody('');
+      await loadComments(commentsPage);
+    } catch (error) {
+      console.error("Failed to update comment:", error);
+      toast({
+        title: "Failed to update comment",
+        description: error instanceof Error ? error.message : "Could not update comment.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!projectId) return;
+    const remainingAfterLocalDelete = Math.max(0, comments.length - 1);
+    const nextPage = remainingAfterLocalDelete === 0 && commentsPage > 1 ? commentsPage - 1 : commentsPage;
+
+    // Frontend hard-delete behavior: remove from current UI list immediately.
+    setComments(prev => prev.filter(comment => comment.id !== commentId));
+    if (editingCommentId === commentId) {
+      cancelEditComment();
+    }
+
+    try {
+      await projectService.deleteComment(projectId, commentId);
+      await loadComments(nextPage);
+    } catch (error) {
+      console.error("Failed to delete comment:", error);
+      await loadComments(commentsPage);
+      toast({
+        title: "Failed to delete comment",
+        description: error instanceof Error ? error.message : "Could not delete comment.",
+        variant: "destructive"
+      });
+    }
   };
 
   const getAssignmentForCurrentUser = useCallback((dataPoint: DataPoint) => {
@@ -1840,6 +1977,7 @@ const DataLabelingWorkspace = () => {
 
   const currentAssignment = currentDataPoint ? getAssignmentForCurrentUser(currentDataPoint) : undefined;
   const canAnnotateCurrent = !!currentDataPoint && (!isCompleteByRequirement(currentDataPoint) || !!currentAssignment);
+  const canCommentOnCurrent = !!currentUser && !!projectId && !!currentDataPoint;
   const annotatorCanViewCompleted = !!currentDataPoint
     && isCompleteByRequirement(currentDataPoint)
     && (
@@ -3073,6 +3211,7 @@ const DataLabelingWorkspace = () => {
               <div className="flex-1 overflow-y-auto pb-10 min-w-0">
                 <div className="space-y-6">
                   {viewMode === 'record' ? (
+                    <>
                     <div className="flex gap-4">
                       {/* Main Content */}
                       <div className="flex-1">
@@ -3448,6 +3587,126 @@ const DataLabelingWorkspace = () => {
                         onToggle={() => setShowMetadataSidebar(!showMetadataSidebar)}
                       />
                     </div>
+                    <Card className="p-6 mt-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-blue-500" />
+                        <Label className="text-sm font-medium">Comments</Label>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Textarea
+                          value={commentDraft}
+                          onChange={(e) => setCommentDraft(e.target.value)}
+                          placeholder="Add a comment for this item..."
+                          className="min-h-[88px]"
+                          disabled={!canCommentOnCurrent}
+                        />
+                        <Button
+                          size="sm"
+                          className="w-full sm:w-auto"
+                          onClick={handleCreateComment}
+                          disabled={!canCommentOnCurrent || !commentDraft.trim()}
+                        >
+                          Add Comment
+                        </Button>
+                      </div>
+
+                      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                        {commentsLoading ? (
+                          <p className="text-xs text-muted-foreground">Loading comments...</p>
+                        ) : comments.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">No comments yet.</p>
+                        ) : (
+                          comments.map(comment => (
+                            <div key={comment.id} className="rounded-md border border-border/70 bg-muted/30 p-3 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium truncate">{comment.authorName}</p>
+                                  <p className="text-[11px] text-muted-foreground">
+                                    {formatCommentTime(comment.createdAt)}{comment.isEdited ? ' . edited' : ''}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {canEditComment(comment) && editingCommentId !== comment.id && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 px-2 text-xs"
+                                      onClick={() => startEditComment(comment)}
+                                    >
+                                      Edit
+                                    </Button>
+                                  )}
+                                  {canDeleteComment(comment) && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 px-2 text-xs text-destructive"
+                                      onClick={() => handleDeleteComment(comment.id)}
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {editingCommentId === comment.id ? (
+                                <div className="space-y-2">
+                                  <Textarea
+                                    value={editingCommentBody}
+                                    onChange={(e) => setEditingCommentBody(e.target.value)}
+                                    className="min-h-[72px]"
+                                  />
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      size="sm"
+                                      className="h-7 text-xs"
+                                      onClick={() => handleUpdateComment(comment.id)}
+                                      disabled={!editingCommentBody.trim()}
+                                    >
+                                      Save
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs"
+                                      onClick={cancelEditComment}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-xs whitespace-pre-wrap break-words">{comment.body}</p>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2"
+                          onClick={() => loadComments(Math.max(1, commentsPage - 1))}
+                          disabled={commentsPage <= 1 || commentsLoading}
+                        >
+                          <ChevronLeft className="w-3 h-3" />
+                        </Button>
+                        <span>Page {commentsPage} / {commentsTotalPages}</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2"
+                          onClick={() => loadComments(Math.min(commentsTotalPages, commentsPage + 1))}
+                          disabled={commentsPage >= commentsTotalPages || commentsLoading}
+                        >
+                          <ChevronRight className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </Card>
+                    </>
                   ) : (
                     <Card className="p-6">
                       <div className="flex flex-col gap-4 min-w-0">

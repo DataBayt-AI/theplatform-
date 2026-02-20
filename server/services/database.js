@@ -164,6 +164,26 @@ function createSchema() {
     )
   `);
 
+  // Data point comments table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS data_point_comments (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      data_point_id TEXT NOT NULL,
+      author_id TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      body TEXT NOT NULL,
+      parent_comment_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      deleted_at INTEGER,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (data_point_id) REFERENCES data_points(id) ON DELETE CASCADE,
+      FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_comment_id) REFERENCES data_point_comments(id) ON DELETE SET NULL
+    )
+  `);
+
   // Provider connections table
   db.exec(`
     CREATE TABLE IF NOT EXISTS provider_connections (
@@ -228,6 +248,8 @@ function createSchema() {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_data_points_project ON data_points(project_id);
     CREATE INDEX IF NOT EXISTS idx_data_points_status ON data_points(status);
+    CREATE INDEX IF NOT EXISTS idx_comments_project_data_point ON data_point_comments(project_id, data_point_id);
+    CREATE INDEX IF NOT EXISTS idx_comments_created_at ON data_point_comments(created_at);
     CREATE INDEX IF NOT EXISTS idx_snapshots_project ON snapshots(project_id);
     CREATE INDEX IF NOT EXISTS idx_audit_log_project ON audit_log(project_id);
     CREATE INDEX IF NOT EXISTS idx_project_annotators_user ON project_annotators(user_id);

@@ -1,4 +1,4 @@
-import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry, ProjectIAAConfig, ProjectDataStatusCounts } from "@/types/data";
+import { Project, DataPoint, AnnotationStats, ProjectSnapshot, ProjectAuditEntry, ProjectIAAConfig, ProjectDataStatusCounts, DataPointComment } from "@/types/data";
 import { apiClient } from "./apiClient";
 
 export const projectService = {
@@ -133,6 +133,26 @@ export const projectService = {
 
     updateDataPoint: async (projectId: string, dataId: string, updates: Partial<DataPoint>): Promise<void> => {
         await apiClient.projects.updateDataPoint(projectId, dataId, updates);
+    },
+
+    getComments: async (projectId: string, dataId: string, page: number = 1, limit: number = 20): Promise<{ comments: DataPointComment[]; pagination: { total: number; page: number; limit: number; totalPages: number } }> => {
+        const response = await apiClient.comments.getByDataPoint(projectId, dataId, page, limit);
+        return {
+            comments: response.comments as DataPointComment[],
+            pagination: response.pagination
+        };
+    },
+
+    createComment: async (projectId: string, dataId: string, body: string, parentCommentId?: string | null): Promise<DataPointComment> => {
+        return await apiClient.comments.create(projectId, dataId, { body, parentCommentId }) as DataPointComment;
+    },
+
+    updateComment: async (projectId: string, commentId: string, body: string): Promise<DataPointComment> => {
+        return await apiClient.comments.update(projectId, commentId, { body }) as DataPointComment;
+    },
+
+    deleteComment: async (projectId: string, commentId: string): Promise<void> => {
+        await apiClient.comments.delete(projectId, commentId);
     },
 
     // Snapshot methods
