@@ -342,9 +342,124 @@ app.post('/api/huggingface/datasets/import', async (req, res) => {
             }
         }
 
+        const encodeDatasetPath = (pathValue) => {
+            return String(pathValue)
+                .split('/')
+                .filter(Boolean)
+                .map(segment => encodeURIComponent(segment))
+                .join('/');
+        };
+
+        const inferAudioMime = (pathValue) => {
+            const lower = String(pathValue || '').toLowerCase();
+            if (lower.endsWith('.mp3')) return 'audio/mpeg';
+            if (lower.endsWith('.m4a')) return 'audio/mp4';
+            if (lower.endsWith('.ogg')) return 'audio/ogg';
+            if (lower.endsWith('.flac')) return 'audio/flac';
+            return 'audio/wav';
+        };
+
+        const bytesToBase64 = (bytesValue) => {
+            if (!bytesValue) return null;
+            if (typeof bytesValue === 'string') return bytesValue;
+            if (Array.isArray(bytesValue)) {
+                try {
+                    return Buffer.from(bytesValue).toString('base64');
+                } catch {
+                    return null;
+                }
+            }
+            if (bytesValue?.type === 'Buffer' && Array.isArray(bytesValue.data)) {
+                try {
+                    return Buffer.from(bytesValue.data).toString('base64');
+                } catch {
+                    return null;
+                }
+            }
+            return null;
+        };
+
+        const resolveAudioContent = (value) => {
+            if (!value) return null;
+
+            if (Array.isArray(value)) {
+                for (const entry of value) {
+                    const resolved = resolveAudioContent(entry);
+                    if (resolved) return resolved;
+                }
+                return null;
+            }
+
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (!trimmed) return null;
+                if (trimmed.startsWith('data:audio/')) return trimmed;
+                if (/^https?:\/\//i.test(trimmed)) return trimmed;
+                if (/\.(mp3|wav|m4a|ogg|flac)(\?.*)?$/i.test(trimmed)) {
+                    if (trimmed.startsWith('/')) {
+                        return `https://huggingface.co/datasets/${encodeURIComponent(dataset)}/resolve/main/${encodeDatasetPath(trimmed)}`;
+                    }
+                    if (!trimmed.includes('/')) return null;
+                    return `https://huggingface.co/datasets/${encodeURIComponent(dataset)}/resolve/main/${encodeDatasetPath(trimmed)}`;
+                }
+                return null;
+            }
+
+            if (value && typeof value === 'object') {
+                const src = typeof value.src === 'string' ? value.src.trim() : '';
+                if (src) {
+                    if (src.startsWith('data:audio/') || /^https?:\/\//i.test(src)) return src;
+                    if (/\.(mp3|wav|m4a|ogg|flac)(\?.*)?$/i.test(src)) {
+                        return `https://huggingface.co/datasets/${encodeURIComponent(dataset)}/resolve/main/${encodeDatasetPath(src)}`;
+                    }
+                }
+
+                const url = typeof value.url === 'string' ? value.url.trim() : '';
+                if (url) {
+                    if (url.startsWith('data:audio/') || /^https?:\/\//i.test(url)) return url;
+                    if (/\.(mp3|wav|m4a|ogg|flac)(\?.*)?$/i.test(url)) {
+                        return `https://huggingface.co/datasets/${encodeURIComponent(dataset)}/resolve/main/${encodeDatasetPath(url)}`;
+                    }
+                }
+
+                const path = typeof value.path === 'string' ? value.path.trim() : '';
+                if (path) {
+                    if (/^https?:\/\//i.test(path)) return path;
+                    return `https://huggingface.co/datasets/${encodeURIComponent(dataset)}/resolve/main/${encodeDatasetPath(path)}`;
+                }
+
+                const bytes = bytesToBase64(value.bytes);
+                if (bytes) {
+                    if (bytes.startsWith('data:audio/')) return bytes;
+                    const mime = inferAudioMime(path || url);
+                    return `data:${mime};base64,${bytes}`;
+                }
+            }
+
+            return null;
+        };
+
         const normalizedRows = rawRows.map(item => {
             const row = item && typeof item === 'object' && 'row' in item ? item.row : item;
             if (row && typeof row === 'object' && !Array.isArray(row)) {
+                const audioCandidates = ['audio', 'sound', 'clip', 'recording'];
+                const entryList = Object.entries(row);
+                const explicitContent = resolveAudioContent(row.content);
+                const explicitAudio = resolveAudioContent(row.audio);
+                const candidateAudio = entryList
+                    .filter(([key]) => audioCandidates.some(candidate => key.toLowerCase().includes(candidate)))
+                    .map(([, value]) => resolveAudioContent(value))
+                    .find(Boolean);
+                const audioContent = explicitContent || explicitAudio || candidateAudio || null;
+
+                if (audioContent) {
+                    return {
+                        ...row,
+                        type: 'audio',
+                        content: audioContent
+                    };
+                }
+
                 return row;
             }
             return { text: row == null ? '' : String(row) };

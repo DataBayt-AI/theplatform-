@@ -6,11 +6,13 @@ export interface AIRequestOptions {
   maxTokens?: number;
 }
 
+export type AIInputType = 'text' | 'image' | 'audio';
+
 export interface AIProvider {
   id: string;
   name: string;
-  processText: (text: string, prompt?: string, apiKey?: string, modelId?: string, baseUrl?: string, type?: 'text' | 'image', options?: AIRequestOptions) => Promise<string>;
-  processBatch?: (texts: string[], prompt?: string, apiKey?: string, modelId?: string, baseUrl?: string, type?: 'text' | 'image', options?: AIRequestOptions) => Promise<string[]>;
+  processText: (text: string, prompt?: string, apiKey?: string, modelId?: string, baseUrl?: string, type?: AIInputType, options?: AIRequestOptions) => Promise<string>;
+  processBatch?: (texts: string[], prompt?: string, apiKey?: string, modelId?: string, baseUrl?: string, type?: AIInputType, options?: AIRequestOptions) => Promise<string[]>;
 }
 
 export const AVAILABLE_PROVIDERS: ModelProvider[] = [
@@ -112,7 +114,7 @@ class OpenAIProvider implements AIProvider {
   id = 'openai';
   name = 'OpenAI GPT';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
     if (!apiKey) throw new Error('OpenAI API key is required');
 
     const messages: any[] = [
@@ -155,7 +157,7 @@ class OpenAIProvider implements AIProvider {
     return data.choices[0].message.content || '';
   }
 
-  async processBatch(texts: string[], prompt?: string, apiKey?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string[]> {
+  async processBatch(texts: string[], prompt?: string, apiKey?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string[]> {
     const promises = texts.map(text => this.processText(text, prompt, apiKey, modelId, baseUrl, type, options));
     return Promise.all(promises);
   }
@@ -165,7 +167,7 @@ class AnthropicProvider implements AIProvider {
   id = 'anthropic';
   name = 'Anthropic Claude';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'claude-3-5-sonnet-20240620', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'claude-3-5-sonnet-20240620', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
     if (!apiKey) throw new Error('Anthropic API key is required');
 
     const messages: any[] = [];
@@ -250,7 +252,7 @@ class SambaNovaProvider implements AIProvider {
   id = 'sambanova';
   name = 'SambaNova Cloud';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'Meta-Llama-3.1-70B-Instruct', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'Meta-Llama-3.1-70B-Instruct', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
     if (!apiKey) throw new Error('SambaNova API key is required');
 
     if (type === 'image') {
@@ -324,7 +326,7 @@ class OpenRouterProvider implements AIProvider {
   id = 'openrouter';
   name = 'OpenRouter';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'openai/gpt-4o-mini', baseUrl?: string, type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'openai/gpt-4o-mini', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
     if (!apiKey) throw new Error('OpenRouter API key is required');
 
     const messages: any[] = [
@@ -372,7 +374,7 @@ class LocalProvider implements AIProvider {
   id = 'local';
   name = 'Local Model (Ollama)';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'llama3', baseUrl: string = 'http://localhost:11434', type: 'text' | 'image' = 'text', options?: AIRequestOptions): Promise<string> {
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'llama3', baseUrl: string = 'http://localhost:11434', type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
     const systemPrompt = prompt || "You are a helpful data labeling assistant.";
 
     // Ensure baseUrl doesn't end with slash

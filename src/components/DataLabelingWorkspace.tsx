@@ -411,7 +411,8 @@ const DataLabelingWorkspace = () => {
     setSelectedModels(prev => prev.filter(id => allowed.has(id)));
   }, [availableModelProfiles]);
 
-  const allowedDataFileExtensions = ['.json', '.csv', '.txt'];
+  const audioFileExtensions = ['.mp3', '.wav', '.m4a'];
+  const allowedDataFileExtensions = ['.json', '.csv', '.txt', ...audioFileExtensions];
 
   useEffect(() => {
     if (handledInitialImportChoice || !canUpload) return;
@@ -885,11 +886,11 @@ const DataLabelingWorkspace = () => {
     const extension = lastDotIndex >= 0 ? file.name.slice(lastDotIndex).toLowerCase() : '';
 
     if (!extension) {
-      return 'File must have an extension (.json, .csv, or .txt).';
+      return 'File must have an extension (.json, .csv, .txt, .mp3, .wav, or .m4a).';
     }
 
     if (!allowedDataFileExtensions.includes(extension)) {
-      return `Unsupported file type "${extension}". Please upload a JSON, CSV, or TXT file.`;
+      return `Unsupported file type "${extension}". Please upload a JSON, CSV, TXT, MP3, WAV, or M4A file.`;
     }
 
     if (file.size === 0) {
@@ -919,6 +920,110 @@ const DataLabelingWorkspace = () => {
     } catch {
       return String(value);
     }
+  };
+
+  const toBase64FromByteArray = (bytes: number[]) => {
+    const chunkSize = 0x8000;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.slice(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+  };
+
+  const resolveImportedAudioContent = (value: unknown, datasetId?: string): string | null => {
+    const resolvePathToHubUrl = (pathValue: string) => {
+      const trimmed = pathValue.trim();
+      if (!trimmed) return null;
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      if (!datasetId) return trimmed;
+      const cleanPath = trimmed.replace(/^\/+/, '').split('/').map(segment => encodeURIComponent(segment)).join('/');
+      return `https://huggingface.co/datasets/${encodeURIComponent(datasetId)}/resolve/main/${cleanPath}`;
+    };
+
+    if (!value) return null;
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const resolved = resolveImportedAudioContent(entry, datasetId);
+        if (resolved) return resolved;
+      }
+      return null;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      if (trimmed.startsWith('data:audio/')) return trimmed;
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      if (/\.(mp3|wav|m4a|ogg|flac)(\?.*)?$/i.test(trimmed)) {
+        return resolvePathToHubUrl(trimmed);
+      }
+      return null;
+    }
+
+    if (typeof value === 'object') {
+      const audioObject = value as Record<string, unknown>;
+      if (typeof audioObject.src === 'string') {
+        const content = resolveImportedAudioContent(audioObject.src, datasetId);
+        if (content) return content;
+      }
+      if (typeof audioObject.content === 'string') {
+        const content = resolveImportedAudioContent(audioObject.content, datasetId);
+        if (content) return content;
+      }
+      if (typeof audioObject.url === 'string') {
+        const content = resolveImportedAudioContent(audioObject.url, datasetId);
+        if (content) return content;
+      }
+      if (typeof audioObject.path === 'string') {
+        const resolved = resolvePathToHubUrl(audioObject.path);
+        if (resolved) return resolved;
+      }
+      if (typeof audioObject.bytes === 'string') {
+        if (audioObject.bytes.startsWith('data:audio/')) return audioObject.bytes;
+        return `data:audio/wav;base64,${audioObject.bytes}`;
+      }
+      if (Array.isArray(audioObject.bytes) && audioObject.bytes.every((entry) => typeof entry === 'number')) {
+        return `data:audio/wav;base64,${toBase64FromByteArray(audioObject.bytes as number[])}`;
+      }
+    }
+
+    return null;
+  };
+
+  const inferDataPointType = (content: string, explicitType?: unknown): DataPoint['type'] => {
+    if (explicitType === 'image' || explicitType === 'audio' || explicitType === 'text') {
+      return explicitType;
+    }
+    const lowerContent = content.toLowerCase();
+    if (
+      lowerContent.startsWith('data:audio/')
+      || /\.(mp3|wav|m4a)(\?.*)?$/.test(lowerContent)
+    ) {
+      return 'audio';
+    }
+    return 'text';
+  };
+
+  const getPlayableAudioSource = (value: unknown): string | null => {
+    const resolved = resolveImportedAudioContent(value, hfImportDataset);
+    if (resolved) return resolved;
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if ((trimmed.startsWith('{') || trimmed.startsWith('['))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          return resolveImportedAudioContent(parsed, hfImportDataset);
+        } catch {
+          return null;
+        }
+      }
+    }
+
+    return null;
   };
 
   const toMetadataRecord = (row: Record<string, unknown>) => {
@@ -952,7 +1057,7 @@ const DataLabelingWorkspace = () => {
     if (selectedContentColumn && columns.includes(selectedContentColumn)) {
       return selectedContentColumn;
     }
-    const contentCandidates = ['text', 'content', 'sentence', 'question', 'instruction', 'input', 'prompt'];
+    const contentCandidates = ['text', 'content', 'audio', 'path', 'url', 'sentence', 'question', 'instruction', 'input', 'prompt'];
     const found = columns.find(col => contentCandidates.some(candidate => col.toLowerCase().includes(candidate)));
     if (found) return found;
     return columns.find(col => col.toLowerCase() !== 'id') || columns[0] || '';
@@ -1053,7 +1158,7 @@ const DataLabelingWorkspace = () => {
         title: 'Invalid file',
         description: validationError,
         variant: 'destructive',
-        duration: 20000
+        duration: 7000
       });
       setPendingFile(null);
       event.target.value = '';
@@ -1062,15 +1167,17 @@ const DataLabelingWorkspace = () => {
 
     console.log('File selected:', file.name, file.type, file.size);
 
+    const lowerFileName = file.name.toLowerCase();
+
     // Pre-parse headers/keys to show variable suggestions
-    if (file.name.endsWith('.csv')) {
+    if (lowerFileName.endsWith('.csv')) {
       const text = await file.text();
       const firstLine = text.split('\n')[0];
       if (firstLine) {
         const headers = normalizeCsvHeader(firstLine.split(','));
         setAvailableColumns(headers);
       }
-    } else if (file.name.endsWith('.json')) {
+    } else if (lowerFileName.endsWith('.json')) {
       const text = await file.text();
       try {
         const jsonData = JSON.parse(text);
@@ -1162,10 +1269,40 @@ const DataLabelingWorkspace = () => {
     setShowUploadPrompt(false);
 
     try {
-      const text = importedRows ? '' : await file!.text();
+      const lastDotIndex = file?.name.lastIndexOf('.') ?? -1;
+      const extension = lastDotIndex >= 0 ? file!.name.slice(lastDotIndex).toLowerCase() : '';
+      const text = importedRows || audioFileExtensions.includes(extension) ? '' : await file!.text();
       let parsedData: DataPoint[] = [];
 
-      if (importedRows && importedRows.length > 0) {
+      if (file && audioFileExtensions.includes(extension)) {
+        const audioDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('Failed to read audio file.'));
+          reader.readAsDataURL(file);
+        });
+        parsedData = [{
+          id: crypto.randomUUID(),
+          content: audioDataUrl,
+          type: 'audio',
+          originalAnnotation: '',
+          aiSuggestions: {},
+          ratings: {},
+          status: 'pending' as const,
+          uploadPrompt: prompt,
+          customField: '',
+          customFieldName: customField,
+          metadata: {
+            filename: file.name,
+            mimeType: file.type || 'audio/*',
+            fileSize: `${file.size}`
+          },
+          displayMetadata: {},
+          customFieldValues: {},
+          isIAA: false,
+          annotatedAt: Date.now(),
+        }];
+      } else if (importedRows && importedRows.length > 0) {
         const columns = Object.keys(importedRows[0] || {});
         const contentColumn = resolveContentColumn(columns);
         const annotationColumn = resolveAnnotationColumn(columns);
@@ -1178,10 +1315,15 @@ const DataLabelingWorkspace = () => {
 
         parsedData = importedRows.map((row) => {
           const metadata = toMetadataRecord(row);
+          const rawContent = row[contentColumn];
+          const resolvedAudioContent = resolveImportedAudioContent(rawContent, hfImportDataset)
+            || resolveImportedAudioContent(row['audio'], hfImportDataset)
+            || resolveImportedAudioContent(row['content'], hfImportDataset);
+          const content = resolvedAudioContent || toDisplayString(rawContent) || JSON.stringify(row);
           return {
           id: crypto.randomUUID(),
-          content: toDisplayString(row[contentColumn]) || JSON.stringify(row),
-          type: 'text',
+          content,
+          type: inferDataPointType(content, row['type'] || (resolvedAudioContent ? 'audio' : undefined)),
           originalAnnotation: annotationColumn ? toDisplayString(row[annotationColumn]) : '',
           aiSuggestions: {},
           ratings: {},
@@ -1196,7 +1338,7 @@ const DataLabelingWorkspace = () => {
           annotatedAt: Date.now(),
         } as DataPoint;
       });
-      } else if (file && file.name.endsWith('.json')) {
+      } else if (file && extension === '.json') {
         let jsonData: unknown;
         try {
           jsonData = JSON.parse(text);
@@ -1219,10 +1361,11 @@ const DataLabelingWorkspace = () => {
               acc[key] = String(value);
               return acc;
             }, {} as Record<string, string>);
+            const content = typeof item === 'string' ? item : item.text || item.content || JSON.stringify(item);
             return {
             id: crypto.randomUUID(),
-            content: typeof item === 'string' ? item : item.text || item.content || JSON.stringify(item),
-            type: item.type || 'text',
+            content,
+            type: inferDataPointType(content, item.type),
             originalAnnotation: item.annotation || item.label || '',
             aiSuggestions: {},
             ratings: {},
@@ -1237,7 +1380,7 @@ const DataLabelingWorkspace = () => {
         } else {
           throw new Error('JSON file must contain an array of data points');
         }
-      } else if (file && file.name.endsWith('.csv')) {
+      } else if (file && extension === '.csv') {
         const lines = text.split('\n').filter(line => line.trim());
         if (lines.length === 0) {
           throw new Error('CSV file is empty.');
@@ -1318,9 +1461,11 @@ const DataLabelingWorkspace = () => {
             }
           });
 
+          const content = contentIndex >= 0 ? values[contentIndex] : (values[0] || line);
           return {
             id: crypto.randomUUID(),
-            content: contentIndex >= 0 ? values[contentIndex] : (values[0] || line),
+            content,
+            type: inferDataPointType(content, metadata.type),
             originalAnnotation: annotationIndex >= 0 ? values[annotationIndex] : '',
             aiSuggestions: {},
             ratings: {},
@@ -1371,7 +1516,7 @@ const DataLabelingWorkspace = () => {
         title: 'File upload failed',
         description: errorMessage,
         variant: 'destructive',
-        duration: 20000
+        duration: 7000
       });
     } finally {
       setIsUploading(false);
@@ -1762,7 +1907,7 @@ const DataLabelingWorkspace = () => {
         title: 'Batch Processing Failed',
         description: errorMessage,
         variant: 'destructive',
-        duration: 5000
+        duration: 7000
       });
     } finally {
       setIsProcessing(false);
@@ -2338,7 +2483,7 @@ const DataLabelingWorkspace = () => {
                 <input
                   id="file-upload"
                   type="file"
-                  accept=".json,.csv,.txt"
+                  accept=".json,.csv,.txt,.mp3,.wav,.m4a"
                   onChange={handleFileUpload}
                   disabled={!canUpload}
                   className="hidden"
@@ -2348,7 +2493,7 @@ const DataLabelingWorkspace = () => {
                 <input
                   id="file-upload-new-task"
                   type="file"
-                  accept=".json,.csv,.txt"
+                  accept=".json,.csv,.txt,.mp3,.wav,.m4a"
                   onChange={(e) => {
                     resetForNewTask();
                     handleFileUpload(e);
@@ -3226,7 +3371,7 @@ const DataLabelingWorkspace = () => {
                 <input
                   id="file-upload-main"
                   type="file"
-                  accept=".json,.csv,.txt"
+                  accept=".json,.csv,.txt,.mp3,.wav,.m4a"
                   onChange={handleFileUpload}
                   disabled={!canUpload}
                   className="hidden"
@@ -3269,6 +3414,15 @@ const DataLabelingWorkspace = () => {
                                       (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Image+Not+Found';
                                     }}
                                   />
+                                </div>
+                              ) : currentDataPoint?.type === 'audio' ? (
+                                <div className="mt-2 space-y-2">
+                                  <audio controls src={getPlayableAudioSource(currentDataPoint.content) || ''} className="w-full">
+                                    Your browser does not support the audio element.
+                                  </audio>
+                                  <p className="text-xs text-muted-foreground break-all">
+                                    {currentDataPoint.metadata?.filename || currentDataPoint.content}
+                                  </p>
                                 </div>
                               ) : (
                                 <p className="mt-2 text-foreground leading-relaxed whitespace-pre-wrap">
@@ -4002,7 +4156,7 @@ const DataLabelingWorkspace = () => {
                                     setUseFilteredNavigation(isAnnotatorForProject ? true : hasActiveFilters);
                                   }}
                                 >
-                                  {/* Section 0: Image Preview (If image type) */}
+                                  {/* Section 0: Media Preview */}
                                   {dataPoint.type === 'image' && (
                                     <div className={
                                       listLayout === 'grid'
@@ -4017,6 +4171,17 @@ const DataLabelingWorkspace = () => {
                                           (e.target as HTMLImageElement).src = 'https://placehold.co/200x200?text=Error';
                                         }}
                                       />
+                                    </div>
+                                  )}
+                                  {dataPoint.type === 'audio' && (
+                                    <div className={
+                                      listLayout === 'grid'
+                                        ? "w-full rounded-md border border-border/40 bg-muted/20 p-2"
+                                        : "w-full sm:w-52 flex-shrink-0 rounded-md border border-border/40 bg-muted/20 p-2"
+                                    }>
+                                      <audio controls src={getPlayableAudioSource(dataPoint.content) || ''} className="w-full">
+                                        Your browser does not support the audio element.
+                                      </audio>
                                     </div>
                                   )}
 
@@ -4075,7 +4240,11 @@ const DataLabelingWorkspace = () => {
                                     {/* Section 2: Main Content */}
                                     <div className={`flex-1 min-w-0 space-y-1 max-w-full ${listLayout === 'grid' ? "w-full mt-2" : ""}`}>
                                       <p className="text-sm font-medium text-foreground line-clamp-1 w-full">
-                                        {dataPoint.type === 'image' ? (dataPoint.metadata?.filename || dataPoint.metadata?.name || 'Image content') : (dataPoint.content || 'Untitled content')}
+                                        {dataPoint.type === 'image'
+                                          ? (dataPoint.metadata?.filename || dataPoint.metadata?.name || 'Image content')
+                                          : dataPoint.type === 'audio'
+                                            ? (dataPoint.metadata?.filename || dataPoint.metadata?.name || 'Audio content')
+                                            : (dataPoint.content || 'Untitled content')}
                                       </p>
                                       <p className="text-xs text-muted-foreground break-words whitespace-normal line-clamp-2">
                                         {preview.text || 'No annotation yet.'}
