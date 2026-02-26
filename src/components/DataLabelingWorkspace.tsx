@@ -5,7 +5,7 @@ import o200k_base from "js-tiktoken/ranks/o200k_base";
 import cl100k_base from "js-tiktoken/ranks/cl100k_base";
 
 import { useDataLabeling } from "@/hooks/useDataLabeling";
-import { exportService } from "@/services/exportService";
+import { exportService, HF_FIELD_CONFIG, FieldConfig } from "@/services/exportService";
 import { huggingFaceService } from "@/services/huggingFaceService";
 import { DataPoint, DataPointComment, ModelProfile, ModelProvider, Project, ProjectModelPolicy, ProviderConnection } from "@/types/data";
 import { Button } from "@/components/ui/button";
@@ -252,6 +252,7 @@ const DataLabelingWorkspace = () => {
   const [hfImportMaxRows, setHfImportMaxRows] = useState<number | ''>('');
   const [pendingHFRows, setPendingHFRows] = useState<Array<Record<string, unknown>> | null>(null);
   const [handledInitialImportChoice, setHandledInitialImportChoice] = useState(false);
+  const [publishProgress, setPublishProgress] = useState<{ step: string; pct: number } | null>(null);
 
   // Dynamic Labels
   const [annotationLabel, setAnnotationLabel] = useState('Original Annotation');
@@ -2254,6 +2255,21 @@ const DataLabelingWorkspace = () => {
   };
 
 
+  // Serialize data in a Web Worker to keep the main thread responsive
+  const serializeInWorker = (dataPoints: DataPoint[], fieldConfig: FieldConfig): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const worker = new Worker(
+        new URL('../workers/exportWorker.ts', import.meta.url),
+        { type: 'module' }
+      );
+      worker.postMessage({ dataPoints, fieldConfig });
+      worker.onmessage = (e: MessageEvent<{ buffer: ArrayBuffer; mimeType: string }>) => {
+        resolve(new Blob([e.data.buffer], { type: e.data.mimeType }));
+        worker.terminate();
+      };
+      worker.onerror = (e) => { reject(new Error(e.message)); worker.terminate(); };
+    });
+
   // Publish to Hugging Face
   const publishToHuggingFace = async () => {
     if (!hfToken) {
@@ -2265,17 +2281,20 @@ const DataLabelingWorkspace = () => {
     setUploadError(null);
 
     try {
-      const repoId = `${hfUsername}/${hfDatasetName}`;
-      const blob = exportService.generateJSONLBlob(filteredDataPoints);
+      // Step 1: Serialize in worker (off main thread)
+      setPublishProgress({ step: 'Preparing data...', pct: 10 });
+      const blob = await serializeInWorker(filteredDataPoints, HF_FIELD_CONFIG);
 
+      // Step 2: Upload via service (with repo check + retry + progress)
+      const repoId = `${hfUsername}/${hfDatasetName}`;
       await huggingFaceService.publishDataset(
         repoId,
         blob,
-        { accessToken: hfToken }
+        { accessToken: hfToken },
+        'data.jsonl',
+        (step, pct) => setPublishProgress({ step, pct })
       );
 
-      // Success!
-      // Success!
       setShowHFDialog(false);
       setPublishedUrl(`https://huggingface.co/datasets/${repoId}`);
       setShowPublishSuccessDialog(true);
@@ -2284,6 +2303,7 @@ const DataLabelingWorkspace = () => {
       setUploadError(`Failed to publish: ${error.message}`);
     } finally {
       setIsPublishing(false);
+      setPublishProgress(null);
     }
   };
 
@@ -2577,6 +2597,7 @@ const DataLabelingWorkspace = () => {
                   className="mr-1"
                   onClick={() => setShowHistoryDialog(true)}
                   disabled={!projectId}
+                  title="Version History"
                 >
                   <History className="h-5 w-5" />
                 </Button>
@@ -3039,7 +3060,8 @@ const DataLabelingWorkspace = () => {
                     <DialogHeader>
                       <DialogTitle>Publish to Hugging Face</DialogTitle>
                       <DialogDescription>
-                        Upload your dataset directly to the Hugging Face Hub.
+                        Upload your dataset directly to the Hugging Face Hub ({filteredDataPoints.length} items).
+                        Important fields are selected automatically.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
@@ -3074,9 +3096,24 @@ const DataLabelingWorkspace = () => {
                           onChange={(e) => setHfDatasetName(e.target.value)}
                         />
                       </div>
+
+                      {/* Progress bar */}
+                      {isPublishing && publishProgress && (
+                        <div className="space-y-1 pt-1">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{publishProgress.step}</span>
+                            <span>{publishProgress.pct}%</span>
+                          </div>
+                          <Progress value={publishProgress.pct} className="h-2" />
+                        </div>
+                      )}
+
+                      {uploadError && (
+                        <p className="text-xs text-destructive">{uploadError}</p>
+                      )}
                     </div>
                     <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowHFDialog(false)}>Cancel</Button>
+                      <Button variant="outline" onClick={() => setShowHFDialog(false)} disabled={isPublishing}>Cancel</Button>
                       <Button onClick={publishToHuggingFace} disabled={isPublishing}>
                         {isPublishing ? (
                           <>
@@ -3291,17 +3328,6 @@ const DataLabelingWorkspace = () => {
                   </Tooltip>
                 )}
 
-                {/* Export Results */}
-                {dataPoints.length > 0 && viewMode === 'record' && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={openExportDialog} disabled={!canExport}>
-                        <Download className="w-4 h-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Export Results</TooltipContent>
-                  </Tooltip>
-                )}
               </div>
               <div className="ml-2">
                 <ThemeToggle />
