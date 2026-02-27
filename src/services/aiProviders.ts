@@ -39,6 +39,17 @@ export const AVAILABLE_PROVIDERS: ModelProvider[] = [
     ]
   },
   {
+    id: 'gemini',
+    name: 'Google Gemini',
+    description: 'Gemini models via Google AI Studio',
+    requiresApiKey: true,
+    models: [
+      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', description: 'Fast multimodal model' },
+      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'High quality multimodal model' },
+      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Cost-efficient multimodal model' }
+    ]
+  },
+  {
     id: 'openrouter',
     name: 'OpenRouter',
     description: 'Unified access to many frontier and open models',
@@ -248,6 +259,81 @@ class AnthropicProvider implements AIProvider {
   }
 }
 
+class GeminiProvider implements AIProvider {
+  id = 'gemini';
+  name = 'Google Gemini';
+
+  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'gemini-2.0-flash', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
+    if (!apiKey) throw new Error('Gemini API key is required');
+
+    const parts: Array<Record<string, unknown>> = [];
+    const userText = type === 'image'
+      ? 'Please analyze the image provided according to the system instructions.'
+      : text;
+
+    parts.push({ text: userText });
+
+    if (type === 'image') {
+      const imageUrl = await resolveImageContent(text);
+      const matches = imageUrl.match(/^data:(.+);base64,(.+)$/);
+      if (!matches || matches.length !== 3) {
+        throw new Error('Gemini requires image data as a base64 data URL.');
+      }
+      parts.push({
+        inline_data: {
+          mime_type: matches[1],
+          data: matches[2]
+        }
+      });
+    }
+
+    const body: Record<string, unknown> = {
+      model: modelId,
+      contents: [
+        {
+          role: 'user',
+          parts
+        }
+      ],
+      generationConfig: {
+        temperature: options?.temperature,
+        maxOutputTokens: options?.maxTokens
+      }
+    };
+
+    if (prompt) {
+      body.systemInstruction = {
+        parts: [{ text: prompt }]
+      };
+    }
+
+    const response = await fetch('/api/gemini/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        data?.error?.message
+        || data?.error
+        || 'Gemini API Error'
+      );
+    }
+
+    const candidate = data?.candidates?.[0];
+    const contentParts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+    const textParts = contentParts
+      .map((part: { text?: string }) => part?.text || '')
+      .filter(Boolean);
+    return textParts.join('\n').trim();
+  }
+}
+
 class SambaNovaProvider implements AIProvider {
   id = 'sambanova';
   name = 'SambaNova Cloud';
@@ -436,6 +522,7 @@ class LocalProvider implements AIProvider {
 const providers: Record<string, AIProvider> = {
   openai: new OpenAIProvider(),
   anthropic: new AnthropicProvider(),
+  gemini: new GeminiProvider(),
   openrouter: new OpenRouterProvider(),
   sambanova: new SambaNovaProvider(),
   local: new LocalProvider()

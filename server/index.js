@@ -106,6 +106,43 @@ app.post('/api/anthropic/message', async (req, res) => {
     }
 });
 
+// Gemini Proxy
+app.post('/api/gemini/generate', async (req, res) => {
+    try {
+        const apiKey = getApiKey(req, 'GEMINI_API_KEY');
+        if (!apiKey) {
+            return res.status(401).json({ error: 'Gemini API key is required' });
+        }
+
+        const { model, contents, generationConfig, systemInstruction } = req.body;
+        if (!model) {
+            return res.status(400).json({ error: 'Model is required' });
+        }
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents,
+                generationConfig,
+                systemInstruction
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            return res.status(response.status).json(data);
+        }
+        res.json(data);
+    } catch (error) {
+        console.error('Gemini Proxy Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // SambaNova Proxy
 app.post('/api/sambanova/chat', async (req, res) => {
     try {
@@ -238,6 +275,49 @@ app.get('/api/openai/models', async (req, res) => {
         res.json(data);
     } catch (error) {
         console.error('OpenAI Models Proxy Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.get('/api/gemini/models', async (req, res) => {
+    try {
+        const apiKey = getApiKey(req, 'GEMINI_API_KEY');
+        if (!apiKey) {
+            return res.status(401).json({ error: 'Gemini API key is required' });
+        }
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+        const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            return res.status(response.status).json(data);
+        }
+
+        const models = Array.isArray(data?.models) ? data.models : [];
+        const normalized = models
+            .filter((item) => Array.isArray(item?.supportedGenerationMethods)
+                && item.supportedGenerationMethods.includes('generateContent'))
+            .map((item) => {
+                const fullName = String(item.name || '');
+                const shortId = fullName.startsWith('models/') ? fullName.slice('models/'.length) : fullName;
+                return {
+                    id: shortId,
+                    name: shortId,
+                    display_name: item.displayName || shortId,
+                    description: item.description || '',
+                    input_modalities: item.inputTokenLimit ? ['text'] : []
+                };
+            });
+
+        res.json({ data: normalized });
+    } catch (error) {
+        console.error('Gemini Models Proxy Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });

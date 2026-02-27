@@ -329,6 +329,14 @@ const DataLabelingWorkspace = () => {
       "claude-3-5-sonnet-20240620": 3,
       "claude-3-opus-20240229": 15,
       "claude-3-haiku-20240307": 0.25
+    },
+    gemini: {
+      "gemini-2.0-flash": 0.1,
+      "gemini-2.0-flash-lite": 0.075,
+      "gemini-1.5-pro": 1.25,
+      "gemini-1.5-pro-001": 1.25,
+      "gemini-1.5-flash": 0.075,
+      "gemini-1.5-flash-001": 0.075
     }
   }), []);
 
@@ -1688,7 +1696,11 @@ const DataLabelingWorkspace = () => {
     const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
     if (!connection || !profile) return null;
 
-    if (connection.providerId === 'openai' || connection.providerId === 'anthropic') {
+    if (
+      connection.providerId === 'openai'
+      || connection.providerId === 'anthropic'
+      || connection.providerId === 'gemini'
+    ) {
       const officialProviderPricing = officialProviderInputPricePerMillion[connection.providerId];
       const officialPrice = officialProviderPricing?.[profile.modelId as keyof typeof officialProviderPricing];
       if (officialPrice !== undefined) {
@@ -2957,7 +2969,7 @@ const DataLabelingWorkspace = () => {
                         </p>
                       ) : null}
                       <p className="text-xs text-muted-foreground">
-                        OpenAI and Anthropic use built-in official pricing. OpenRouter pricing is loaded from OpenRouter API. Other providers require manual profile pricing.
+                        OpenAI, Anthropic, and Gemini use built-in official pricing. OpenRouter pricing is loaded from OpenRouter API. Other providers require manual profile pricing.
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Token counts are estimates and may differ from provider billing.
