@@ -5,7 +5,7 @@ import o200k_base from "js-tiktoken/ranks/o200k_base";
 import cl100k_base from "js-tiktoken/ranks/cl100k_base";
 
 import { useDataLabeling } from "@/hooks/useDataLabeling";
-import { exportService } from "@/services/exportService";
+import { exportService, HF_FIELD_CONFIG, FieldConfig } from "@/services/exportService";
 import { huggingFaceService } from "@/services/huggingFaceService";
 import { DataPoint, DataPointComment, ModelProfile, ModelProvider, Project, ProjectModelPolicy, ProviderConnection } from "@/types/data";
 import { Button } from "@/components/ui/button";
@@ -252,6 +252,7 @@ const DataLabelingWorkspace = () => {
   const [hfImportMaxRows, setHfImportMaxRows] = useState<number | ''>('');
   const [pendingHFRows, setPendingHFRows] = useState<Array<Record<string, unknown>> | null>(null);
   const [handledInitialImportChoice, setHandledInitialImportChoice] = useState(false);
+  const [publishProgress, setPublishProgress] = useState<{ step: string; pct: number } | null>(null);
 
   // Dynamic Labels
   const [annotationLabel, setAnnotationLabel] = useState('Original Annotation');
@@ -328,6 +329,14 @@ const DataLabelingWorkspace = () => {
       "claude-3-5-sonnet-20240620": 3,
       "claude-3-opus-20240229": 15,
       "claude-3-haiku-20240307": 0.25
+    },
+    gemini: {
+      "gemini-2.0-flash": 0.1,
+      "gemini-2.0-flash-lite": 0.075,
+      "gemini-1.5-pro": 1.25,
+      "gemini-1.5-pro-001": 1.25,
+      "gemini-1.5-flash": 0.075,
+      "gemini-1.5-flash-001": 0.075
     }
   }), []);
 
@@ -411,7 +420,8 @@ const DataLabelingWorkspace = () => {
     setSelectedModels(prev => prev.filter(id => allowed.has(id)));
   }, [availableModelProfiles]);
 
-  const allowedDataFileExtensions = ['.json', '.csv', '.txt'];
+  const audioFileExtensions = ['.mp3', '.wav', '.m4a'];
+  const allowedDataFileExtensions = ['.json', '.csv', '.txt', ...audioFileExtensions];
 
   useEffect(() => {
     if (handledInitialImportChoice || !canUpload) return;
@@ -885,11 +895,11 @@ const DataLabelingWorkspace = () => {
     const extension = lastDotIndex >= 0 ? file.name.slice(lastDotIndex).toLowerCase() : '';
 
     if (!extension) {
-      return 'File must have an extension (.json, .csv, or .txt).';
+      return 'File must have an extension (.json, .csv, .txt, .mp3, .wav, or .m4a).';
     }
 
     if (!allowedDataFileExtensions.includes(extension)) {
-      return `Unsupported file type "${extension}". Please upload a JSON, CSV, or TXT file.`;
+      return `Unsupported file type "${extension}". Please upload a JSON, CSV, TXT, MP3, WAV, or M4A file.`;
     }
 
     if (file.size === 0) {
@@ -921,6 +931,110 @@ const DataLabelingWorkspace = () => {
     }
   };
 
+  const toBase64FromByteArray = (bytes: number[]) => {
+    const chunkSize = 0x8000;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.slice(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+  };
+
+  const resolveImportedAudioContent = (value: unknown, datasetId?: string): string | null => {
+    const resolvePathToHubUrl = (pathValue: string) => {
+      const trimmed = pathValue.trim();
+      if (!trimmed) return null;
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      if (!datasetId) return trimmed;
+      const cleanPath = trimmed.replace(/^\/+/, '').split('/').map(segment => encodeURIComponent(segment)).join('/');
+      return `https://huggingface.co/datasets/${encodeURIComponent(datasetId)}/resolve/main/${cleanPath}`;
+    };
+
+    if (!value) return null;
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const resolved = resolveImportedAudioContent(entry, datasetId);
+        if (resolved) return resolved;
+      }
+      return null;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      if (trimmed.startsWith('data:audio/')) return trimmed;
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      if (/\.(mp3|wav|m4a|ogg|flac)(\?.*)?$/i.test(trimmed)) {
+        return resolvePathToHubUrl(trimmed);
+      }
+      return null;
+    }
+
+    if (typeof value === 'object') {
+      const audioObject = value as Record<string, unknown>;
+      if (typeof audioObject.src === 'string') {
+        const content = resolveImportedAudioContent(audioObject.src, datasetId);
+        if (content) return content;
+      }
+      if (typeof audioObject.content === 'string') {
+        const content = resolveImportedAudioContent(audioObject.content, datasetId);
+        if (content) return content;
+      }
+      if (typeof audioObject.url === 'string') {
+        const content = resolveImportedAudioContent(audioObject.url, datasetId);
+        if (content) return content;
+      }
+      if (typeof audioObject.path === 'string') {
+        const resolved = resolvePathToHubUrl(audioObject.path);
+        if (resolved) return resolved;
+      }
+      if (typeof audioObject.bytes === 'string') {
+        if (audioObject.bytes.startsWith('data:audio/')) return audioObject.bytes;
+        return `data:audio/wav;base64,${audioObject.bytes}`;
+      }
+      if (Array.isArray(audioObject.bytes) && audioObject.bytes.every((entry) => typeof entry === 'number')) {
+        return `data:audio/wav;base64,${toBase64FromByteArray(audioObject.bytes as number[])}`;
+      }
+    }
+
+    return null;
+  };
+
+  const inferDataPointType = (content: string, explicitType?: unknown): DataPoint['type'] => {
+    if (explicitType === 'image' || explicitType === 'audio' || explicitType === 'text') {
+      return explicitType;
+    }
+    const lowerContent = content.toLowerCase();
+    if (
+      lowerContent.startsWith('data:audio/')
+      || /\.(mp3|wav|m4a)(\?.*)?$/.test(lowerContent)
+    ) {
+      return 'audio';
+    }
+    return 'text';
+  };
+
+  const getPlayableAudioSource = (value: unknown): string | null => {
+    const resolved = resolveImportedAudioContent(value, hfImportDataset);
+    if (resolved) return resolved;
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if ((trimmed.startsWith('{') || trimmed.startsWith('['))) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          return resolveImportedAudioContent(parsed, hfImportDataset);
+        } catch {
+          return null;
+        }
+      }
+    }
+
+    return null;
+  };
+
   const toMetadataRecord = (row: Record<string, unknown>) => {
     const metadata: Record<string, string> = {};
     Object.entries(row).forEach(([key, value]) => {
@@ -929,11 +1043,30 @@ const DataLabelingWorkspace = () => {
     return metadata;
   };
 
+  const toDisplayMetadataRecord = (
+    metadata: Record<string, string>,
+    contentColumn?: string
+  ) => {
+    const resolvedContentColumn = contentColumn || selectedContentColumn;
+    const selectedColumns = selectedDisplayColumns.filter(
+      (column) => column && column !== resolvedContentColumn
+    );
+    if (selectedColumns.length === 0) return {};
+
+    const displayMetadata: Record<string, string> = {};
+    selectedColumns.forEach((column) => {
+      if (Object.prototype.hasOwnProperty.call(metadata, column)) {
+        displayMetadata[column] = metadata[column];
+      }
+    });
+    return displayMetadata;
+  };
+
   const resolveContentColumn = (columns: string[]) => {
     if (selectedContentColumn && columns.includes(selectedContentColumn)) {
       return selectedContentColumn;
     }
-    const contentCandidates = ['text', 'content', 'sentence', 'question', 'instruction', 'input', 'prompt'];
+    const contentCandidates = ['text', 'content', 'audio', 'path', 'url', 'sentence', 'question', 'instruction', 'input', 'prompt'];
     const found = columns.find(col => contentCandidates.some(candidate => col.toLowerCase().includes(candidate)));
     if (found) return found;
     return columns.find(col => col.toLowerCase() !== 'id') || columns[0] || '';
@@ -1034,7 +1167,7 @@ const DataLabelingWorkspace = () => {
         title: 'Invalid file',
         description: validationError,
         variant: 'destructive',
-        duration: 20000
+        duration: 7000
       });
       setPendingFile(null);
       event.target.value = '';
@@ -1043,15 +1176,17 @@ const DataLabelingWorkspace = () => {
 
     console.log('File selected:', file.name, file.type, file.size);
 
+    const lowerFileName = file.name.toLowerCase();
+
     // Pre-parse headers/keys to show variable suggestions
-    if (file.name.endsWith('.csv')) {
+    if (lowerFileName.endsWith('.csv')) {
       const text = await file.text();
       const firstLine = text.split('\n')[0];
       if (firstLine) {
         const headers = normalizeCsvHeader(firstLine.split(','));
         setAvailableColumns(headers);
       }
-    } else if (file.name.endsWith('.json')) {
+    } else if (lowerFileName.endsWith('.json')) {
       const text = await file.text();
       try {
         const jsonData = JSON.parse(text);
@@ -1143,10 +1278,40 @@ const DataLabelingWorkspace = () => {
     setShowUploadPrompt(false);
 
     try {
-      const text = importedRows ? '' : await file!.text();
+      const lastDotIndex = file?.name.lastIndexOf('.') ?? -1;
+      const extension = lastDotIndex >= 0 ? file!.name.slice(lastDotIndex).toLowerCase() : '';
+      const text = importedRows || audioFileExtensions.includes(extension) ? '' : await file!.text();
       let parsedData: DataPoint[] = [];
 
-      if (importedRows && importedRows.length > 0) {
+      if (file && audioFileExtensions.includes(extension)) {
+        const audioDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('Failed to read audio file.'));
+          reader.readAsDataURL(file);
+        });
+        parsedData = [{
+          id: crypto.randomUUID(),
+          content: audioDataUrl,
+          type: 'audio',
+          originalAnnotation: '',
+          aiSuggestions: {},
+          ratings: {},
+          status: 'pending' as const,
+          uploadPrompt: prompt,
+          customField: '',
+          customFieldName: customField,
+          metadata: {
+            filename: file.name,
+            mimeType: file.type || 'audio/*',
+            fileSize: `${file.size}`
+          },
+          displayMetadata: {},
+          customFieldValues: {},
+          isIAA: false,
+          annotatedAt: Date.now(),
+        }];
+      } else if (importedRows && importedRows.length > 0) {
         const columns = Object.keys(importedRows[0] || {});
         const contentColumn = resolveContentColumn(columns);
         const annotationColumn = resolveAnnotationColumn(columns);
@@ -1157,10 +1322,17 @@ const DataLabelingWorkspace = () => {
           setAnnotationLabel('Original Annotation');
         }
 
-        parsedData = importedRows.map((row) => ({
+        parsedData = importedRows.map((row) => {
+          const metadata = toMetadataRecord(row);
+          const rawContent = row[contentColumn];
+          const resolvedAudioContent = resolveImportedAudioContent(rawContent, hfImportDataset)
+            || resolveImportedAudioContent(row['audio'], hfImportDataset)
+            || resolveImportedAudioContent(row['content'], hfImportDataset);
+          const content = resolvedAudioContent || toDisplayString(rawContent) || JSON.stringify(row);
+          return {
           id: crypto.randomUUID(),
-          content: toDisplayString(row[contentColumn]) || JSON.stringify(row),
-          type: 'text',
+          content,
+          type: inferDataPointType(content, row['type'] || (resolvedAudioContent ? 'audio' : undefined)),
           originalAnnotation: annotationColumn ? toDisplayString(row[annotationColumn]) : '',
           aiSuggestions: {},
           ratings: {},
@@ -1168,12 +1340,14 @@ const DataLabelingWorkspace = () => {
           uploadPrompt: prompt,
           customField: '',
           customFieldName: customField,
-          metadata: toMetadataRecord(row),
+          metadata,
+          displayMetadata: toDisplayMetadataRecord(metadata, contentColumn),
           customFieldValues: {},
           isIAA: false,
           annotatedAt: Date.now(),
-        } as DataPoint));
-      } else if (file && file.name.endsWith('.json')) {
+        } as DataPoint;
+      });
+      } else if (file && extension === '.json') {
         let jsonData: unknown;
         try {
           jsonData = JSON.parse(text);
@@ -1191,10 +1365,16 @@ const DataLabelingWorkspace = () => {
             if (firstItem.prompt) setPromptLabel('Prompt');
           }
 
-          parsedData = jsonData.map((item: any, index: number) => ({
+          parsedData = jsonData.map((item: any) => {
+            const metadata = Object.entries(item).reduce((acc, [key, value]) => {
+              acc[key] = String(value);
+              return acc;
+            }, {} as Record<string, string>);
+            const content = typeof item === 'string' ? item : item.text || item.content || JSON.stringify(item);
+            return {
             id: crypto.randomUUID(),
-            content: typeof item === 'string' ? item : item.text || item.content || JSON.stringify(item),
-            type: item.type || 'text',
+            content,
+            type: inferDataPointType(content, item.type),
             originalAnnotation: item.annotation || item.label || '',
             aiSuggestions: {},
             ratings: {},
@@ -1202,15 +1382,14 @@ const DataLabelingWorkspace = () => {
             uploadPrompt: prompt || item.prompt, // Use item prompt if available
             customField: '',
             customFieldName: customField,
-            metadata: Object.entries(item).reduce((acc, [key, value]) => {
-              acc[key] = String(value);
-              return acc;
-            }, {} as Record<string, string>)
-          }));
+            metadata,
+            displayMetadata: toDisplayMetadataRecord(metadata)
+          };
+        });
         } else {
           throw new Error('JSON file must contain an array of data points');
         }
-      } else if (file && file.name.endsWith('.csv')) {
+      } else if (file && extension === '.csv') {
         const lines = text.split('\n').filter(line => line.trim());
         if (lines.length === 0) {
           throw new Error('CSV file is empty.');
@@ -1291,9 +1470,11 @@ const DataLabelingWorkspace = () => {
             }
           });
 
+          const content = contentIndex >= 0 ? values[contentIndex] : (values[0] || line);
           return {
             id: crypto.randomUUID(),
-            content: contentIndex >= 0 ? values[contentIndex] : (values[0] || line),
+            content,
+            type: inferDataPointType(content, metadata.type),
             originalAnnotation: annotationIndex >= 0 ? values[annotationIndex] : '',
             aiSuggestions: {},
             ratings: {},
@@ -1302,6 +1483,7 @@ const DataLabelingWorkspace = () => {
             customField: '',
             customFieldName: customField,
             metadata,
+            displayMetadata: toDisplayMetadataRecord(metadata, header[contentIndex]),
             customFieldValues: {},
             isIAA: false, // Default, will be set by applyAssignmentsToDataPoints
             annotatedAt: Date.now(), // timestamp for upload
@@ -1343,7 +1525,7 @@ const DataLabelingWorkspace = () => {
         title: 'File upload failed',
         description: errorMessage,
         variant: 'destructive',
-        duration: 20000
+        duration: 7000
       });
     } finally {
       setIsUploading(false);
@@ -1514,7 +1696,11 @@ const DataLabelingWorkspace = () => {
     const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
     if (!connection || !profile) return null;
 
-    if (connection.providerId === 'openai' || connection.providerId === 'anthropic') {
+    if (
+      connection.providerId === 'openai'
+      || connection.providerId === 'anthropic'
+      || connection.providerId === 'gemini'
+    ) {
       const officialProviderPricing = officialProviderInputPricePerMillion[connection.providerId];
       const officialPrice = officialProviderPricing?.[profile.modelId as keyof typeof officialProviderPricing];
       if (officialPrice !== undefined) {
@@ -1734,7 +1920,7 @@ const DataLabelingWorkspace = () => {
         title: 'Batch Processing Failed',
         description: errorMessage,
         variant: 'destructive',
-        duration: 5000
+        duration: 7000
       });
     } finally {
       setIsProcessing(false);
@@ -2081,6 +2267,21 @@ const DataLabelingWorkspace = () => {
   };
 
 
+  // Serialize data in a Web Worker to keep the main thread responsive
+  const serializeInWorker = (dataPoints: DataPoint[], fieldConfig: FieldConfig): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const worker = new Worker(
+        new URL('../workers/exportWorker.ts', import.meta.url),
+        { type: 'module' }
+      );
+      worker.postMessage({ dataPoints, fieldConfig });
+      worker.onmessage = (e: MessageEvent<{ buffer: ArrayBuffer; mimeType: string }>) => {
+        resolve(new Blob([e.data.buffer], { type: e.data.mimeType }));
+        worker.terminate();
+      };
+      worker.onerror = (e) => { reject(new Error(e.message)); worker.terminate(); };
+    });
+
   // Publish to Hugging Face
   const publishToHuggingFace = async () => {
     if (!hfToken) {
@@ -2092,17 +2293,20 @@ const DataLabelingWorkspace = () => {
     setUploadError(null);
 
     try {
-      const repoId = `${hfUsername}/${hfDatasetName}`;
-      const blob = exportService.generateJSONLBlob(filteredDataPoints);
+      // Step 1: Serialize in worker (off main thread)
+      setPublishProgress({ step: 'Preparing data...', pct: 10 });
+      const blob = await serializeInWorker(filteredDataPoints, HF_FIELD_CONFIG);
 
+      // Step 2: Upload via service (with repo check + retry + progress)
+      const repoId = `${hfUsername}/${hfDatasetName}`;
       await huggingFaceService.publishDataset(
         repoId,
         blob,
-        { accessToken: hfToken }
+        { accessToken: hfToken },
+        'data.jsonl',
+        (step, pct) => setPublishProgress({ step, pct })
       );
 
-      // Success!
-      // Success!
       setShowHFDialog(false);
       setPublishedUrl(`https://huggingface.co/datasets/${repoId}`);
       setShowPublishSuccessDialog(true);
@@ -2111,6 +2315,7 @@ const DataLabelingWorkspace = () => {
       setUploadError(`Failed to publish: ${error.message}`);
     } finally {
       setIsPublishing(false);
+      setPublishProgress(null);
     }
   };
 
@@ -2310,7 +2515,7 @@ const DataLabelingWorkspace = () => {
                 <input
                   id="file-upload"
                   type="file"
-                  accept=".json,.csv,.txt"
+                  accept=".json,.csv,.txt,.mp3,.wav,.m4a"
                   onChange={handleFileUpload}
                   disabled={!canUpload}
                   className="hidden"
@@ -2320,7 +2525,7 @@ const DataLabelingWorkspace = () => {
                 <input
                   id="file-upload-new-task"
                   type="file"
-                  accept=".json,.csv,.txt"
+                  accept=".json,.csv,.txt,.mp3,.wav,.m4a"
                   onChange={(e) => {
                     resetForNewTask();
                     handleFileUpload(e);
@@ -2404,6 +2609,7 @@ const DataLabelingWorkspace = () => {
                   className="mr-1"
                   onClick={() => setShowHistoryDialog(true)}
                   disabled={!projectId}
+                  title="Version History"
                 >
                   <History className="h-5 w-5" />
                 </Button>
@@ -2763,7 +2969,7 @@ const DataLabelingWorkspace = () => {
                         </p>
                       ) : null}
                       <p className="text-xs text-muted-foreground">
-                        OpenAI and Anthropic use built-in official pricing. OpenRouter pricing is loaded from OpenRouter API. Other providers require manual profile pricing.
+                        OpenAI, Anthropic, and Gemini use built-in official pricing. OpenRouter pricing is loaded from OpenRouter API. Other providers require manual profile pricing.
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Token counts are estimates and may differ from provider billing.
@@ -2866,7 +3072,8 @@ const DataLabelingWorkspace = () => {
                     <DialogHeader>
                       <DialogTitle>Publish to Hugging Face</DialogTitle>
                       <DialogDescription>
-                        Upload your dataset directly to the Hugging Face Hub.
+                        Upload your dataset directly to the Hugging Face Hub ({filteredDataPoints.length} items).
+                        Important fields are selected automatically.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
@@ -2901,9 +3108,24 @@ const DataLabelingWorkspace = () => {
                           onChange={(e) => setHfDatasetName(e.target.value)}
                         />
                       </div>
+
+                      {/* Progress bar */}
+                      {isPublishing && publishProgress && (
+                        <div className="space-y-1 pt-1">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{publishProgress.step}</span>
+                            <span>{publishProgress.pct}%</span>
+                          </div>
+                          <Progress value={publishProgress.pct} className="h-2" />
+                        </div>
+                      )}
+
+                      {uploadError && (
+                        <p className="text-xs text-destructive">{uploadError}</p>
+                      )}
                     </div>
                     <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowHFDialog(false)}>Cancel</Button>
+                      <Button variant="outline" onClick={() => setShowHFDialog(false)} disabled={isPublishing}>Cancel</Button>
                       <Button onClick={publishToHuggingFace} disabled={isPublishing}>
                         {isPublishing ? (
                           <>
@@ -3118,17 +3340,6 @@ const DataLabelingWorkspace = () => {
                   </Tooltip>
                 )}
 
-                {/* Export Results */}
-                {dataPoints.length > 0 && viewMode === 'record' && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={openExportDialog} disabled={!canExport}>
-                        <Download className="w-4 h-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Export Results</TooltipContent>
-                  </Tooltip>
-                )}
               </div>
               <div className="ml-2">
                 <ThemeToggle />
@@ -3198,7 +3409,7 @@ const DataLabelingWorkspace = () => {
                 <input
                   id="file-upload-main"
                   type="file"
-                  accept=".json,.csv,.txt"
+                  accept=".json,.csv,.txt,.mp3,.wav,.m4a"
                   onChange={handleFileUpload}
                   disabled={!canUpload}
                   className="hidden"
@@ -3241,6 +3452,15 @@ const DataLabelingWorkspace = () => {
                                       (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=Image+Not+Found';
                                     }}
                                   />
+                                </div>
+                              ) : currentDataPoint?.type === 'audio' ? (
+                                <div className="mt-2 space-y-2">
+                                  <audio controls src={getPlayableAudioSource(currentDataPoint.content) || ''} className="w-full">
+                                    Your browser does not support the audio element.
+                                  </audio>
+                                  <p className="text-xs text-muted-foreground break-all">
+                                    {currentDataPoint.metadata?.filename || currentDataPoint.content}
+                                  </p>
                                 </div>
                               ) : (
                                 <p className="mt-2 text-foreground leading-relaxed whitespace-pre-wrap">
@@ -3582,7 +3802,7 @@ const DataLabelingWorkspace = () => {
 
                       {/* Metadata Sidebar */}
                       <MetadataSidebar
-                        metadata={currentDataPoint?.displayMetadata || currentDataPoint?.metadata}
+                        metadata={currentDataPoint?.displayMetadata}
                         isOpen={showMetadataSidebar}
                         onToggle={() => setShowMetadataSidebar(!showMetadataSidebar)}
                       />
@@ -3974,7 +4194,7 @@ const DataLabelingWorkspace = () => {
                                     setUseFilteredNavigation(isAnnotatorForProject ? true : hasActiveFilters);
                                   }}
                                 >
-                                  {/* Section 0: Image Preview (If image type) */}
+                                  {/* Section 0: Media Preview */}
                                   {dataPoint.type === 'image' && (
                                     <div className={
                                       listLayout === 'grid'
@@ -3989,6 +4209,17 @@ const DataLabelingWorkspace = () => {
                                           (e.target as HTMLImageElement).src = 'https://placehold.co/200x200?text=Error';
                                         }}
                                       />
+                                    </div>
+                                  )}
+                                  {dataPoint.type === 'audio' && (
+                                    <div className={
+                                      listLayout === 'grid'
+                                        ? "w-full rounded-md border border-border/40 bg-muted/20 p-2"
+                                        : "w-full sm:w-52 flex-shrink-0 rounded-md border border-border/40 bg-muted/20 p-2"
+                                    }>
+                                      <audio controls src={getPlayableAudioSource(dataPoint.content) || ''} className="w-full">
+                                        Your browser does not support the audio element.
+                                      </audio>
                                     </div>
                                   )}
 
@@ -4047,7 +4278,11 @@ const DataLabelingWorkspace = () => {
                                     {/* Section 2: Main Content */}
                                     <div className={`flex-1 min-w-0 space-y-1 max-w-full ${listLayout === 'grid' ? "w-full mt-2" : ""}`}>
                                       <p className="text-sm font-medium text-foreground line-clamp-1 w-full">
-                                        {dataPoint.type === 'image' ? (dataPoint.metadata?.filename || dataPoint.metadata?.name || 'Image content') : (dataPoint.content || 'Untitled content')}
+                                        {dataPoint.type === 'image'
+                                          ? (dataPoint.metadata?.filename || dataPoint.metadata?.name || 'Image content')
+                                          : dataPoint.type === 'audio'
+                                            ? (dataPoint.metadata?.filename || dataPoint.metadata?.name || 'Audio content')
+                                            : (dataPoint.content || 'Untitled content')}
                                       </p>
                                       <p className="text-xs text-muted-foreground break-words whitespace-normal line-clamp-2">
                                         {preview.text || 'No annotation yet.'}

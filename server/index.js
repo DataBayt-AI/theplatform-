@@ -106,6 +106,43 @@ app.post('/api/anthropic/message', async (req, res) => {
     }
 });
 
+// Gemini Proxy
+app.post('/api/gemini/generate', async (req, res) => {
+    try {
+        const apiKey = getApiKey(req, 'GEMINI_API_KEY');
+        if (!apiKey) {
+            return res.status(401).json({ error: 'Gemini API key is required' });
+        }
+
+        const { model, contents, generationConfig, systemInstruction } = req.body;
+        if (!model) {
+            return res.status(400).json({ error: 'Model is required' });
+        }
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents,
+                generationConfig,
+                systemInstruction
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            return res.status(response.status).json(data);
+        }
+        res.json(data);
+    } catch (error) {
+        console.error('Gemini Proxy Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // SambaNova Proxy
 app.post('/api/sambanova/chat', async (req, res) => {
     try {
@@ -242,6 +279,49 @@ app.get('/api/openai/models', async (req, res) => {
     }
 });
 
+app.get('/api/gemini/models', async (req, res) => {
+    try {
+        const apiKey = getApiKey(req, 'GEMINI_API_KEY');
+        if (!apiKey) {
+            return res.status(401).json({ error: 'Gemini API key is required' });
+        }
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+        const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            return res.status(response.status).json(data);
+        }
+
+        const models = Array.isArray(data?.models) ? data.models : [];
+        const normalized = models
+            .filter((item) => Array.isArray(item?.supportedGenerationMethods)
+                && item.supportedGenerationMethods.includes('generateContent'))
+            .map((item) => {
+                const fullName = String(item.name || '');
+                const shortId = fullName.startsWith('models/') ? fullName.slice('models/'.length) : fullName;
+                return {
+                    id: shortId,
+                    name: shortId,
+                    display_name: item.displayName || shortId,
+                    description: item.description || '',
+                    input_modalities: item.inputTokenLimit ? ['text'] : []
+                };
+            });
+
+        res.json({ data: normalized });
+    } catch (error) {
+        console.error('Gemini Models Proxy Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // SambaNova Models (for pricing/catalog lookup)
 app.get('/api/sambanova/models', async (req, res) => {
     try {
@@ -342,9 +422,124 @@ app.post('/api/huggingface/datasets/import', async (req, res) => {
             }
         }
 
+        const encodeDatasetPath = (pathValue) => {
+            return String(pathValue)
+                .split('/')
+                .filter(Boolean)
+                .map(segment => encodeURIComponent(segment))
+                .join('/');
+        };
+
+        const inferAudioMime = (pathValue) => {
+            const lower = String(pathValue || '').toLowerCase();
+            if (lower.endsWith('.mp3')) return 'audio/mpeg';
+            if (lower.endsWith('.m4a')) return 'audio/mp4';
+            if (lower.endsWith('.ogg')) return 'audio/ogg';
+            if (lower.endsWith('.flac')) return 'audio/flac';
+            return 'audio/wav';
+        };
+
+        const bytesToBase64 = (bytesValue) => {
+            if (!bytesValue) return null;
+            if (typeof bytesValue === 'string') return bytesValue;
+            if (Array.isArray(bytesValue)) {
+                try {
+                    return Buffer.from(bytesValue).toString('base64');
+                } catch {
+                    return null;
+                }
+            }
+            if (bytesValue?.type === 'Buffer' && Array.isArray(bytesValue.data)) {
+                try {
+                    return Buffer.from(bytesValue.data).toString('base64');
+                } catch {
+                    return null;
+                }
+            }
+            return null;
+        };
+
+        const resolveAudioContent = (value) => {
+            if (!value) return null;
+
+            if (Array.isArray(value)) {
+                for (const entry of value) {
+                    const resolved = resolveAudioContent(entry);
+                    if (resolved) return resolved;
+                }
+                return null;
+            }
+
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (!trimmed) return null;
+                if (trimmed.startsWith('data:audio/')) return trimmed;
+                if (/^https?:\/\//i.test(trimmed)) return trimmed;
+                if (/\.(mp3|wav|m4a|ogg|flac)(\?.*)?$/i.test(trimmed)) {
+                    if (trimmed.startsWith('/')) {
+                        return `https://huggingface.co/datasets/${encodeURIComponent(dataset)}/resolve/main/${encodeDatasetPath(trimmed)}`;
+                    }
+                    if (!trimmed.includes('/')) return null;
+                    return `https://huggingface.co/datasets/${encodeURIComponent(dataset)}/resolve/main/${encodeDatasetPath(trimmed)}`;
+                }
+                return null;
+            }
+
+            if (value && typeof value === 'object') {
+                const src = typeof value.src === 'string' ? value.src.trim() : '';
+                if (src) {
+                    if (src.startsWith('data:audio/') || /^https?:\/\//i.test(src)) return src;
+                    if (/\.(mp3|wav|m4a|ogg|flac)(\?.*)?$/i.test(src)) {
+                        return `https://huggingface.co/datasets/${encodeURIComponent(dataset)}/resolve/main/${encodeDatasetPath(src)}`;
+                    }
+                }
+
+                const url = typeof value.url === 'string' ? value.url.trim() : '';
+                if (url) {
+                    if (url.startsWith('data:audio/') || /^https?:\/\//i.test(url)) return url;
+                    if (/\.(mp3|wav|m4a|ogg|flac)(\?.*)?$/i.test(url)) {
+                        return `https://huggingface.co/datasets/${encodeURIComponent(dataset)}/resolve/main/${encodeDatasetPath(url)}`;
+                    }
+                }
+
+                const path = typeof value.path === 'string' ? value.path.trim() : '';
+                if (path) {
+                    if (/^https?:\/\//i.test(path)) return path;
+                    return `https://huggingface.co/datasets/${encodeURIComponent(dataset)}/resolve/main/${encodeDatasetPath(path)}`;
+                }
+
+                const bytes = bytesToBase64(value.bytes);
+                if (bytes) {
+                    if (bytes.startsWith('data:audio/')) return bytes;
+                    const mime = inferAudioMime(path || url);
+                    return `data:${mime};base64,${bytes}`;
+                }
+            }
+
+            return null;
+        };
+
         const normalizedRows = rawRows.map(item => {
             const row = item && typeof item === 'object' && 'row' in item ? item.row : item;
             if (row && typeof row === 'object' && !Array.isArray(row)) {
+                const audioCandidates = ['audio', 'sound', 'clip', 'recording'];
+                const entryList = Object.entries(row);
+                const explicitContent = resolveAudioContent(row.content);
+                const explicitAudio = resolveAudioContent(row.audio);
+                const candidateAudio = entryList
+                    .filter(([key]) => audioCandidates.some(candidate => key.toLowerCase().includes(candidate)))
+                    .map(([, value]) => resolveAudioContent(value))
+                    .find(Boolean);
+                const audioContent = explicitContent || explicitAudio || candidateAudio || null;
+
+                if (audioContent) {
+                    return {
+                        ...row,
+                        type: 'audio',
+                        content: audioContent
+                    };
+                }
+
                 return row;
             }
             return { text: row == null ? '' : String(row) };

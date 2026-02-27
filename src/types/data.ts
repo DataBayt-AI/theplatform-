@@ -1,7 +1,7 @@
 export interface DataPoint {
     id: string;
     content: string;
-    type?: 'text' | 'image'; // Defaults to 'text' if undefined
+    type?: 'text' | 'image' | 'audio'; // Defaults to 'text' if undefined
     originalAnnotation?: string;
     humanAnnotation?: string;
     finalAnnotation?: string;
