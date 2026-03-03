@@ -1,0 +1,15 @@
+[
+  {
+    "id": "seed-audio-1",
+    "type": "audio",
+    "content": "data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSADAAAAAOEP4R1ZKAsuTC4UKQAfQRF5AYTxReNs2EHSf9E81unfYu0P/RQNjRvFJmctqy5qKiUh9RNpBFj0p+UU2vzSONH71NTduOog+joKHhkKJZUs2i6VKykjlRZVBzf3JOji2+XTINHl0+LbJOg391UHlRYpI5Ur2i6VLAolHhk6CiD6uOrU3fvUONH80hTap+VY9GkE9RMlIWoqqy5nLcUmjRsUDQ/9Yu3p3zzWf9FB0mzYReOE8XkBQREAHxQpTC4LLlko4R3hDwAAH/Af4qfX9dG00ezWAOG/7of+fA67HJQnvy2BLsQpFyCeEvEC7PJz5DvZmdJV0ZbV294L7Jf7qAtZGuwlBC3ILgUrLCJIFeAFxvXi5vbaa9Mm0WvU19xr6av4yQjcFx4kGyzgLhssHiTcF8kIq/hr6dfca9Qm0WvT9tri5sb14AVIFSwiBSvILgQt7CVZGqgLl/sL7NveltVV0ZnSO9lz5Ozy8QKeEhcgxCmBLr8tlCe7HHwOh/6/7gDh7Na00fXRp9cf4h/wAADhD+EdWSgLLkwuFCkAH0EReQGE8UXjbNhB0n/RPNbp32LtD/0UDY0bxSZnLasuaiolIfUTaQRY9KflFNr80jjR+9TU3bjqIPo6Ch4ZCiWVLNoulSspI5UWVQc39yTo4tvl0yDR5dPi2yToN/dVB5UWKSOVK9oulSwKJR4ZOgog+rjq1N371DjR/NIU2qflWPRpBPUTJSFqKqsuZy3FJo0bFA0P/WLt6d881n/RQdJs2EXjhPF5AUERAB8UKUwuCy5ZKOEd4Q8AAB/wH+Kn1/XRtNHs1gDhv+6H/nwOuxyUJ78tgS7EKRcgnhLxAuzyc+Q72ZnSVdGW1dveC+yX+6gLWRrsJQQtyC4FKywiSBXgBcb14ub22mvTJtFr1Nfca+mr+MkI3BceJBss4C4bLB4k3BfJCKv4a+nX3GvUJtFr0/ba4ubG9eAFSBUsIgUryC4ELewlWRqoC5f7C+zb3pbVVdGZ0jvZc+Ts8vECnhIXIMQpgS6/LZQnuxx8Dof+v+4A4ezWtNH10afXH+If8A==",
+    "annotation": "",
+    "prompt": "Label this short audio sample by content or quality."
+  },
+  {
+    "id": "seed-text-1",
+    "type": "text",
+    "content": "This is a text control item to verify non-audio rows still render correctly.",
+    "annotation": ""
+  }
+]

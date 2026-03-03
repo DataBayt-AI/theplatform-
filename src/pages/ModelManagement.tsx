@@ -58,6 +58,11 @@ const ModelManagement = () => {
   const [remoteModelsByConnection, setRemoteModelsByConnection] = useState<Record<string, RuntimeModelOption[]>>({});
   const [isLoadingRemoteModels, setIsLoadingRemoteModels] = useState(false);
   const [remoteModelsError, setRemoteModelsError] = useState<string | null>(null);
+  const isOfficialProvider = useCallback((providerId: string) =>
+    providerId === "openai"
+    || providerId === "anthropic"
+    || providerId === "openrouter"
+    || providerId === "gemini", []);
 
   useEffect(() => {
     const init = async () => {
@@ -93,9 +98,7 @@ const ModelManagement = () => {
     ? (providerLookup.get(selectedProfileConnection.providerId)?.models ?? [])
     : [];
   const baseModelsForSelectedConnection = selectedProfileConnection
-    && (selectedProfileConnection.providerId === "openai"
-      || selectedProfileConnection.providerId === "anthropic"
-      || selectedProfileConnection.providerId === "openrouter")
+    && isOfficialProvider(selectedProfileConnection.providerId)
     ? (remoteModelsByConnection[selectedProfileConnection.id] ?? [])
     : staticModelsForConnection;
   const modelsForSelectedConnection = useMemo(() => {
@@ -110,9 +113,7 @@ const ModelManagement = () => {
   }, [profiles]);
 
   const fetchOfficialModels = useCallback(async (connection: ProviderConnection, force = false) => {
-    if (connection.providerId !== "openai"
-      && connection.providerId !== "anthropic"
-      && connection.providerId !== "openrouter") return;
+    if (!isOfficialProvider(connection.providerId)) return;
     if (!connection.apiKey) {
       setRemoteModelsError("API key is required to load official provider models.");
       return;
@@ -124,7 +125,9 @@ const ModelManagement = () => {
         ? "/api/openai/models"
         : connection.providerId === "anthropic"
           ? "/api/anthropic/models"
-          : "/api/openrouter/models";
+          : connection.providerId === "openrouter"
+            ? "/api/openrouter/models"
+            : "/api/gemini/models";
     setIsLoadingRemoteModels(true);
     setRemoteModelsError(null);
     try {
@@ -174,20 +177,18 @@ const ModelManagement = () => {
     } finally {
       setIsLoadingRemoteModels(false);
     }
-  }, [remoteModelsByConnection]);
+  }, [isOfficialProvider, remoteModelsByConnection]);
 
   useEffect(() => {
     if (!profileConnectionId) return;
     const connection = connectionLookup.get(profileConnectionId);
     if (!connection) return;
-    if (connection.providerId !== "openai"
-      && connection.providerId !== "anthropic"
-      && connection.providerId !== "openrouter") {
+    if (!isOfficialProvider(connection.providerId)) {
       setRemoteModelsError(null);
       return;
     }
     fetchOfficialModels(connection, false);
-  }, [profileConnectionId, connectionLookup, fetchOfficialModels]);
+  }, [profileConnectionId, connectionLookup, fetchOfficialModels, isOfficialProvider]);
 
   useEffect(() => {
     if (editingProfileId) return;
@@ -508,9 +509,7 @@ const ModelManagement = () => {
               <div className="flex items-center justify-between">
                 <Label>Model</Label>
                 {selectedProfileConnection && (
-                  selectedProfileConnection.providerId === "openai"
-                  || selectedProfileConnection.providerId === "anthropic"
-                  || selectedProfileConnection.providerId === "openrouter"
+                  isOfficialProvider(selectedProfileConnection.providerId)
                 ) && (
                     <Button
                       type="button"
@@ -535,9 +534,7 @@ const ModelManagement = () => {
                 </SelectContent>
               </Select>
               {selectedProfileConnection && (
-                selectedProfileConnection.providerId === "openai"
-                || selectedProfileConnection.providerId === "anthropic"
-                || selectedProfileConnection.providerId === "openrouter"
+                isOfficialProvider(selectedProfileConnection.providerId)
               ) && (
                   <p className="text-xs text-muted-foreground">
                     {remoteModelsError

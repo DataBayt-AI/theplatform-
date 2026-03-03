@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { DataPoint, AnnotationStats, AnnotationAssignment, ProjectDataStatusCounts } from "@/types/data";
 import { projectService } from "@/services/projectService";
 import { useUndoRedo } from "./useUndoRedo";
@@ -160,9 +160,44 @@ export const useDataLabeling = (projectId?: string) => {
         };
     }, [dataPoints, sessionStart]);
 
-    const globalTotalItems = statusCounts.total || totalItems;
-    const globalCompletedCount = statusCounts.completed || 0;
-    const globalRemainingCount = Math.max(0, statusCounts.remaining ?? (globalTotalItems - globalCompletedCount));
+    const localStatusCounts = useMemo<ProjectDataStatusCounts>(() => {
+        const total = dataPoints.length;
+        const accepted = dataPoints.filter(dp => dp.status === 'accepted').length;
+        const edited = dataPoints.filter(dp => dp.status === 'edited').length;
+        const pending = dataPoints.filter(dp => dp.status === 'pending').length;
+        const aiProcessed = dataPoints.filter(dp => dp.status === 'ai_processed').length;
+        const rejected = dataPoints.filter(dp => dp.status === 'rejected').length;
+        const completed = accepted + edited;
+        const remaining = Math.max(0, total - completed);
+
+        return {
+            total,
+            completed,
+            remaining,
+            accepted,
+            edited,
+            pending,
+            aiProcessed,
+            rejected
+        };
+    }, [dataPoints]);
+
+    // Fallback to local counts when API counts are unavailable/stale (common right after local upload).
+    const shouldUseLocalFallback = statusCounts.total === 0 && localStatusCounts.total > 0;
+    const effectiveStatusCounts = shouldUseLocalFallback
+        ? {
+            ...localStatusCounts,
+            total: totalItems > 0 ? totalItems : localStatusCounts.total,
+            remaining: Math.max(
+                0,
+                (totalItems > 0 ? totalItems : localStatusCounts.total) - localStatusCounts.completed
+            )
+        }
+        : statusCounts;
+
+    const globalTotalItems = effectiveStatusCounts.total || totalItems || dataPoints.length;
+    const globalCompletedCount = effectiveStatusCounts.completed || 0;
+    const globalRemainingCount = Math.max(0, effectiveStatusCounts.remaining ?? (globalTotalItems - globalCompletedCount));
     const globalProgress = globalTotalItems > 0 ? (globalCompletedCount / globalTotalItems) * 100 : 0;
     const isCompleted = globalTotalItems > 0 && globalCompletedCount === globalTotalItems;
 
@@ -505,7 +540,7 @@ export const useDataLabeling = (projectId?: string) => {
         pageSize: Math.max(1, totalItems || dataPoints.length || 1),
         totalPages: 1,
         setPage: () => {},
-        statusCounts,
+        statusCounts: effectiveStatusCounts,
         globalCompletedCount,
         globalRemainingCount,
         globalTotalItems,
