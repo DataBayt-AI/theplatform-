@@ -8,12 +8,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useAuth } from "@/contexts/AuthContext";
 
 export const UserMenu = () => {
-  const { currentUser, login, logout, changePassword } = useAuth();
-  const [showLogin, setShowLogin] = useState(false);
+  const { currentUser, logout, changePassword } = useAuth();
   const [showChangePassword, setShowChangePassword] = useState(false);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -29,18 +25,6 @@ export const UserMenu = () => {
       setShowChangePassword(true);
     }
   }, [mustChangePassword]);
-
-  const handleLogin = async () => {
-    const ok = await login(username, password);
-    if (!ok) {
-      setError("Invalid username or password");
-      return;
-    }
-    setError("");
-    setShowLogin(false);
-    setUsername("");
-    setPassword("");
-  };
 
   const handleChangePassword = async () => {
     if (newPassword !== confirmPassword) {
@@ -60,35 +44,7 @@ export const UserMenu = () => {
   };
 
   if (!currentUser) {
-    return (
-      <>
-        <Button size="sm" variant="outline" onClick={() => setShowLogin(true)}>
-          Login
-        </Button>
-        <Dialog open={showLogin} onOpenChange={setShowLogin}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Login</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="login-username">Username</Label>
-                <Input id="login-username" value={username} onChange={(e) => setUsername(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="login-password">Password</Label>
-                <Input id="login-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowLogin(false)}>Cancel</Button>
-              <Button onClick={handleLogin}>Login</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </>
-    );
+    return null;
   }
 
   return (
@@ -103,34 +59,10 @@ export const UserMenu = () => {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setShowLogin(true)}>Switch User</DropdownMenuItem>
           <DropdownMenuItem onClick={() => setShowChangePassword(true)}>Change Password</DropdownMenuItem>
           <DropdownMenuItem onClick={logout}>Log Out</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <Dialog open={showLogin} onOpenChange={setShowLogin}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Switch User</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="switch-username">Username</Label>
-              <Input id="switch-username" value={username} onChange={(e) => setUsername(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="switch-password">Password</Label>
-              <Input id="switch-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowLogin(false)}>Cancel</Button>
-            <Button onClick={handleLogin}>Switch</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={showChangePassword || mustChangePassword}

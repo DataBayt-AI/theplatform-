@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -12,36 +13,45 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Project } from "@/types/data";
 import { projectService } from "@/services/projectService";
-import { Book, Edit2, Save } from "lucide-react";
+import { Book, Edit2, ExternalLink, Save } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { useNavigate } from "react-router-dom";
 
 interface GuidelinesDialogProps {
     project: Project;
     isOpen: boolean;
     onClose: () => void;
-    canEdit: boolean;
-    onUpdate: (updatedProject: Project) => void;
+    /** When true, the dialog is view-only. Pass settingsPath to show an "Edit in Project Settings" link. */
+    readOnly?: boolean;
+    /** If provided and readOnly is true, shows an "Edit in Project Settings" link for managers/admins. */
+    settingsPath?: string;
+    canEdit?: boolean;
+    onUpdate?: (updatedProject: Project) => void;
 }
 
 export function GuidelinesDialog({
     project,
     isOpen,
     onClose,
-    canEdit,
+    readOnly = false,
+    settingsPath,
+    canEdit = false,
     onUpdate,
 }: GuidelinesDialogProps) {
+    const navigate = useNavigate();
     const [isEditing, setIsEditing] = useState(false);
     const [guidelines, setGuidelines] = useState(project.guidelines || "");
 
     useEffect(() => {
         setGuidelines(project.guidelines || "");
+        setIsEditing(false);
     }, [project.guidelines, isOpen]);
 
     const handleSave = async () => {
         try {
             const updatedProject = { ...project, guidelines };
             await projectService.update(updatedProject);
-            onUpdate(updatedProject);
+            onUpdate?.(updatedProject);
             setIsEditing(false);
             toast({
                 title: "Guidelines updated",
@@ -66,7 +76,7 @@ export function GuidelinesDialog({
                             <Book className="w-5 h-5 text-purple-500" />
                             Annotation Guidelines
                         </DialogTitle>
-                        {canEdit && !isEditing && (
+                        {!readOnly && canEdit && !isEditing && (
                             <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)}>
                                 <Edit2 className="w-4 h-4 mr-2" />
                                 Edit
@@ -79,7 +89,7 @@ export function GuidelinesDialog({
                 </DialogHeader>
 
                 <div className="flex-1 overflow-y-auto min-h-[300px] mt-4 rounded-md border p-4 bg-muted/30">
-                    {isEditing ? (
+                    {!readOnly && isEditing ? (
                         <Textarea
                             value={guidelines}
                             onChange={(e) => setGuidelines(e.target.value)}
@@ -87,8 +97,10 @@ export function GuidelinesDialog({
                             placeholder="Enter comprehensive guidelines for annotators here..."
                         />
                     ) : (
-                        <div className="prose dark:prose-invert max-w-none text-sm whitespace-pre-wrap leading-relaxed">
-                            {guidelines || (
+                        <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed">
+                            {guidelines ? (
+                                <ReactMarkdown>{guidelines}</ReactMarkdown>
+                            ) : (
                                 <span className="text-muted-foreground italic">
                                     No guidelines have been set for this project yet.
                                 </span>
@@ -97,8 +109,8 @@ export function GuidelinesDialog({
                     )}
                 </div>
 
-                <DialogFooter className="mt-4 gap-2">
-                    {isEditing ? (
+                <DialogFooter className="mt-4 gap-2 flex-wrap">
+                    {!readOnly && isEditing ? (
                         <>
                             <Button variant="outline" onClick={() => setIsEditing(false)}>
                                 Cancel
@@ -109,9 +121,21 @@ export function GuidelinesDialog({
                             </Button>
                         </>
                     ) : (
-                        <Button variant="secondary" onClick={onClose}>
-                            Close
-                        </Button>
+                        <>
+                            {readOnly && settingsPath && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => { onClose(); navigate(settingsPath); }}
+                                >
+                                    <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                                    Edit in Project Settings
+                                </Button>
+                            )}
+                            <Button variant="secondary" onClick={onClose}>
+                                Close
+                            </Button>
+                        </>
                     )}
                 </DialogFooter>
             </DialogContent>

@@ -14,10 +14,26 @@ interface Props {
 type SortKey = "totalAnnotated" | "speedPerHour" | "editRate" | "rejectionRate";
 
 const chartConfig: ChartConfig = {
-    speed: { label: "Speed (items/hr)", color: "hsl(var(--chart-1))" },
+    speed: { label: "Speed (items/hr)", color: "hsl(var(--primary))" },
 };
 
 const fmt = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+/** Returns a Tailwind text colour class based on a 0–1 rate (lower = better for edit/rejection). */
+function rateColor(rate: number, inverse = false): string {
+    const v = inverse ? 1 - rate : rate;
+    if (v < 0.1) return "text-success";
+    if (v < 0.25) return "text-warning";
+    return "text-destructive";
+}
+
+/** Returns a Tailwind text colour class for agreement (higher = better). */
+function agreementColor(rate: number | null): string {
+    if (rate === null) return "text-muted-foreground";
+    if (rate >= 0.8) return "text-success";
+    if (rate >= 0.6) return "text-warning";
+    return "text-destructive";
+}
 
 export function AnnotationQualityDashboard({ projectId }: Props) {
     const [data, setData] = useState<AnnotatorStatsResponse | null>(null);
@@ -38,7 +54,7 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
         );
     }
@@ -59,12 +75,7 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
         );
     }
 
-    const sorted = [...data.annotators].sort((a, b) => {
-        if (sortKey === "editRate" || sortKey === "rejectionRate") {
-            return b[sortKey] - a[sortKey];
-        }
-        return b[sortKey] - a[sortKey];
-    });
+    const sorted = [...data.annotators].sort((a, b) => b[sortKey] - a[sortKey]);
 
     const chartData = data.annotators.map(a => ({
         name: a.annotatorName.length > 12 ? a.annotatorName.slice(0, 12) + "…" : a.annotatorName,
@@ -80,7 +91,9 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                         <CardTitle className="text-sm font-medium text-muted-foreground">
                             Total Annotators
                         </CardTitle>
-                        <Users className="h-4 w-4 text-muted-foreground" />
+                        <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
+                            <Users className="h-4 w-4 text-primary" />
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <p className="text-2xl font-bold">{data.summary.totalAnnotators}</p>
@@ -92,7 +105,9 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                         <CardTitle className="text-sm font-medium text-muted-foreground">
                             Avg Speed
                         </CardTitle>
-                        <Zap className="h-4 w-4 text-muted-foreground" />
+                        <div className="h-8 w-8 rounded-md bg-success/10 flex items-center justify-center">
+                            <Zap className="h-4 w-4 text-success" />
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <p className="text-2xl font-bold">{data.summary.avgSpeedPerHour}</p>
@@ -105,7 +120,9 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                         <CardTitle className="text-sm font-medium text-muted-foreground">
                             Avg Edit Rate
                         </CardTitle>
-                        <Edit3 className="h-4 w-4 text-muted-foreground" />
+                        <div className="h-8 w-8 rounded-md bg-warning/10 flex items-center justify-center">
+                            <Edit3 className="h-4 w-4 text-warning" />
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <p className="text-2xl font-bold">{fmt(data.summary.avgEditRate)}</p>
@@ -116,17 +133,17 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
             {/* Speed bar chart */}
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-sm font-medium">Speed by Annotator (items/hr)</CardTitle>
+                    <CardTitle className="text-sm font-medium">Speed by Annotator (items / hr)</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <ChartContainer config={chartConfig} className="h-56 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={chartData} margin={{ top: 4, right: 16, bottom: 8, left: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                                <YAxis tick={{ fontSize: 11 }} />
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
                                 <ChartTooltip content={<ChartTooltipContent />} />
-                                <Bar dataKey="speed" fill="var(--color-speed)" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="speed" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </ChartContainer>
@@ -142,7 +159,7 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                         <select
                             value={sortKey}
                             onChange={e => setSortKey(e.target.value as SortKey)}
-                            className="text-xs border rounded px-2 py-1 bg-background"
+                            className="text-xs border border-border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                         >
                             <option value="totalAnnotated">Items</option>
                             <option value="speedPerHour">Speed</option>
@@ -155,7 +172,7 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead>
-                                <tr className="border-b text-muted-foreground text-xs">
+                                <tr className="border-b border-border text-muted-foreground text-xs">
                                     <th className="text-left py-2 pr-4 font-medium">Annotator</th>
                                     <th className="text-right py-2 px-4 font-medium">Items</th>
                                     <th className="text-right py-2 px-4 font-medium">Speed (items/hr)</th>
@@ -166,14 +183,18 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                             </thead>
                             <tbody>
                                 {sorted.map((a: AnnotatorQualityStats) => (
-                                    <tr key={a.annotatorId} className="border-b last:border-0 hover:bg-muted/30">
+                                    <tr key={a.annotatorId} className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors">
                                         <td className="py-2 pr-4 font-medium">{a.annotatorName}</td>
-                                        <td className="text-right py-2 px-4">{a.totalAnnotated}</td>
-                                        <td className="text-right py-2 px-4">{a.speedPerHour}</td>
-                                        <td className="text-right py-2 px-4">{fmt(a.editRate)}</td>
-                                        <td className="text-right py-2 px-4">{fmt(a.rejectionRate)}</td>
-                                        <td className="text-right py-2 pl-4 text-muted-foreground">
-                                            {a.agreementRate !== null ? fmt(a.agreementRate) : "N/A"}
+                                        <td className="text-right py-2 px-4 text-foreground">{a.totalAnnotated}</td>
+                                        <td className="text-right py-2 px-4 font-medium text-primary">{a.speedPerHour}</td>
+                                        <td className={`text-right py-2 px-4 font-medium ${rateColor(a.editRate)}`}>
+                                            {fmt(a.editRate)}
+                                        </td>
+                                        <td className={`text-right py-2 px-4 font-medium ${rateColor(a.rejectionRate)}`}>
+                                            {fmt(a.rejectionRate)}
+                                        </td>
+                                        <td className={`text-right py-2 pl-4 font-medium ${agreementColor(a.agreementRate)}`}>
+                                            {a.agreementRate !== null ? fmt(a.agreementRate) : "—"}
                                         </td>
                                     </tr>
                                 ))}
