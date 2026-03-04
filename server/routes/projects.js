@@ -62,7 +62,7 @@ export function registerProjectRoutes(app) {
                     xmlConfig: p.xml_config,
                     uploadPrompt: p.upload_prompt,
                     customFieldName: p.custom_field_name,
-                    customFieldName: p.custom_field_name,
+                    guidelines: p.guidelines ?? '',
                     dataPoints: [], // Don't send full data points in list view
                     totalDataPoints: p.data_count,
                     createdAt: p.created_at,
@@ -82,6 +82,93 @@ export function registerProjectRoutes(app) {
         } catch (error) {
             console.error('Error fetching projects:', error);
             res.status(500).json({ error: 'Failed to fetch projects' });
+        }
+    });
+
+    // Get per-annotator quality stats for a project (admin/manager only)
+    app.get('/api/projects/:id/annotator-stats', (req, res) => {
+        const user = req.user;
+        if (!user || (!user.roles?.includes('admin') && !user.roles?.includes('manager'))) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+        const { id } = req.params;
+        try {
+            const rows = db.prepare(`
+                SELECT
+                    annotator_id,
+                    MAX(annotator_name) AS annotator_name,
+                    COUNT(*)            AS total_annotated,
+                    MIN(annotated_at)   AS first_at,
+                    MAX(annotated_at)   AS last_at,
+                    SUM(CASE WHEN status = 'edited'   THEN 1 ELSE 0 END) AS edited_count,
+                    SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+                FROM data_points
+                WHERE project_id = ?
+                  AND annotator_id IS NOT NULL
+                  AND annotated_at IS NOT NULL
+                GROUP BY annotator_id
+                HAVING COUNT(*) > 0
+                ORDER BY total_annotated DESC
+            `).all(id);
+
+            // Compute IAA agreement rate from assignments column
+            const iaaRows = db.prepare(`
+                SELECT assignments FROM data_points
+                WHERE project_id = ? AND is_iaa = 1
+                  AND assignments IS NOT NULL AND assignments != '[]'
+            `).all(id);
+
+            const iaaStats = {}; // annotatorId -> { matched, total }
+            for (const row of iaaRows) {
+                const assignments = JSON.parse(row.assignments || '[]');
+                const done = assignments.filter(a => a.status === 'done' && a.value != null);
+                if (done.length < 2) continue;
+                // majority label
+                const freq = {};
+                for (const a of done) freq[a.value] = (freq[a.value] || 0) + 1;
+                const majority = Object.entries(freq).sort((x, y) => y[1] - x[1])[0][0];
+                for (const a of done) {
+                    if (!iaaStats[a.annotatorId]) iaaStats[a.annotatorId] = { matched: 0, total: 0 };
+                    iaaStats[a.annotatorId].total++;
+                    if (a.value === majority) iaaStats[a.annotatorId].matched++;
+                }
+            }
+
+            const annotators = rows.map(r => {
+                const span = (r.last_at - r.first_at) / 3_600_000;
+                const speedPerHour = span > 0 ? r.total_annotated / span : r.total_annotated;
+                const iaa = iaaStats[r.annotator_id];
+                const agreementRate = iaa && iaa.total > 0
+                    ? Math.round((iaa.matched / iaa.total) * 1000) / 1000
+                    : null;
+                return {
+                    annotatorId: r.annotator_id,
+                    annotatorName: r.annotator_name,
+                    totalAnnotated: r.total_annotated,
+                    speedPerHour: Math.round(speedPerHour * 10) / 10,
+                    editRate: r.edited_count / r.total_annotated,
+                    rejectionRate: r.rejected_count / r.total_annotated,
+                    agreementRate,
+                    firstAnnotatedAt: r.first_at,
+                    lastAnnotatedAt: r.last_at,
+                };
+            });
+
+            const n = annotators.length;
+            const withAgreement = annotators.filter(a => a.agreementRate !== null);
+            const summary = {
+                totalAnnotators: n,
+                avgSpeedPerHour: n ? Math.round(annotators.reduce((s, a) => s + a.speedPerHour, 0) / n * 10) / 10 : 0,
+                avgEditRate: n ? annotators.reduce((s, a) => s + a.editRate, 0) / n : 0,
+                avgRejectionRate: n ? annotators.reduce((s, a) => s + a.rejectionRate, 0) / n : 0,
+                avgAgreementRate: withAgreement.length
+                    ? withAgreement.reduce((s, a) => s + a.agreementRate, 0) / withAgreement.length
+                    : null,
+            };
+
+            res.json({ projectId: id, annotators, summary });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
         }
     });
 
@@ -153,6 +240,8 @@ export function registerProjectRoutes(app) {
                     annotatorId: dp.annotator_id,
                     annotatorName: dp.annotator_name,
                     annotatedAt: dp.annotated_at,
+                    isIAA: !!dp.is_iaa,
+                    assignments: JSON.parse(dp.assignments || '[]'),
                     createdAt: dp.created_at,
                     updatedAt: dp.updated_at
                 })),
@@ -231,6 +320,8 @@ export function registerProjectRoutes(app) {
                 xmlConfig: project.xml_config,
                 uploadPrompt: project.upload_prompt,
                 customFieldName: project.custom_field_name,
+                guidelines: project.guidelines ?? '',
+                iaaConfig: project.iaa_config ? JSON.parse(project.iaa_config) : null,
                 createdAt: project.created_at,
                 updatedAt: project.updated_at,
                 dataPoints: dataPoints.map(dp => ({
@@ -254,6 +345,8 @@ export function registerProjectRoutes(app) {
                     annotatorId: dp.annotator_id,
                     annotatorName: dp.annotator_name,
                     annotatedAt: dp.annotated_at,
+                    isIAA: !!dp.is_iaa,
+                    assignments: JSON.parse(dp.assignments || '[]'),
                     createdAt: dp.created_at,
                     updatedAt: dp.updated_at
                 })),
@@ -285,7 +378,7 @@ export function registerProjectRoutes(app) {
     // Create project
     app.post('/api/projects', (req, res) => {
         try {
-            const { name, description, managerId, annotatorIds = [], xmlConfig, uploadPrompt, customFieldName } = req.body;
+            const { name, description, managerId, annotatorIds = [], xmlConfig, uploadPrompt, customFieldName, guidelines } = req.body;
 
             if (!name) {
                 return res.status(400).json({ error: 'Project name is required' });
@@ -295,9 +388,9 @@ export function registerProjectRoutes(app) {
             const now = Date.now();
 
             db.prepare(`
-        INSERT INTO projects (id, name, description, manager_id, xml_config, upload_prompt, custom_field_name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, name, description || null, managerId || null, xmlConfig || null, uploadPrompt || null, customFieldName || null, now, now);
+        INSERT INTO projects (id, name, description, manager_id, xml_config, upload_prompt, custom_field_name, guidelines, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, name, description || null, managerId || null, xmlConfig || null, uploadPrompt || null, customFieldName || null, guidelines || null, now, now);
 
             // Add annotators
             const insertAnnotator = db.prepare('INSERT INTO project_annotators (project_id, user_id) VALUES (?, ?)');
@@ -339,7 +432,7 @@ export function registerProjectRoutes(app) {
     function handleUpdateProject(req, res) {
         try {
             const { id } = req.params;
-            const { name, description, managerId, annotatorIds, xmlConfig, uploadPrompt, customFieldName, dataPoints, stats } = req.body;
+            const { name, description, managerId, annotatorIds, xmlConfig, uploadPrompt, customFieldName, guidelines, iaaConfig, dataPoints, stats } = req.body;
 
             const existing = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
             if (!existing) {
@@ -357,9 +450,11 @@ export function registerProjectRoutes(app) {
           xml_config = COALESCE(?, xml_config),
           upload_prompt = COALESCE(?, upload_prompt),
           custom_field_name = COALESCE(?, custom_field_name),
+          guidelines = COALESCE(?, guidelines),
+          iaa_config = COALESCE(?, iaa_config),
           updated_at = ?
         WHERE id = ?
-      `).run(name, description, managerId, xmlConfig, uploadPrompt, customFieldName, now, id);
+      `).run(name, description, managerId, xmlConfig, uploadPrompt, customFieldName, guidelines ?? null, iaaConfig ? JSON.stringify(iaaConfig) : null, now, id);
 
             // Update annotators if provided
             if (annotatorIds !== undefined) {
@@ -381,8 +476,8 @@ export function registerProjectRoutes(app) {
             id, project_id, content, type, original_annotation, human_annotation, final_annotation,
             ai_suggestions, ratings, status, confidence, upload_prompt, custom_field, custom_field_name,
             custom_field_values, metadata, display_metadata, split, annotator_id, annotator_name,
-            annotated_at, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            annotated_at, is_iaa, assignments, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             project_id = excluded.project_id,
             content = excluded.content,
@@ -404,6 +499,8 @@ export function registerProjectRoutes(app) {
             annotator_id = excluded.annotator_id,
             annotator_name = excluded.annotator_name,
             annotated_at = excluded.annotated_at,
+            is_iaa = excluded.is_iaa,
+            assignments = excluded.assignments,
             updated_at = excluded.updated_at
         `);
 
@@ -430,6 +527,8 @@ export function registerProjectRoutes(app) {
                         dp.annotatorId || null,
                         dp.annotatorName || null,
                         dp.annotatedAt || null,
+                        dp.isIAA ? 1 : 0,
+                        JSON.stringify(dp.assignments || []),
                         dp.createdAt || now,
                         now
                     );
@@ -728,6 +827,8 @@ export function registerProjectRoutes(app) {
                     annotatorId: dp.annotator_id,
                     annotatorName: dp.annotator_name,
                     annotatedAt: dp.annotated_at,
+                    isIAA: !!dp.is_iaa,
+                    assignments: JSON.parse(dp.assignments || '[]'),
                     createdAt: dp.created_at,
                     updatedAt: dp.updated_at
                 })),

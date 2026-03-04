@@ -24,6 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { toast } from "@/components/ui/use-toast";
 import { MetadataSidebar } from "@/components/MetadataSidebar";
 import { DynamicAnnotationForm } from "@/components/DynamicAnnotationForm";
+import { AnnotationQualityDashboard } from "@/components/qa/AnnotationQualityDashboard";
 import { AnnotationConfig, loadDefaultAnnotationConfig, loadAnnotationConfigFromFile, parseAnnotationConfigXML } from "@/services/xmlConfigService";
 import { useAuth } from "@/contexts/AuthContext";
 import { UserMenu } from "@/components/UserMenu";
@@ -236,6 +237,7 @@ const DataLabelingWorkspace = () => {
   // Advanced Features State
   const [showHistoryDialog, setShowHistoryDialog] = useState(false);
   const [showGuidelinesDialog, setShowGuidelinesDialog] = useState(false);
+  const [showQualityDialog, setShowQualityDialog] = useState(false);
 
   // Hugging Face State
   const [showHFDialog, setShowHFDialog] = useState(false);
@@ -2602,7 +2604,18 @@ const DataLabelingWorkspace = () => {
                     </div>
                   </DialogContent>
                 </Dialog>
-
+                                {(isAdmin || isManagerForProject) && (
+                  <Button
+                    size="sm"
+                    className="mr-1 gap-1.5 bg-gradient-to-r from-violet-500 to-indigo-500 hover:from-violet-600 hover:to-indigo-600 text-white border-0 shadow-sm shadow-violet-200 dark:shadow-violet-900/30"
+                    onClick={() => setShowQualityDialog(true)}
+                    disabled={!projectId}
+                    title="Annotation Quality Dashboard"
+                  >
+                    <BarChart3 className="h-4 w-4" />
+                    Quality
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -3180,6 +3193,19 @@ const DataLabelingWorkspace = () => {
                     projectId={projectId}
                     onRestore={handleRestoreVersion}
                   />
+                )}
+
+                {/* Annotation Quality Dashboard Dialog */}
+                {projectId && (isAdmin || isManagerForProject) && (
+                  <Dialog open={showQualityDialog} onOpenChange={setShowQualityDialog}>
+                    <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Annotation Quality Dashboard</DialogTitle>
+                        <DialogDescription>Per-annotator performance metrics for this project.</DialogDescription>
+                      </DialogHeader>
+                      <AnnotationQualityDashboard projectId={projectId} />
+                    </DialogContent>
+                  </Dialog>
                 )}
 
                 {/* Guidelines Dialog */}
