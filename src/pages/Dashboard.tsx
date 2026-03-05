@@ -8,21 +8,40 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, FolderOpen, Trash2, Clock, BarChart3, MoreVertical, Target, Shield, Briefcase, PenTool, Link, Copy, Check, Loader2 } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Plus, FolderOpen, Clock, BarChart3, Settings, Target, Shield, Briefcase, PenTool, Link, Copy, Check, Loader2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { UserMenu } from "@/components/UserMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth, type User, type Role } from "@/contexts/AuthContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 
 const Dashboard = () => {
     const navigate = useNavigate();
     const { toast } = useToast();
-    const { currentUser, users, createUser, getUserById, deleteUser, updateUserRoles, adminResetPassword } = useAuth();
+    const { currentUser, login, users, createUser, getUserById, deleteUser, updateUserRoles, adminResetPassword } = useAuth();
+    const [loginUsername, setLoginUsername] = useState("");
+    const [loginPassword, setLoginPassword] = useState("");
+    const [loginError, setLoginError] = useState("");
+    const [loginLoading, setLoginLoading] = useState(false);
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoginError("");
+        setLoginLoading(true);
+        try {
+            const ok = await login(loginUsername, loginPassword);
+            if (!ok) setLoginError("Invalid username or password.");
+        } catch {
+            setLoginError("Login failed. Please try again.");
+        } finally {
+            setLoginLoading(false);
+        }
+    };
     const [projects, setProjects] = useState<Project[]>([]);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
@@ -209,7 +228,7 @@ const Dashboard = () => {
             setIaaEnabled(false);
             setIaaPortion(20);
             setIaaAnnotatorsPerItem(2);
-            navigate(`/project/${project.id}`);
+            navigate(`/projects/${project.id}/settings`);
             toast({
                 title: "Success",
                 description: "Project created successfully.",
@@ -244,6 +263,56 @@ const Dashboard = () => {
             });
         }
     };
+
+    if (!currentUser) return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
+            <Card className="w-full max-w-sm">
+                <CardHeader className="text-center">
+                    <div className="mx-auto w-12 h-12 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center mb-2">
+                        <img src="/favicon.svg" alt="DataBayt.AI Logo" className="w-6 h-6 invert brightness-0" />
+                    </div>
+                    <CardTitle className="text-2xl">DataBayt.AI Studio</CardTitle>
+                    <CardDescription>Sign in to your account</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <form onSubmit={handleLogin} className="space-y-4">
+                        {loginError && (
+                            <Alert variant="destructive">
+                                <AlertCircle className="h-4 w-4" />
+                                <AlertDescription>{loginError}</AlertDescription>
+                            </Alert>
+                        )}
+                        <div className="space-y-2">
+                            <Label htmlFor="login-username">Username</Label>
+                            <Input
+                                id="login-username"
+                                type="text"
+                                placeholder="Enter your username"
+                                value={loginUsername}
+                                onChange={(e) => setLoginUsername(e.target.value)}
+                                disabled={loginLoading}
+                                autoFocus
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="login-password">Password</Label>
+                            <Input
+                                id="login-password"
+                                type="password"
+                                placeholder="Enter your password"
+                                value={loginPassword}
+                                onChange={(e) => setLoginPassword(e.target.value)}
+                                disabled={loginLoading}
+                            />
+                        </div>
+                        <Button type="submit" className="w-full" disabled={loginLoading}>
+                            {loginLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in...</> : "Sign In"}
+                        </Button>
+                    </form>
+                </CardContent>
+            </Card>
+        </div>
+    );
 
     return (
         <div className="min-h-screen bg-background p-8">
@@ -632,43 +701,17 @@ const Dashboard = () => {
                                                 {project.name}
                                             </CardTitle>
                                             {(isAdmin || canManageAccess(project)) && (
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8 -mt-1 -mr-2"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                e.preventDefault(); // Also prevent default to be safe
-                                                            }}
-                                                        >
-                                                            <MoreVertical className="w-4 h-4" />
-                                                        </Button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        <DropdownMenuItem onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            openAccessDialog(project);
-                                                        }}>
-                                                            Manage Access
-                                                        </DropdownMenuItem>
-                                                        {isAdmin && (
-                                                            <DropdownMenuItem
-                                                                className="text-destructive focus:text-destructive"
-                                                                onClick={(e) => {
-                                                                    e.preventDefault();
-                                                                    e.stopPropagation();
-                                                                    console.log("Delete project requested:", project.id);
-                                                                    setProjectToDelete(project);
-                                                                }}
-                                                            >
-                                                                <Trash2 className="w-4 h-4 mr-2" />
-                                                                Delete Project
-                                                            </DropdownMenuItem>
-                                                        )}
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 -mt-1 -mr-2"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(`/projects/${project.id}/settings`);
+                                                    }}
+                                                >
+                                                    <Settings className="w-4 h-4" />
+                                                </Button>
                                             )}
                                         </div>
                                         <CardDescription className="line-clamp-2 min-h-[2.5em]">

@@ -157,3 +157,27 @@ export interface DataPointComment {
     deletedAt?: number | null;
     isEdited: boolean;
 }
+
+export interface AnnotatorQualityStats {
+    annotatorId: string;
+    annotatorName: string;
+    totalAnnotated: number;
+    speedPerHour: number;
+    editRate: number;
+    rejectionRate: number;
+    agreementRate: number | null;
+    firstAnnotatedAt: number | null;
+    lastAnnotatedAt: number | null;
+}
+
+export interface AnnotatorStatsResponse {
+    projectId: string;
+    annotators: AnnotatorQualityStats[];
+    summary: {
+        totalAnnotators: number;
+        avgSpeedPerHour: number;
+        avgEditRate: number;
+        avgRejectionRate: number;
+        avgAgreementRate: number | null;
+    };
+}

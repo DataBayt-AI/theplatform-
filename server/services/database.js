@@ -256,6 +256,17 @@ function createSchema() {
     CREATE INDEX IF NOT EXISTS idx_invite_tokens_token ON invite_tokens(token);
   `);
 
+  // Migrations — add columns if they don't exist yet
+  const migrations = [
+    `ALTER TABLE data_points ADD COLUMN is_iaa INTEGER DEFAULT 0`,
+    `ALTER TABLE data_points ADD COLUMN assignments TEXT DEFAULT '[]'`,
+    `ALTER TABLE projects ADD COLUMN iaa_config TEXT`,
+    `ALTER TABLE projects ADD COLUMN guidelines TEXT`,
+  ];
+  for (const sql of migrations) {
+    try { db.exec(sql); } catch (_) { /* column already exists */ }
+  }
+
   // Seed default admin user if no users exist
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
   if (userCount.count === 0) {

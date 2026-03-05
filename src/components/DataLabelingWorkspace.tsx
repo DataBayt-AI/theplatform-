@@ -24,6 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { toast } from "@/components/ui/use-toast";
 import { MetadataSidebar } from "@/components/MetadataSidebar";
 import { DynamicAnnotationForm } from "@/components/DynamicAnnotationForm";
+import { AnnotationQualityDashboard } from "@/components/qa/AnnotationQualityDashboard";
 import { AnnotationConfig, loadDefaultAnnotationConfig, loadAnnotationConfigFromFile, parseAnnotationConfigXML } from "@/services/xmlConfigService";
 import { useAuth } from "@/contexts/AuthContext";
 import { UserMenu } from "@/components/UserMenu";
@@ -236,6 +237,7 @@ const DataLabelingWorkspace = () => {
   // Advanced Features State
   const [showHistoryDialog, setShowHistoryDialog] = useState(false);
   const [showGuidelinesDialog, setShowGuidelinesDialog] = useState(false);
+  const [showQualityDialog, setShowQualityDialog] = useState(false);
 
   // Hugging Face State
   const [showHFDialog, setShowHFDialog] = useState(false);
@@ -265,8 +267,7 @@ const DataLabelingWorkspace = () => {
   // XML Annotation Config State
   const [annotationConfig, setAnnotationConfig] = useState<AnnotationConfig | null>(null);
   const [annotationFieldValuesMap, setAnnotationFieldValuesMap] = useState<Record<string, Record<string, string | boolean>>>({});
-  const [showXmlEditor, setShowXmlEditor] = useState(false);
-  const [xmlEditorContent, setXmlEditorContent] = useState('');
+
 
   const dataPointsRef = useRef<DataPoint[]>(dataPoints);
   const inflightRef = useRef(0);
@@ -496,17 +497,18 @@ const DataLabelingWorkspace = () => {
     }
   }, [projectId, selectedModels.length]);
 
-  // Load annotation config on mount (from localStorage or default)
+  // Load annotation config — priority: project.xmlConfig → localStorage → default
   useEffect(() => {
-    const savedXml = projectId ? localStorage.getItem(`databayt-annotation-config-xml-${projectId}`) : null;
-    if (savedXml) {
-      setXmlEditorContent(savedXml);
+    const xmlSource = projectAccess?.xmlConfig
+      || (projectId ? localStorage.getItem(`databayt-annotation-config-xml-${projectId}`) : null);
+
+    if (xmlSource) {
       try {
-        const config = parseAnnotationConfigXML(savedXml);
+        const config = parseAnnotationConfigXML(xmlSource);
         setAnnotationConfig(config);
-        return; // Use saved config
+        return;
       } catch (err) {
-        console.error('Failed to parse saved annotation config, loading default:', err);
+        console.error('Failed to parse annotation config, loading default:', err);
       }
     }
 
@@ -514,7 +516,6 @@ const DataLabelingWorkspace = () => {
     fetch('/default-annotation-config.xml')
       .then(res => res.text())
       .then(xmlString => {
-        setXmlEditorContent(xmlString);
         try {
           const config = parseAnnotationConfigXML(xmlString);
           setAnnotationConfig(config);
@@ -523,24 +524,7 @@ const DataLabelingWorkspace = () => {
         }
       })
       .catch(err => console.error('Failed to load default annotation config:', err));
-  }, []);
-
-  // Handle custom XML config upload
-  const handleXmlConfigUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const xmlString = await file.text();
-      setXmlEditorContent(xmlString);
-      const config = parseAnnotationConfigXML(xmlString);
-      setAnnotationConfig(config);
-      setAnnotationFieldValuesMap({}); // Reset field values for all data points
-    } catch (err) {
-      setUploadError(`Failed to parse XML config: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-    event.target.value = '';
-  };
+  }, [projectAccess?.xmlConfig]);
 
   // Handle annotation field value change (per data point)
   const handleAnnotationFieldChange = (fieldId: string, value: string | boolean) => {
@@ -552,29 +536,6 @@ const DataLabelingWorkspace = () => {
         [fieldId]: value
       }
     }));
-  };
-
-  // Open XML editor
-  const openXmlEditor = () => {
-    setShowXmlEditor(true);
-  };
-
-  // Apply XML from editor
-  const applyXmlConfig = () => {
-    try {
-      const config = parseAnnotationConfigXML(xmlEditorContent);
-      setAnnotationConfig(config);
-      setAnnotationFieldValuesMap({});
-      if (projectId) localStorage.setItem(`databayt-annotation-config-xml-${projectId}`, xmlEditorContent);
-      setShowXmlEditor(false);
-    } catch (err) {
-      setUploadError(`Invalid XML: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  };
-
-  // Insert column reference into XML editor
-  const insertColumnToXml = (columnName: string) => {
-    setXmlEditorContent(prev => prev + `{{${columnName}}}`);
   };
 
   // Initialize HF dataset name when project name loads
@@ -2602,7 +2563,18 @@ const DataLabelingWorkspace = () => {
                     </div>
                   </DialogContent>
                 </Dialog>
-
+                                {(isAdmin || isManagerForProject) && (
+                  <Button
+                    size="sm"
+                    className="mr-1 gap-1.5 bg-gradient-to-r from-violet-500 to-indigo-500 hover:from-violet-600 hover:to-indigo-600 text-white border-0 shadow-sm shadow-violet-200 dark:shadow-violet-900/30"
+                    onClick={() => setShowQualityDialog(true)}
+                    disabled={!projectId}
+                    title="Annotation Quality Dashboard"
+                  >
+                    <BarChart3 className="h-4 w-4" />
+                    Quality
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -2632,7 +2604,7 @@ const DataLabelingWorkspace = () => {
                       disabled={!canProcessAI}
                       title={!canProcessAI ? "Requires manager or admin role" : undefined}
                     >
-                      <Settings className="w-4 h-4" />
+                      <Bot className="w-4 h-4" />
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
@@ -2824,70 +2796,6 @@ const DataLabelingWorkspace = () => {
                         >
                           {pendingHFRows ? 'Import Dataset' : 'Upload File'}
                         </Button>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
-                {/* XML Editor Dialog */}
-                <Dialog open={showXmlEditor} onOpenChange={setShowXmlEditor}>
-                  <DialogContent className="max-w-2xl max-h-[80vh]">
-                    <DialogHeader>
-                      <DialogTitle>Customize Annotation Fields</DialogTitle>
-                      <DialogDescription>
-                        Edit the XML configuration below to customize your annotation form.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      {availableColumns.length > 0 && (
-                        <div>
-                          <Label className="text-sm font-medium">Available Columns (click to insert):</Label>
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {availableColumns.map(col => (
-                              <Badge
-                                key={col}
-                                variant="secondary"
-                                className="cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
-                                onClick={() => insertColumnToXml(col)}
-                              >
-                                {col}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <Textarea
-                        value={xmlEditorContent}
-                        onChange={(e) => setXmlEditorContent(e.target.value)}
-                        className="font-mono text-sm min-h-[300px]"
-                        placeholder="Enter XML configuration..."
-                      />
-                      <div className="flex gap-2 justify-between">
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => document.getElementById('xml-file-upload')?.click()}
-                          >
-                            <Upload className="w-4 h-4 mr-2" />
-                            Upload XML
-                          </Button>
-                          <input
-                            id="xml-file-upload"
-                            type="file"
-                            accept=".xml"
-                            onChange={handleXmlConfigUpload}
-                            className="hidden"
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <Button variant="outline" onClick={() => setShowXmlEditor(false)}>
-                            Cancel
-                          </Button>
-                          <Button onClick={applyXmlConfig}>
-                            Apply Configuration
-                          </Button>
-                        </div>
                       </div>
                     </div>
                   </DialogContent>
@@ -3182,14 +3090,27 @@ const DataLabelingWorkspace = () => {
                   />
                 )}
 
-                {/* Guidelines Dialog */}
+                {/* Annotation Quality Dashboard Dialog */}
+                {projectId && (isAdmin || isManagerForProject) && (
+                  <Dialog open={showQualityDialog} onOpenChange={setShowQualityDialog}>
+                    <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Annotation Quality Dashboard</DialogTitle>
+                        <DialogDescription>Per-annotator performance metrics for this project.</DialogDescription>
+                      </DialogHeader>
+                      <AnnotationQualityDashboard projectId={projectId} />
+                    </DialogContent>
+                  </Dialog>
+                )}
+
+                {/* Guidelines Dialog — read-only in workspace; managers edit via Project Settings */}
                 {projectId && projectAccess && (
                   <GuidelinesDialog
                     project={projectAccess}
                     isOpen={showGuidelinesDialog}
                     onClose={() => setShowGuidelinesDialog(false)}
-                    canEdit={isAdmin || isManagerForProject}
-                    onUpdate={(updated) => setProjectAccess(updated)}
+                    readOnly
+                    settingsPath={(isAdmin || isManagerForProject) ? `/projects/${projectId}/settings` : undefined}
                   />
                 )}
 
@@ -3569,20 +3490,6 @@ const DataLabelingWorkspace = () => {
                                       Human Annotation
                                     </Badge>
                                     <div className="flex gap-2">
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-7 text-xs"
-                                            onClick={openXmlEditor}
-                                          >
-                                            <FileText className="w-3 h-3 mr-1" />
-                                            Customize
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>Customize annotation fields</TooltipContent>
-                                      </Tooltip>
                                       {getVisibleDraftAnnotation(currentDataPoint) && (
                                         <Button
                                           size="sm"

@@ -3,7 +3,7 @@
  */
 
 import { ProjectIAAConfig } from "@/types/data";
-import type { ProjectDataStatusCounts } from "@/types/data";
+import type { ProjectDataStatusCounts, AnnotatorStatsResponse } from "@/types/data";
 
 const API_BASE = '/api';
 
@@ -89,6 +89,9 @@ export const apiClient = {
                 method: 'POST',
                 body: JSON.stringify({ action, details }),
             }),
+
+        getAnnotatorStats: (projectId: string) =>
+            request<AnnotatorStatsResponse>(`/projects/${projectId}/annotator-stats`),
     },
 
     // Snapshots
