@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { UserMenu } from "@/components/UserMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth, type User, type Role } from "@/contexts/AuthContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
@@ -667,6 +668,7 @@ const Dashboard = () => {
                             </Dialog>
                         )}
 
+                        <NotificationBell />
                         <ThemeToggle />
                         <UserMenu />
                     </div>

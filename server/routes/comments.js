@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getDatabase } from '../services/database.js';
+import { createNotification } from '../services/notificationService.js';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
@@ -184,6 +185,29 @@ export function registerCommentRoutes(app) {
             );
 
             const inserted = db.prepare('SELECT * FROM data_point_comments WHERE id = ?').get(id);
+
+            // Notify relevant users about the new comment (best-effort)
+            const dataPointRow = db.prepare('SELECT annotator_id, project_id FROM data_points WHERE id = ?').get(dataId);
+            const projectRow = db.prepare('SELECT manager_id, name FROM projects WHERE id = ?').get(projectId);
+            const notifyIds = new Set();
+            if (dataPointRow?.annotator_id && dataPointRow.annotator_id !== user.id) {
+              notifyIds.add(dataPointRow.annotator_id);
+            }
+            if (projectRow?.manager_id && projectRow.manager_id !== user.id) {
+              notifyIds.add(projectRow.manager_id);
+            }
+            const notifData = { projectId, dataPointId: dataId };
+            const projectName = projectRow?.name || 'a project';
+            for (const recipientId of notifyIds) {
+              createNotification({
+                userId: recipientId,
+                type: 'comment',
+                title: 'New comment',
+                body: `${user.username || 'Someone'} commented on an item in "${projectName}"`,
+                data: notifData,
+              });
+            }
+
             return res.status(201).json(mapComment(inserted));
         } catch (error) {
             console.error('Error creating comment:', error);

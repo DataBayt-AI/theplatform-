@@ -1,5 +1,6 @@
 import { getDatabase } from '../services/database.js';
 import crypto from 'crypto';
+import { createNotifications } from '../services/notificationService.js';
 
 /**
  * Projects API routes
@@ -405,6 +406,16 @@ export function registerProjectRoutes(app) {
             // Initialize stats
             db.prepare('INSERT INTO project_stats (project_id) VALUES (?)').run(id);
 
+            // Notify assigned annotators
+            if (annotatorIds.length > 0) {
+                createNotifications(annotatorIds, {
+                    type: 'assignment',
+                    title: 'You were assigned to a project',
+                    body: `You have been added as an annotator on "${name}"`,
+                    data: { projectId: id },
+                });
+            }
+
             res.status(201).json({
                 id,
                 name,
@@ -458,6 +469,11 @@ export function registerProjectRoutes(app) {
 
             // Update annotators if provided
             if (annotatorIds !== undefined) {
+                const previousIds = db.prepare(
+                    'SELECT user_id FROM project_annotators WHERE project_id = ?'
+                ).all(id).map(r => r.user_id);
+                const previousSet = new Set(previousIds);
+
                 db.prepare('DELETE FROM project_annotators WHERE project_id = ?').run(id);
                 const insertAnnotator = db.prepare('INSERT INTO project_annotators (project_id, user_id) VALUES (?, ?)');
                 for (const userId of annotatorIds) {
@@ -466,6 +482,18 @@ export function registerProjectRoutes(app) {
                     } catch (e) {
                         // Ignore
                     }
+                }
+
+                // Notify only newly added annotators
+                const newlyAdded = annotatorIds.filter(uid => !previousSet.has(uid));
+                if (newlyAdded.length > 0) {
+                    const projectName = name || existing.name;
+                    createNotifications(newlyAdded, {
+                        type: 'assignment',
+                        title: 'You were assigned to a project',
+                        body: `You have been added as an annotator on "${projectName}"`,
+                        data: { projectId: id },
+                    });
                 }
             }
 

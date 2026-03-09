@@ -8,6 +8,7 @@ import { registerProjectRoutes } from './routes/projects.js';
 import { registerUserRoutes } from './routes/users.js';
 import { registerModelRoutes } from './routes/models.js';
 import { registerCommentRoutes } from './routes/comments.js';
+import { registerNotificationRoutes } from './routes/notifications.js';
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ registerProjectRoutes(app);
 registerUserRoutes(app);
 registerModelRoutes(app);
 registerCommentRoutes(app);
+registerNotificationRoutes(app);
 
 // Legacy project param handler (for existing routes)
 app.param('id', async (req, _res, next, id) => {

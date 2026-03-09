@@ -244,6 +244,21 @@ function createSchema() {
     )
   `);
 
+  // Notifications table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      data TEXT DEFAULT '{}',
+      is_read INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
   // Create indexes for common queries
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_data_points_project ON data_points(project_id);
@@ -254,6 +269,7 @@ function createSchema() {
     CREATE INDEX IF NOT EXISTS idx_audit_log_project ON audit_log(project_id);
     CREATE INDEX IF NOT EXISTS idx_project_annotators_user ON project_annotators(user_id);
     CREATE INDEX IF NOT EXISTS idx_invite_tokens_token ON invite_tokens(token);
+    CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read, created_at);
   `);
 
   // Migrations — add columns if they don't exist yet
