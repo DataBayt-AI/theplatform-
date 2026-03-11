@@ -2,8 +2,20 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = "https://ivfuaujkiqhuvpxiqien.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2ZnVhdWpraXFodXZweGlxaWVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNDcwMzYsImV4cCI6MjA3MzkyMzAzNn0.gsyjMuiZn5k73WTqkAp_unl_qTChlygvvc8wPlnF1qI";
+declare global {
+  interface Window {
+    __CONFIG__?: {
+      supabaseUrl: string;
+      supabaseKey: string;
+    };
+  }
+}
+
+// Credentials are injected at runtime by the server into window.__CONFIG__
+// so they are never baked into the built bundle.
+// For local development, fall back to VITE_ env vars.
+const SUPABASE_URL = window.__CONFIG__?.supabaseUrl || import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_PUBLISHABLE_KEY = window.__CONFIG__?.supabaseKey || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { existsSync, readFileSync } from 'fs';
 import { attachUser, requireRole, requireProjectRole, loadProject } from './middleware/auth.js';
 import { initDatabase } from './services/database.js';
 import { registerProjectRoutes } from './routes/projects.js';
@@ -9,6 +12,9 @@ import { registerUserRoutes } from './routes/users.js';
 import { registerModelRoutes } from './routes/models.js';
 import { registerCommentRoutes } from './routes/comments.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 dotenv.config();
 
@@ -567,6 +573,29 @@ app.post('/api/huggingface/datasets/import', async (req, res) => {
     }
 });
 
+// Serve built frontend (for packaged/production use)
+const distPath = join(__dirname, '../dist');
+if (existsSync(distPath)) {
+    // Serve static assets but NOT index.html (we inject config into it below)
+    app.use(express.static(distPath, { index: false }));
+
+    // Inject runtime config into index.html so no secrets are baked into dist/
+    app.get('/{*splat}', (_req, res) => {
+        const indexPath = join(distPath, 'index.html');
+        const html = readFileSync(indexPath, 'utf-8');
+        const config = {
+            supabaseUrl: process.env.SUPABASE_URL || '',
+            supabaseKey: process.env.SUPABASE_PUBLISHABLE_KEY || '',
+        };
+        const injected = html.replace(
+            '<head>',
+            `<head><script>window.__CONFIG__ = ${JSON.stringify(config)};</script>`
+        );
+        res.setHeader('Content-Type', 'text/html');
+        res.send(injected);
+    });
+}
+
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`\n  DataBayt Platform running at http://localhost:${PORT}\n`);
 });
