@@ -1,8 +1,16 @@
 {
-  "name": "vite_react_shadcn_ts",
-  "private": true,
-  "version": "0.0.0",
+  "name": "databayt-ai-studio",
+  "version": "1.0.1",
+  "description": "Open-source data labeling and annotation platform",
   "type": "module",
+  "bin": {
+    "databayt-ai-studio": "./bin/cli.js"
+  },
+  "files": [
+    "dist",
+    "server",
+    "bin"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,6 +19,7 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "dev:all": "concurrently -k -n \"SERVER,CLIENT\" -c \"blue,magenta\" \"npm start\" \"npm run dev\"",
+    "prepublishOnly": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
