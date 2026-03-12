@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, FolderOpen, Clock, BarChart3, Settings, Target, Shield, Briefcase, PenTool, Link, Copy, Check, Loader2 } from "lucide-react";
+import { Plus, FolderOpen, Clock, BarChart3, Settings, Target, Shield, Briefcase, PenTool, Link, Copy, Check, Loader2, HelpCircle } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
@@ -20,6 +20,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useTutorial, hasSeenTutorial } from "@/components/Tutorial/useTutorial";
+import { getDashboardSteps, type UserRole } from "@/components/Tutorial/tourSteps";
 
 const Dashboard = () => {
     const navigate = useNavigate();
@@ -132,6 +134,24 @@ const Dashboard = () => {
 
     const isAdmin = currentUser?.roles?.includes("admin");
     const isManager = currentUser?.roles?.includes("manager") || isAdmin;
+
+    const tutorialSteps = useMemo(() => {
+        if (!currentUser) return [];
+        return getDashboardSteps(currentUser.roles as UserRole[]);
+    }, [currentUser]);
+
+    const { startTour } = useTutorial({
+        userId: currentUser?.id ?? "guest",
+        steps: tutorialSteps,
+    });
+
+    useEffect(() => {
+        if (!currentUser || isLoading) return;
+        if (!hasSeenTutorial(currentUser.id)) {
+            const timer = setTimeout(() => startTour(), 600);
+            return () => clearTimeout(timer);
+        }
+    }, [currentUser, isLoading]);
 
     const visibleProjects = useMemo(() => {
         if (!currentUser) return [];
@@ -332,14 +352,14 @@ const Dashboard = () => {
 
                     <div className="flex items-center gap-3">
                         {isManager && (
-                            <Button variant="outline" size="sm" onClick={() => navigate("/model-management")}>
+                            <Button id="tutorial-model-management" variant="outline" size="sm" onClick={() => navigate("/model-management")}>
                                 Model Management
                             </Button>
                         )}
                         {isAdmin && (
                             <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
                                 <DialogTrigger asChild>
-                                    <Button variant="outline" size="sm">Manage Users</Button>
+                                    <Button id="tutorial-manage-users" variant="outline" size="sm">Manage Users</Button>
                                 </DialogTrigger>
                                 <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                                     <DialogHeader>
@@ -584,7 +604,7 @@ const Dashboard = () => {
                         {isAdmin && (
                             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
                                 <DialogTrigger asChild>
-                                    <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
+                                    <Button id="tutorial-new-project" className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
                                         <Plus className="w-4 h-4 mr-2" />
                                         New Project
                                     </Button>
@@ -668,6 +688,15 @@ const Dashboard = () => {
                             </Dialog>
                         )}
 
+                        <Button
+                            id="tutorial-help-btn"
+                            variant="ghost"
+                            size="icon"
+                            onClick={startTour}
+                            title="Start tutorial"
+                        >
+                            <HelpCircle className="w-5 h-5" />
+                        </Button>
                         <NotificationBell />
                         <ThemeToggle />
                         <UserMenu />
@@ -690,10 +719,11 @@ const Dashboard = () => {
                             )}
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {visibleProjects.map((project) => (
+                        <div id="tutorial-projects-list" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {visibleProjects.map((project, idx) => (
                                 <Card
                                     key={project.id}
+                                    id={idx === 0 ? "tutorial-open-project" : undefined}
                                     className="group hover:shadow-lg transition-all cursor-pointer border-muted hover:border-primary/50"
                                     onClick={() => navigate(`/project/${project.id}`)}
                                 >

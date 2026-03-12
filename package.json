@@ -64,6 +64,7 @@
     "cors": "^2.8.5",
     "date-fns": "^3.6.0",
     "dotenv": "^17.2.3",
+    "driver.js": "^1.4.0",
     "embla-carousel-react": "^8.6.0",
     "express": "^5.2.1",
     "idb": "^8.0.3",
