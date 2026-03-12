@@ -1,0 +1,33 @@
+# Source files (not needed at runtime)
+src/
+e2e/
+public/
+docs/
+supabase/
+demo_dataset/
+
+# Config/tooling
+vite.config.ts
+vitest.config.ts
+tsconfig*.json
+eslint.config.js
+postcss.config.js
+tailwind.config.ts
+components.json
+.github/
+
+# Dev files
+*.test.*
+*.spec.*
+node_modules/
+.env*
+
+# User data (SQLite database — generated at runtime, must not be published)
+server/data/
+
+# Misc
+*.csv
+*.json.bak
+check_*.js
+image_test_data.json
+test_multi_column_data.csv

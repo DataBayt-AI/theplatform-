@@ -5,6 +5,17 @@
 import { ProjectIAAConfig } from "@/types/data";
 import type { ProjectDataStatusCounts, AnnotatorStatsResponse } from "@/types/data";
 
+export interface AppNotification {
+    id: string;
+    userId: string;
+    type: 'comment' | 'assignment' | 'review_request' | string;
+    title: string;
+    body: string;
+    data: { projectId?: string; dataPointId?: string; [key: string]: unknown };
+    isRead: boolean;
+    createdAt: number;
+}
+
 const API_BASE = '/api';
 
 async function request<T>(
@@ -254,6 +265,31 @@ export const apiClient = {
             method: 'PUT',
             body: JSON.stringify(data),
         }),
+    },
+
+    // Notifications
+    notifications: {
+        getAll: (params?: { unread?: boolean; limit?: number }) => {
+            const query = new URLSearchParams();
+            if (params?.unread) query.set('unread', 'true');
+            if (params?.limit) query.set('limit', String(params.limit));
+            const qs = query.toString();
+            return request<{ notifications: AppNotification[]; unreadCount: number }>(
+                `/notifications${qs ? `?${qs}` : ''}`
+            );
+        },
+        markRead: (ids: string[]) =>
+            request<{ success: boolean; unreadCount: number }>('/notifications/read', {
+                method: 'POST',
+                body: JSON.stringify({ ids }),
+            }),
+        markAllRead: () =>
+            request<{ success: boolean; unreadCount: number }>('/notifications/read', {
+                method: 'POST',
+                body: JSON.stringify({ all: true }),
+            }),
+        delete: (id: string) =>
+            request<{ success: boolean }>(`/notifications/${id}`, { method: 'DELETE' }),
     },
 
     // Hugging Face dataset import

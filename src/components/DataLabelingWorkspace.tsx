@@ -29,6 +29,7 @@ import { AnnotationConfig, loadDefaultAnnotationConfig, loadAnnotationConfigFrom
 import { useAuth } from "@/contexts/AuthContext";
 import { UserMenu } from "@/components/UserMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { NotificationBell } from "@/components/NotificationBell";
 import {
   Upload,
   Settings,
@@ -444,6 +445,20 @@ const DataLabelingWorkspace = () => {
     nextParams.delete('import');
     setSearchParams(nextParams, { replace: true });
   }, [handledInitialImportChoice, canUpload, searchParams, setSearchParams]);
+
+  // Jump to a specific data point when arriving from a notification (?dp=<id>)
+  useEffect(() => {
+    const targetId = searchParams.get('dp');
+    if (!targetId || dataPoints.length === 0) return;
+    const idx = dataPoints.findIndex(dp => dp.id === targetId);
+    if (idx !== -1) {
+      setCurrentIndex(idx);
+      setViewMode('record');
+    }
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('dp');
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, dataPoints, setCurrentIndex, setSearchParams, setViewMode]);
 
   if (accessDenied) {
     return (
@@ -3262,7 +3277,8 @@ const DataLabelingWorkspace = () => {
                 )}
 
               </div>
-              <div className="ml-2">
+              <div className="ml-2 flex items-center gap-1">
+                <NotificationBell />
                 <ThemeToggle />
                 <UserMenu />
               </div>

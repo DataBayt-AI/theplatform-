@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node server/scripts/seed-notifications.js)",
+      "Bash(npx vitest run server/__tests__/notifications.test.js --reporter=verbose)"
+    ]
+  }
+}
