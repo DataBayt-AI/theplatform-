@@ -128,6 +128,7 @@ export interface Project {
     customFieldName?: string;
     auditLog?: ProjectAuditEntry[];
     iaaConfig?: ProjectIAAConfig;
+    isDemo?: boolean;
     createdAt: number;
     updatedAt: number;
     dataPoints: DataPoint[];

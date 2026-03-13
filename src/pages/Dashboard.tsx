@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, FolderOpen, Clock, BarChart3, Settings, Target, Shield, Briefcase, PenTool, Link, Copy, Check, Loader2, HelpCircle } from "lucide-react";
+import { Plus, FolderOpen, Clock, BarChart3, Settings, Target, Shield, Briefcase, PenTool, Link, Copy, Check, Loader2, HelpCircle, FlaskConical } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
@@ -17,6 +17,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth, type User, type Role } from "@/contexts/AuthContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { AlertCircle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -110,10 +111,11 @@ const Dashboard = () => {
     useEffect(() => {
         const init = async () => {
             await projectService.initialize();
-            loadProjects();
+            if (currentUser) loadProjects();
+            else setProjects([]);
         };
         init();
-    }, []);
+    }, [currentUser?.id]); // reload when user logs in or out
 
     const loadProjects = async () => {
         setIsLoading(true);
@@ -147,6 +149,7 @@ const Dashboard = () => {
 
     useEffect(() => {
         if (!currentUser || isLoading) return;
+        if (currentUser.mustChangePassword) return; // wait until password is changed
         if (!hasSeenTutorial(currentUser.id)) {
             const timer = setTimeout(() => startTour(), 600);
             return () => clearTimeout(timer);
@@ -729,9 +732,17 @@ const Dashboard = () => {
                                 >
                                     <CardHeader className="pb-3">
                                         <div className="flex justify-between items-start">
-                                            <CardTitle className="text-xl font-semibold truncate pr-2">
-                                                {project.name}
-                                            </CardTitle>
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <CardTitle className="text-xl font-semibold truncate">
+                                                    {project.name}
+                                                </CardTitle>
+                                                {project.isDemo && (
+                                                    <Badge variant="secondary" className="shrink-0 gap-1 text-[10px] px-1.5 py-0.5">
+                                                        <FlaskConical className="w-3 h-3" />
+                                                        Example
+                                                    </Badge>
+                                                )}
+                                            </div>
                                             {(isAdmin || canManageAccess(project)) && (
                                                 <Button
                                                     variant="ghost"
