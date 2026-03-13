@@ -1,8 +1,37 @@
 {
   "name": "databayt-ai-studio",
   "version": "1.0.1",
-  "description": "Open-source data labeling and annotation platform",
+  "description": "Self-hosted, team-based data annotation platform with AI-assisted labeling, role-based access control, model management, and guided onboarding.",
   "type": "module",
+  "license": "AGPL-3.0-only",
+  "author": "DataBayt AI <contact@databayt.ai>",
+  "homepage": "https://github.com/DataBayt-AI/theplatform-#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DataBayt-AI/theplatform-.git"
+  },
+  "bugs": {
+    "url": "https://github.com/DataBayt-AI/theplatform-/issues"
+  },
+  "keywords": [
+    "annotation",
+    "data-labeling",
+    "nlp",
+    "ai",
+    "machine-learning",
+    "dataset",
+    "llm",
+    "rlhf",
+    "text-classification",
+    "self-hosted",
+    "team-collaboration",
+    "openai",
+    "anthropic",
+    "huggingface"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "bin": {
     "databayt-ai-studio": "./bin/cli.js"
   },
