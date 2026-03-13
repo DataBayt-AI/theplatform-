@@ -1,6 +1,7 @@
 import { getDatabase } from '../services/database.js';
 import crypto from 'crypto';
 import { createNotifications } from '../services/notificationService.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 /**
  * Projects API routes
@@ -64,6 +65,7 @@ export function registerProjectRoutes(app) {
                     uploadPrompt: p.upload_prompt,
                     customFieldName: p.custom_field_name,
                     guidelines: p.guidelines ?? '',
+                    isDemo: !!p.is_demo,
                     dataPoints: [], // Don't send full data points in list view
                     totalDataPoints: p.data_count,
                     createdAt: p.created_at,
@@ -593,10 +595,25 @@ export function registerProjectRoutes(app) {
         }
     }
 
-    // Delete project
-    app.delete('/api/projects/:id', (req, res) => {
+    // Delete project (admin or project manager only)
+    app.delete('/api/projects/:id', requireAuth, (req, res) => {
         try {
             const { id } = req.params;
+            const user = req.user;
+
+            // Only admins or the project manager can delete
+            const project = db.prepare('SELECT manager_id FROM projects WHERE id = ?').get(id);
+            if (!project) {
+                return res.status(404).json({ error: 'Project not found' });
+            }
+
+            const isAdmin = user.roles.includes('admin');
+            const isManager = user.roles.includes('manager') && project.manager_id === user.id;
+
+            if (!isAdmin && !isManager) {
+                return res.status(403).json({ error: 'Forbidden' });
+            }
+
             const result = db.prepare('DELETE FROM projects WHERE id = ?').run(id);
 
             if (result.changes === 0) {
@@ -673,7 +690,7 @@ export function registerProjectRoutes(app) {
         }
     });
 
-    app.delete('/api/projects/:id/snapshots/:snapshotId', (req, res) => {
+    app.delete('/api/projects/:id/snapshots/:snapshotId', requireAuth, requireRole(['admin', 'manager']), (req, res) => {
         try {
             const { snapshotId } = req.params;
             db.prepare('DELETE FROM snapshots WHERE id = ?').run(snapshotId);

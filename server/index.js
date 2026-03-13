@@ -1,11 +1,14 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readFileSync } from 'fs';
-import { attachUser, requireRole, requireProjectRole, loadProject } from './middleware/auth.js';
+import { attachUser, requireAuth } from './middleware/auth.js';
 import { initDatabase } from './services/database.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { registerUserRoutes } from './routes/users.js';
@@ -24,9 +27,27 @@ initDatabase();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// Security headers
+app.use(helmet({
+    crossOriginEmbedderPolicy: false,  // needed for some asset loading
+    contentSecurityPolicy: false       // set separately if needed; avoid breaking existing UI
+}));
+
+app.use(cors({ credentials: true, origin: true }));
+
+app.use(cookieParser());
 app.use(express.json({ limit: '50mb' }));
 app.use(attachUser);
+
+// Rate limiting for auth endpoints
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 10,
+    message: { error: 'Too many login attempts, please try again later' },
+    standardHeaders: 'draft-7',
+    legacyHeaders: false
+});
+app.use('/api/auth/login', loginLimiter);
 
 // Register API routes
 registerProjectRoutes(app);
@@ -36,7 +57,7 @@ registerCommentRoutes(app);
 registerNotificationRoutes(app);
 
 // Legacy project param handler (for existing routes)
-app.param('id', async (req, _res, next, id) => {
+app.param('id', async (req, _res, next, _id) => {
     // Skip if already handled by new routes
     if (req.project !== undefined) {
         return next();
@@ -54,7 +75,7 @@ const getApiKey = (req, envVarName) => {
 };
 
 // OpenAI Proxy
-app.post('/api/openai/chat', async (req, res) => {
+app.post('/api/openai/chat', requireAuth, async (req, res) => {
     try {
         const apiKey = getApiKey(req, 'OPENAI_API_KEY');
         if (!apiKey) {
@@ -84,7 +105,7 @@ app.post('/api/openai/chat', async (req, res) => {
 });
 
 // Anthropic Proxy
-app.post('/api/anthropic/message', async (req, res) => {
+app.post('/api/anthropic/message', requireAuth, async (req, res) => {
     try {
         const apiKey = getApiKey(req, 'ANTHROPIC_API_KEY');
         if (!apiKey) {
@@ -115,7 +136,7 @@ app.post('/api/anthropic/message', async (req, res) => {
 });
 
 // Gemini Proxy
-app.post('/api/gemini/generate', async (req, res) => {
+app.post('/api/gemini/generate', requireAuth, async (req, res) => {
     try {
         const apiKey = getApiKey(req, 'GEMINI_API_KEY');
         if (!apiKey) {
@@ -152,7 +173,7 @@ app.post('/api/gemini/generate', async (req, res) => {
 });
 
 // SambaNova Proxy
-app.post('/api/sambanova/chat', async (req, res) => {
+app.post('/api/sambanova/chat', requireAuth, async (req, res) => {
     try {
         const apiKey = getApiKey(req, 'SAMBANOVA_API_KEY');
         if (!apiKey) {
@@ -182,7 +203,7 @@ app.post('/api/sambanova/chat', async (req, res) => {
 });
 
 // OpenRouter Proxy
-app.post('/api/openrouter/chat', async (req, res) => {
+app.post('/api/openrouter/chat', requireAuth, async (req, res) => {
     try {
         const apiKey = getApiKey(req, 'OPENROUTER_API_KEY');
         if (!apiKey) {
@@ -211,7 +232,7 @@ app.post('/api/openrouter/chat', async (req, res) => {
     }
 });
 
-app.get('/api/openrouter/models', async (req, res) => {
+app.get('/api/openrouter/models', requireAuth, async (req, res) => {
     try {
         const apiKey = getApiKey(req, 'OPENROUTER_API_KEY');
         if (!apiKey) {
@@ -236,7 +257,7 @@ app.get('/api/openrouter/models', async (req, res) => {
     }
 });
 
-app.get('/api/anthropic/models', async (req, res) => {
+app.get('/api/anthropic/models', requireAuth, async (req, res) => {
     try {
         const apiKey = getApiKey(req, 'ANTHROPIC_API_KEY');
         if (!apiKey) {
@@ -262,7 +283,7 @@ app.get('/api/anthropic/models', async (req, res) => {
     }
 });
 
-app.get('/api/openai/models', async (req, res) => {
+app.get('/api/openai/models', requireAuth, async (req, res) => {
     try {
         const apiKey = getApiKey(req, 'OPENAI_API_KEY');
         if (!apiKey) {
@@ -287,7 +308,7 @@ app.get('/api/openai/models', async (req, res) => {
     }
 });
 
-app.get('/api/gemini/models', async (req, res) => {
+app.get('/api/gemini/models', requireAuth, async (req, res) => {
     try {
         const apiKey = getApiKey(req, 'GEMINI_API_KEY');
         if (!apiKey) {
@@ -331,7 +352,7 @@ app.get('/api/gemini/models', async (req, res) => {
 });
 
 // SambaNova Models (for pricing/catalog lookup)
-app.get('/api/sambanova/models', async (req, res) => {
+app.get('/api/sambanova/models', requireAuth, async (req, res) => {
     try {
         const apiKey = getApiKey(req, 'SAMBANOVA_API_KEY');
         if (!apiKey) {
@@ -358,7 +379,7 @@ app.get('/api/sambanova/models', async (req, res) => {
 
 
 // Hugging Face dataset import proxy
-app.post('/api/huggingface/datasets/import', async (req, res) => {
+app.post('/api/huggingface/datasets/import', requireAuth, async (req, res) => {
     try {
         const dataset = String(req.body?.dataset || '').trim();
         const requestedConfig = String(req.body?.config || '').trim();

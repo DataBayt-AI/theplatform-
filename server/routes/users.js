@@ -1,5 +1,89 @@
 import { getDatabase } from '../services/database.js';
+import { generateToken } from '../middleware/auth.js';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+
+const ALLOWED_ROLES = ['admin', 'manager', 'annotator'];
+const BCRYPT_ROUNDS = 12;
+
+function isValidPassword(password) {
+    return typeof password === 'string' && password.length >= 5;
+}
+
+function sanitizeRoles(roles) {
+    if (!Array.isArray(roles)) return ['annotator'];
+    return roles.filter(r => ALLOWED_ROLES.includes(r));
+}
+
+const DEMO_XML_CONFIG = `<annotation-config>
+  <field id="sentiment" type="dropdown" required="true">
+    <label>Sentiment</label>
+    <options>
+      <option value="positive">Positive</option>
+      <option value="negative">Negative</option>
+      <option value="neutral">Neutral</option>
+    </options>
+  </field>
+</annotation-config>`;
+
+const DEMO_DATA_POINTS = [
+    { content: "The product quality is outstanding! It exceeded all my expectations.", original_annotation: "positive" },
+    { content: "I've been waiting for 3 weeks and still no delivery. Terrible service.", original_annotation: "negative" },
+    { content: "The package arrived on time. Nothing special, just standard quality.", original_annotation: "neutral" },
+    { content: "Absolutely love this! Best purchase I've made this year.", original_annotation: "positive" },
+    { content: "The item broke after two days of use. Very disappointing.", original_annotation: "negative" },
+    { content: "It does what it says on the box. Works as expected.", original_annotation: "neutral" },
+    { content: "Customer support was incredibly helpful and resolved my issue immediately.", original_annotation: "positive" },
+    { content: "The instructions were confusing and the setup took way too long.", original_annotation: "negative" },
+    { content: "Average product — nothing to complain about but nothing impressive either.", original_annotation: "neutral" },
+    { content: "Highly recommend! Great value for money and fast shipping.", original_annotation: "positive" },
+];
+
+/**
+ * Creates a demo practice project with sample data for a new user.
+ * The project is a sentiment analysis task so the user can explore the workspace.
+ */
+function createDemoProject(db, userId, username, roles) {
+    try {
+        const projectId = crypto.randomUUID();
+        const now = Date.now();
+        const isManagerOrAdmin = roles.includes('admin') || roles.includes('manager');
+
+        db.prepare(`
+            INSERT INTO projects (id, name, description, manager_id, xml_config, guidelines, is_demo, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `).run(
+            projectId,
+            'Practice Project — Sentiment Analysis',
+            'A sample project to help you get started. Practice accepting, rejecting, and editing AI-suggested sentiment labels on product reviews.',
+            isManagerOrAdmin ? userId : null,
+            DEMO_XML_CONFIG,
+            'Label each product review with the correct sentiment:\n- **Positive** — the customer is satisfied or happy\n- **Negative** — the customer is dissatisfied or unhappy\n- **Neutral** — the customer is neither positive nor negative\n\nYou can accept the AI suggestion, reject it, or edit it to the correct label.',
+            now,
+            now
+        );
+
+        // Assign user as annotator
+        db.prepare('INSERT INTO project_annotators (project_id, user_id) VALUES (?, ?)').run(projectId, userId);
+
+        // Initialize stats
+        db.prepare('INSERT INTO project_stats (project_id) VALUES (?)').run(projectId);
+
+        // Insert demo data points
+        const insertPoint = db.prepare(`
+            INSERT INTO data_points (id, project_id, content, type, original_annotation, status, created_at, updated_at)
+            VALUES (?, ?, ?, 'text', ?, 'pending', ?, ?)
+        `);
+        for (const point of DEMO_DATA_POINTS) {
+            insertPoint.run(crypto.randomUUID(), projectId, point.content, point.original_annotation, now, now);
+        }
+
+        console.log(`Created demo project for new user: ${username}`);
+    } catch (err) {
+        // Non-fatal — log but don't break user creation
+        console.error('Failed to create demo project for user:', err);
+    }
+}
 
 /**
  * Users API routes
@@ -58,7 +142,7 @@ export function registerUserRoutes(app) {
     });
 
     // Create user (admin only)
-    app.post('/api/users', (req, res) => {
+    app.post('/api/users', async (req, res) => {
         try {
             const currentUser = req.user;
             if (!currentUser?.roles?.includes('admin')) {
@@ -71,6 +155,15 @@ export function registerUserRoutes(app) {
                 return res.status(400).json({ error: 'Username and password are required' });
             }
 
+            if (!isValidPassword(password)) {
+                return res.status(400).json({ error: 'Password must be at least 5 characters' });
+            }
+
+            const sanitized = sanitizeRoles(roles);
+            if (sanitized.length === 0) {
+                return res.status(400).json({ error: 'At least one valid role is required' });
+            }
+
             // Check if username already exists
             const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
             if (existing) {
@@ -79,16 +172,19 @@ export function registerUserRoutes(app) {
 
             const id = crypto.randomUUID();
             const now = Date.now();
+            const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
             db.prepare(`
         INSERT INTO users (id, username, password, roles, must_change_password, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(id, username, password, JSON.stringify(roles), mustChangePassword ? 1 : 0, now, now);
+      `).run(id, username, passwordHash, JSON.stringify(sanitized), mustChangePassword ? 1 : 0, now, now);
+
+            createDemoProject(db, id, username, sanitized);
 
             res.status(201).json({
                 id,
                 username,
-                roles,
+                roles: sanitized,
                 mustChangePassword,
                 createdAt: now,
                 updatedAt: now
@@ -100,7 +196,7 @@ export function registerUserRoutes(app) {
     });
 
     // Update user
-    app.put('/api/users/:id', (req, res) => {
+    app.put('/api/users/:id', async (req, res) => {
         try {
             const currentUser = req.user;
             const { id } = req.params;
@@ -129,12 +225,17 @@ export function registerUserRoutes(app) {
             const values = [];
 
             if (password !== undefined) {
+                if (!isValidPassword(password)) {
+                    return res.status(400).json({ error: 'Password must be at least 5 characters' });
+                }
+                const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
                 updates.push('password = ?');
-                values.push(password);
+                values.push(passwordHash);
             }
             if (roles !== undefined && isAdmin) {
+                const sanitized = sanitizeRoles(roles);
                 updates.push('roles = ?');
-                values.push(JSON.stringify(roles));
+                values.push(JSON.stringify(sanitized));
             }
             if (mustChangePassword !== undefined) {
                 updates.push('must_change_password = ?');
@@ -185,7 +286,7 @@ export function registerUserRoutes(app) {
     });
 
     // Auth routes
-    app.post('/api/auth/login', (req, res) => {
+    app.post('/api/auth/login', async (req, res) => {
         try {
             const { username, password } = req.body;
 
@@ -195,15 +296,38 @@ export function registerUserRoutes(app) {
 
             const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
 
-            if (!user || user.password !== password) {
+            if (!user) {
                 return res.status(401).json({ error: 'Invalid username or password' });
             }
 
-            // Return user info (in a real app, you'd set a session/JWT)
+            let passwordValid = false;
+
+            // Migrate plaintext passwords on first login
+            if (!user.password.startsWith('$2')) {
+                // Legacy plaintext comparison
+                if (user.password === password) {
+                    passwordValid = true;
+                    // Re-hash and store securely
+                    const newHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+                    db.prepare('UPDATE users SET password = ?, updated_at = ? WHERE id = ?')
+                        .run(newHash, Date.now(), user.id);
+                }
+            } else {
+                passwordValid = await bcrypt.compare(password, user.password);
+            }
+
+            if (!passwordValid) {
+                return res.status(401).json({ error: 'Invalid username or password' });
+            }
+
+            const roles = JSON.parse(user.roles);
+            const token = generateToken({ id: user.id, username: user.username, roles });
+
             res.json({
+                token,
                 id: user.id,
                 username: user.username,
-                roles: JSON.parse(user.roles),
+                roles,
                 mustChangePassword: !!user.must_change_password
             });
         } catch (error) {
@@ -212,7 +336,7 @@ export function registerUserRoutes(app) {
         }
     });
 
-    // Get current user (based on header auth for now)
+    // Get current user (validates JWT)
     app.get('/api/auth/me', (req, res) => {
         if (!req.user) {
             return res.status(401).json({ error: 'Not authenticated' });
@@ -248,6 +372,7 @@ export function registerUserRoutes(app) {
                 expiresInDays = 0  // 0 = never expires
             } = req.body;
 
+            const sanitized = sanitizeRoles(roles);
             const id = crypto.randomUUID();
             const token = crypto.randomUUID().replace(/-/g, '');  // Clean token without dashes
             const now = Date.now();
@@ -256,13 +381,13 @@ export function registerUserRoutes(app) {
             db.prepare(`
                 INSERT INTO invite_tokens (id, token, created_by, default_roles, max_uses, current_uses, expires_at, is_active, created_at)
                 VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?)
-            `).run(id, token, currentUser.id, JSON.stringify(roles), maxUses, expiresAt, now);
+            `).run(id, token, currentUser.id, JSON.stringify(sanitized), maxUses, expiresAt, now);
 
             res.status(201).json({
                 id,
                 token,
                 inviteUrl: `/signup?token=${token}`,
-                roles,
+                roles: sanitized,
                 maxUses,
                 expiresAt,
                 createdAt: now
@@ -282,9 +407,9 @@ export function registerUserRoutes(app) {
             }
 
             const tokens = db.prepare(`
-                SELECT t.*, u.username as created_by_name 
-                FROM invite_tokens t 
-                LEFT JOIN users u ON t.created_by = u.id 
+                SELECT t.*, u.username as created_by_name
+                FROM invite_tokens t
+                LEFT JOIN users u ON t.created_by = u.id
                 ORDER BY t.created_at DESC
             `).all();
 
@@ -341,12 +466,16 @@ export function registerUserRoutes(app) {
     });
 
     // Signup with invite token (public)
-    app.post('/api/auth/signup', (req, res) => {
+    app.post('/api/auth/signup', async (req, res) => {
         try {
             const { username, password, token } = req.body;
 
             if (!username || !password || !token) {
                 return res.status(400).json({ error: 'Username, password, and invite token are required' });
+            }
+
+            if (!isValidPassword(password)) {
+                return res.status(400).json({ error: 'Password must be at least 5 characters' });
             }
 
             // Validate token
@@ -378,17 +507,22 @@ export function registerUserRoutes(app) {
             const userId = crypto.randomUUID();
             const now = Date.now();
             const roles = JSON.parse(invite.default_roles);
+            const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
             db.prepare(`
                 INSERT INTO users (id, username, password, roles, must_change_password, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 0, ?, ?)
-            `).run(userId, username, password, invite.default_roles, now, now);
+            `).run(userId, username, passwordHash, invite.default_roles, now, now);
 
             // Increment invite usage
             db.prepare('UPDATE invite_tokens SET current_uses = current_uses + 1 WHERE id = ?').run(invite.id);
 
-            // Return user info
+            createDemoProject(db, userId, username, roles);
+
+            const jwtToken = generateToken({ id: userId, username, roles });
+
             res.status(201).json({
+                token: jwtToken,
                 id: userId,
                 username,
                 roles,
