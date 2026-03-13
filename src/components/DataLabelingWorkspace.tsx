@@ -266,8 +266,8 @@ const DataLabelingWorkspace = () => {
   const [showHFDialog, setShowHFDialog] = useState(false);
   const [showPublishSuccessDialog, setShowPublishSuccessDialog] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState('');
-  const [hfUsername, setHfUsername] = useState(() => localStorage.getItem('databayt-hf-username') || '');
-  const [hfToken, setHfToken] = useState(() => localStorage.getItem('databayt-hf-token') || '');
+  const [hfUsername, setHfUsername] = useState(() => sessionStorage.getItem('databayt-hf-username') || '');
+  const [hfToken, setHfToken] = useState(() => sessionStorage.getItem('databayt-hf-token') || '');
   const [hfDatasetName, setHfDatasetName] = useState('');
   const [showHFImportDialog, setShowHFImportDialog] = useState(false);
   const [isImportingHF, setIsImportingHF] = useState(false);
@@ -2329,8 +2329,8 @@ const DataLabelingWorkspace = () => {
 
   // Save HF credentials to localStorage
   useEffect(() => {
-    if (hfUsername) localStorage.setItem('databayt-hf-username', hfUsername);
-    if (hfToken) localStorage.setItem('databayt-hf-token', hfToken);
+    if (hfUsername) sessionStorage.setItem('databayt-hf-username', hfUsername);
+    if (hfToken) sessionStorage.setItem('databayt-hf-token', hfToken);
   }, [hfUsername, hfToken]);
 
 
