@@ -7,8 +7,9 @@ import bcrypt from 'bcryptjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Database file location
-const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '..', 'data');
+// Database file location — defaults to ./data/ relative to where the process is started,
+// so global npm installs store data in the user's working directory, not inside node_modules.
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'databayt.sqlite');
 
 let db = null;
