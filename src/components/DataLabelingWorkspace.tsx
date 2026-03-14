@@ -30,6 +30,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { UserMenu } from "@/components/UserMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/NotificationBell";
+import { useTutorial, hasSeenTutorial } from "@/components/Tutorial/useTutorial";
+import { getWorkspaceSteps } from "@/components/Tutorial/tourSteps";
 import {
   Upload,
   Settings,
@@ -71,7 +73,8 @@ import {
   Book,
   Database,
   MessageSquare,
-  Trash2
+  Trash2,
+  HelpCircle
 } from "lucide-react";
 import { VersionHistory } from "@/components/VersionHistory";
 import { GuidelinesDialog } from "@/components/GuidelinesDialog";
@@ -188,6 +191,25 @@ const DataLabelingWorkspace = () => {
   const canProcessAI = isAdmin || isManagerForProject;
   const canExport = isAdmin || isManagerForProject;
   const accessDenied = !!projectAccess && !!currentUser && !canViewProject;
+
+  const workspaceTutorialSteps = getWorkspaceSteps(canUpload);
+  const { startTour: startWorkspaceTour } = useTutorial({
+    userId: currentUser?.id ?? "guest",
+    steps: workspaceTutorialSteps,
+  });
+
+  useEffect(() => {
+    if (!currentUser || dataPoints.length === 0) return;
+    const wsKey = `tutorial_seen_v1_ws_${currentUser.id}`;
+    if (!localStorage.getItem(wsKey)) {
+      const timer = setTimeout(() => {
+        localStorage.setItem(wsKey, "1");
+        startWorkspaceTour();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [currentUser, dataPoints.length]);
+
   const logProjectAction = async (action: 'upload' | 'ai_process' | 'export', details?: string) => {
     if (!projectId || !currentUser) return;
     try {
@@ -244,8 +266,8 @@ const DataLabelingWorkspace = () => {
   const [showHFDialog, setShowHFDialog] = useState(false);
   const [showPublishSuccessDialog, setShowPublishSuccessDialog] = useState(false);
   const [publishedUrl, setPublishedUrl] = useState('');
-  const [hfUsername, setHfUsername] = useState(() => localStorage.getItem('databayt-hf-username') || '');
-  const [hfToken, setHfToken] = useState(() => localStorage.getItem('databayt-hf-token') || '');
+  const [hfUsername, setHfUsername] = useState(() => sessionStorage.getItem('databayt-hf-username') || '');
+  const [hfToken, setHfToken] = useState(() => sessionStorage.getItem('databayt-hf-token') || '');
   const [hfDatasetName, setHfDatasetName] = useState('');
   const [showHFImportDialog, setShowHFImportDialog] = useState(false);
   const [isImportingHF, setIsImportingHF] = useState(false);
@@ -2307,8 +2329,8 @@ const DataLabelingWorkspace = () => {
 
   // Save HF credentials to localStorage
   useEffect(() => {
-    if (hfUsername) localStorage.setItem('databayt-hf-username', hfUsername);
-    if (hfToken) localStorage.setItem('databayt-hf-token', hfToken);
+    if (hfUsername) sessionStorage.setItem('databayt-hf-username', hfUsername);
+    if (hfToken) sessionStorage.setItem('databayt-hf-token', hfToken);
   }, [hfUsername, hfToken]);
 
 
@@ -2476,7 +2498,7 @@ const DataLabelingWorkspace = () => {
 
             <div className="flex items-center gap-4">
               {dataPoints.length > 0 && (
-                <div className="text-right">
+                <div id="tutorial-progress" className="text-right">
                   <p className="text-sm font-medium text-foreground">{globalCompletedCount} completed</p>
                   <div className="flex items-center gap-2">
                     <Progress value={progress} className="w-32 h-2" />
@@ -2601,6 +2623,7 @@ const DataLabelingWorkspace = () => {
                   <History className="h-5 w-5" />
                 </Button>
                 <Button
+                  id="tutorial-guidelines-btn"
                   variant="ghost"
                   size="icon"
                   className="mr-1"
@@ -3227,6 +3250,7 @@ const DataLabelingWorkspace = () => {
                 {dataPoints.length > 0 && viewMode === 'record' && (
                   <>
                     <Button
+                      id="tutorial-nav-prev"
                       variant="outline"
                       size="sm"
                       onClick={navigatePrevious}
@@ -3235,6 +3259,7 @@ const DataLabelingWorkspace = () => {
                       <ChevronLeft className="w-4 h-4" />
                     </Button>
                     <Button
+                      id="tutorial-nav-next"
                       variant="outline"
                       size="sm"
                       onClick={navigateNext}
@@ -3268,7 +3293,7 @@ const DataLabelingWorkspace = () => {
                 {viewMode === 'record' && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={() => setShowShortcuts(true)}>
+                      <Button id="tutorial-shortcuts-btn" variant="outline" size="sm" onClick={() => setShowShortcuts(true)}>
                         <Keyboard className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
@@ -3278,6 +3303,20 @@ const DataLabelingWorkspace = () => {
 
               </div>
               <div className="ml-2 flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      id="tutorial-workspace-help-btn"
+                      variant="ghost"
+                      size="icon"
+                      onClick={startWorkspaceTour}
+                      title="Start tutorial"
+                    >
+                      <HelpCircle className="w-5 h-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Start Tutorial</TooltipContent>
+                </Tooltip>
                 <NotificationBell />
                 <ThemeToggle />
                 <UserMenu />
@@ -4272,7 +4311,7 @@ const DataLabelingWorkspace = () => {
               </div>
 
               {viewMode === 'record' ? (
-                <div className="w-80 flex-shrink-0">
+                <div id="tutorial-annotation-form" className="w-80 flex-shrink-0">
                   <Card className="p-6 space-y-6 sticky top-6">
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-5 h-5 text-purple-500" />

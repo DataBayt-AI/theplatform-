@@ -2,12 +2,14 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import bcrypt from 'bcryptjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Database file location
-const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '..', 'data');
+// Database file location — defaults to ./data/ relative to where the process is started,
+// so global npm installs store data in the user's working directory, not inside node_modules.
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'databayt.sqlite');
 
 let db = null;
@@ -278,6 +280,7 @@ function createSchema() {
     `ALTER TABLE data_points ADD COLUMN assignments TEXT DEFAULT '[]'`,
     `ALTER TABLE projects ADD COLUMN iaa_config TEXT`,
     `ALTER TABLE projects ADD COLUMN guidelines TEXT`,
+    `ALTER TABLE projects ADD COLUMN is_demo INTEGER DEFAULT 0`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (_) { /* column already exists */ }
@@ -287,11 +290,12 @@ function createSchema() {
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
   if (userCount.count === 0) {
     const now = Date.now();
+    const defaultHash = bcrypt.hashSync('admin', 12);
     db.prepare(`
       INSERT INTO users (id, username, password, roles, must_change_password, created_at, updated_at)
-      VALUES (?, 'admin', 'admin', '["admin","manager","annotator"]', 0, ?, ?)
-    `).run(crypto.randomUUID(), now, now);
-    console.log('Created default admin user (username: admin, password: admin)');
+      VALUES (?, 'admin', ?, '["admin","manager","annotator"]', 1, ?, ?)
+    `).run(crypto.randomUUID(), defaultHash, now, now);
+    console.log('Created default admin user (username: admin, password: admin) — change this password immediately!');
   }
 }
 

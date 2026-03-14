@@ -1,0 +1,236 @@
+/* ============================================================
+   DataBayt.AI — driver.js Tour Popover Overrides
+   NOTE: Never use "all: unset !important" on .driver-popover —
+   it would cancel driver.js's inline top/left positioning.
+   ============================================================ */
+
+/* ---------- Overlay ---------- */
+.driver-overlay {
+  /* no backdrop-filter — it blurs the highlighted element in the spotlight */
+}
+
+/* ---------- Popover shell ---------- */
+.driver-popover {
+  padding: 0 !important;
+  border-radius: 0.875rem !important;
+  overflow: hidden !important;
+  min-width: 320px !important;
+  max-width: 380px !important;
+  background-color: hsl(var(--card)) !important;
+  color: hsl(var(--card-foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  box-shadow:
+    0 24px 48px -8px hsl(240 65% 55% / 0.16),
+    0 8px 20px -4px hsl(220 30% 5% / 0.10) !important;
+  font-family: inherit !important;
+  animation: tour-slide-in 0.25s cubic-bezier(0.34, 1.2, 0.64, 1) both !important;
+}
+
+@keyframes tour-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ---------- Gradient accent strip at the top ---------- */
+.driver-popover::before {
+  content: "" !important;
+  display: block !important;
+  height: 3px !important;
+  background: linear-gradient(90deg, hsl(240 65% 55%), hsl(270 60% 60%)) !important;
+}
+
+/* ---------- Title ---------- */
+.driver-popover-title {
+  display: block !important;
+  padding: 1rem 1.25rem 0 1.25rem !important;
+  margin: 0 !important;
+  font-size: 0.9375rem !important;
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
+  color: hsl(var(--foreground)) !important;
+  font-family: inherit !important;
+}
+
+/* ---------- Description ---------- */
+.driver-popover-description {
+  padding: 0.45rem 1.25rem 0 1.25rem !important;
+  margin: 0 !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.65 !important;
+  color: hsl(var(--muted-foreground)) !important;
+  font-family: inherit !important;
+}
+
+.driver-popover-description b,
+.driver-popover-description strong {
+  color: hsl(var(--foreground)) !important;
+  font-weight: 600 !important;
+}
+
+.driver-popover-description kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1em 0.45em;
+  border-radius: 0.25rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+  font-size: 0.75em;
+  font-family: ui-monospace, monospace;
+  box-shadow: 0 1px 0 hsl(var(--border));
+}
+
+/* ---------- Footer ---------- */
+.driver-popover-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0.75rem 1.25rem 1rem 1.25rem !important;
+  margin-top: 0.875rem !important;
+  border-top: 1px solid hsl(var(--border)) !important;
+}
+
+/* ---------- Step progress pill ---------- */
+.driver-popover-progress-text {
+  font-size: 0.6875rem !important;
+  font-weight: 500 !important;
+  color: hsl(var(--muted-foreground)) !important;
+  background: hsl(var(--muted)) !important;
+  padding: 0.2rem 0.55rem !important;
+  border-radius: 9999px !important;
+  letter-spacing: 0.02em !important;
+  font-family: inherit !important;
+}
+
+/* ---------- Navigation button row ---------- */
+.driver-popover-navigation-btns {
+  display: flex !important;
+  gap: 0.375rem !important;
+  flex-grow: 1 !important;
+  justify-content: flex-end !important;
+}
+
+/* ---------- Base button reset ---------- */
+.driver-popover-footer button {
+  all: unset !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  font-family: inherit !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+  padding: 0.45rem 0.9rem !important;
+  border-radius: 0.5rem !important;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, color 0.15s ease !important;
+  white-space: nowrap !important;
+  user-select: none !important;
+}
+
+/* ---------- Prev — outline ghost ---------- */
+.driver-popover-prev-btn {
+  color: hsl(var(--muted-foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  background: transparent !important;
+}
+
+.driver-popover-prev-btn:hover {
+  background: hsl(var(--muted)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+/* ---------- Next / Done — brand gradient ---------- */
+.driver-popover-next-btn {
+  background: linear-gradient(135deg, hsl(240 65% 55%), hsl(270 60% 60%)) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 2px 8px hsl(240 65% 55% / 0.35) !important;
+}
+
+.driver-popover-next-btn:hover {
+  background: linear-gradient(135deg, hsl(240 65% 48%), hsl(270 60% 53%)) !important;
+  box-shadow: 0 4px 14px hsl(240 65% 55% / 0.45) !important;
+  transform: translateY(-1px) !important;
+}
+
+.driver-popover-next-btn:active {
+  transform: translateY(0) !important;
+}
+
+/* ---------- Disabled ---------- */
+.driver-popover-btn-disabled {
+  opacity: 0.38 !important;
+  pointer-events: none !important;
+}
+
+/* ---------- Close (×) button ---------- */
+.driver-popover-close-btn {
+  all: unset !important;
+  position: absolute !important;
+  top: 0.55rem !important;
+  right: 0.65rem !important;
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 0.375rem !important;
+  font-size: 1rem !important;
+  cursor: pointer !important;
+  color: hsl(var(--muted-foreground)) !important;
+  transition: background 0.15s, color 0.15s !important;
+  z-index: 1 !important;
+}
+
+.driver-popover-close-btn:hover {
+  background: hsl(var(--muted)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+/* ---------- Arrow ---------- */
+.driver-popover-arrow {
+  border-width: 6px !important;
+}
+
+.driver-popover-arrow-side-top {
+  border-top-color: hsl(var(--card)) !important;
+  border-right-color: transparent !important;
+  border-bottom-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+.driver-popover-arrow-side-bottom {
+  border-top-color: transparent !important;
+  border-right-color: transparent !important;
+  border-bottom-color: hsl(var(--card)) !important;
+  border-left-color: transparent !important;
+}
+
+.driver-popover-arrow-side-left {
+  border-top-color: transparent !important;
+  border-right-color: transparent !important;
+  border-bottom-color: transparent !important;
+  border-left-color: hsl(var(--card)) !important;
+}
+
+.driver-popover-arrow-side-right {
+  border-top-color: transparent !important;
+  border-right-color: hsl(var(--card)) !important;
+  border-bottom-color: transparent !important;
+  border-left-color: transparent !important;
+}
+
+/* ---------- Dark mode ---------- */
+.dark .driver-popover {
+  box-shadow:
+    0 24px 48px -8px hsl(0 0% 0% / 0.5),
+    0 0 0 1px hsl(var(--border)) !important;
+}

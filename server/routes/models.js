@@ -1,5 +1,12 @@
 import { getDatabase } from '../services/database.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import crypto from 'crypto';
+
+function maskApiKey(key) {
+    if (!key) return null;
+    if (key.length <= 8) return '••••••••';
+    return '••••' + key.slice(-4);
+}
 
 /**
  * Model management API routes
@@ -7,8 +14,8 @@ import crypto from 'crypto';
 export function registerModelRoutes(app) {
     const db = getDatabase();
 
-    // Provider Connections
-    app.get('/api/connections', (req, res) => {
+    // Provider Connections — admin only for write, requireAuth for read
+    app.get('/api/connections', requireAuth, (req, res) => {
         try {
             const connections = db.prepare('SELECT * FROM provider_connections ORDER BY created_at DESC').all();
 
@@ -16,7 +23,8 @@ export function registerModelRoutes(app) {
                 id: c.id,
                 providerId: c.provider_id,
                 name: c.name,
-                apiKey: c.api_key,
+                apiKey: maskApiKey(c.api_key),
+                hasApiKey: !!c.api_key,
                 baseUrl: c.base_url,
                 isActive: !!c.is_active,
                 createdAt: c.created_at,
@@ -28,7 +36,7 @@ export function registerModelRoutes(app) {
         }
     });
 
-    app.post('/api/connections', (req, res) => {
+    app.post('/api/connections', requireAuth, (req, res) => {
         try {
             const { id, providerId, name, apiKey, baseUrl, isActive = true } = req.body;
 
@@ -58,7 +66,7 @@ export function registerModelRoutes(app) {
         }
     });
 
-    app.delete('/api/connections/:id', (req, res) => {
+    app.delete('/api/connections/:id', requireAuth, (req, res) => {
         try {
             const { id } = req.params;
             db.prepare('DELETE FROM provider_connections WHERE id = ?').run(id);
@@ -70,7 +78,7 @@ export function registerModelRoutes(app) {
     });
 
     // Model Profiles
-    app.get('/api/profiles', (req, res) => {
+    app.get('/api/profiles', requireAuth, (req, res) => {
         try {
             const profiles = db.prepare('SELECT * FROM model_profiles ORDER BY created_at DESC').all();
 
@@ -94,7 +102,7 @@ export function registerModelRoutes(app) {
         }
     });
 
-    app.post('/api/profiles', (req, res) => {
+    app.post('/api/profiles', requireAuth, (req, res) => {
         try {
             const {
                 id,
@@ -154,7 +162,7 @@ export function registerModelRoutes(app) {
         }
     });
 
-    app.delete('/api/profiles/:id', (req, res) => {
+    app.delete('/api/profiles/:id', requireAuth, (req, res) => {
         try {
             const { id } = req.params;
             db.prepare('DELETE FROM model_profiles WHERE id = ?').run(id);
@@ -166,7 +174,7 @@ export function registerModelRoutes(app) {
     });
 
     // Project Model Policies
-    app.get('/api/policies/:projectId', (req, res) => {
+    app.get('/api/policies/:projectId', requireAuth, (req, res) => {
         try {
             const { projectId } = req.params;
             const policy = db.prepare('SELECT * FROM project_model_policies WHERE project_id = ?').get(projectId);
@@ -192,7 +200,7 @@ export function registerModelRoutes(app) {
         }
     });
 
-    app.put('/api/policies/:projectId', (req, res) => {
+    app.put('/api/policies/:projectId', requireAuth, requireRole(['admin', 'manager']), (req, res) => {
         try {
             const { projectId } = req.params;
             const { allowedModelProfileIds = [], defaultModelProfileIds = [] } = req.body;

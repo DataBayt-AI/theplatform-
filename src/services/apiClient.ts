@@ -18,31 +18,45 @@ export interface AppNotification {
 
 const API_BASE = '/api';
 
+// Module-level token store — set by AuthContext after login
+let _authToken: string | null = null;
+
+export function setAuthToken(token: string | null): void {
+    _authToken = token;
+}
+
+export function getAuthToken(): string | null {
+    return _authToken;
+}
+
 async function request<T>(
     endpoint: string,
     options: RequestInit = {}
 ): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
 
-    // Get current user from localStorage for auth headers
-    const sessionData = localStorage.getItem('databayt_session');
-    const session = sessionData ? JSON.parse(sessionData) : null;
-
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...(options.headers as Record<string, string>),
     };
 
-    // Add auth headers if session exists
-    if (session?.id) {
-        headers['x-user-id'] = session.id;
-        headers['x-user-role'] = session.roles?.[0] || 'annotator';
+    // Attach JWT Bearer token if available
+    if (_authToken) {
+        headers['Authorization'] = `Bearer ${_authToken}`;
     }
 
     const response = await fetch(url, {
         ...options,
         headers,
+        credentials: 'include',
     });
+
+    if (response.status === 401) {
+        // Token expired or invalid — clear stored token
+        _authToken = null;
+        sessionStorage.removeItem('databayt_token');
+        throw new Error('Session expired. Please log in again.');
+    }
 
     if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Request failed' }));
