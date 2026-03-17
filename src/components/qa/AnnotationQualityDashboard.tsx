@@ -4,8 +4,10 @@ import { Loader2, Users, Zap, Edit3 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import type { ChartConfig } from "@/components/ui/chart";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { apiClient } from "@/services/apiClient";
 import type { AnnotatorQualityStats, AnnotatorStatsResponse } from "@/types/data";
+import { IAADashboard } from "@/components/qa/IAADashboard";
 
 interface Props {
     projectId: string;
@@ -83,7 +85,16 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
     }));
 
     return (
-        <div className="p-6 space-y-6">
+        <Tabs defaultValue="annotators" className="p-6">
+        <TabsList className="mb-6">
+            <TabsTrigger value="annotators">Annotator Stats</TabsTrigger>
+            <TabsTrigger value="iaa">IAA</TabsTrigger>
+        </TabsList>
+        <TabsContent value="iaa">
+            <IAADashboard projectId={projectId} />
+        </TabsContent>
+        <TabsContent value="annotators">
+        <div className="space-y-6">
             {/* Summary cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Card>
@@ -204,5 +215,7 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                 </CardContent>
             </Card>
         </div>
+        </TabsContent>
+        </Tabs>
     );
 }
