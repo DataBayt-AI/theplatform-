@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, ExternalLink, Trash2, Save, Upload, AlertTriangle } from "lucide-react";
+import { ArrowLeft, ExternalLink, Trash2, Save, Upload, AlertTriangle, Layers, Code2, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,6 +27,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { projectService } from "@/services/projectService";
 import { parseAnnotationConfigXML } from "@/services/xmlConfigService";
 import apiClient from "@/services/apiClient";
+import { AnnotationFormPreview } from "@/components/AnnotationFormPreview";
+import { TemplatePickerModal } from "@/components/TemplatePickerModal";
+import { FormBuilder } from "@/components/FormBuilder";
 import { toast } from "@/components/ui/use-toast";
 import type { Project } from "@/types/data";
 
@@ -53,6 +56,8 @@ export default function ProjectSettings() {
     const [iaaAnnotatorsPerItem, setIaaAnnotatorsPerItem] = useState(2);
 
     const xmlFileRef = useRef<HTMLInputElement>(null);
+    const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+    const [builderMode, setBuilderMode] = useState<'visual' | 'xml'>('visual');
 
     const isAdmin = currentUser?.roles?.includes("admin");
 
@@ -314,26 +319,122 @@ export default function ProjectSettings() {
                     </CardContent>
                 </Card>
 
-                {/* 4 — Annotation Form (XML) */}
+                {/* 4 — Annotation Form (XML + Live Preview) */}
+                <TemplatePickerModal
+                    open={showTemplatePicker}
+                    onClose={() => setShowTemplatePicker(false)}
+                    onApply={xml => { setXmlConfig(xml); setXmlError(""); }}
+                    currentXml={xmlConfig}
+                />
                 <Card>
                     <CardHeader>
-                        <CardTitle>Annotation Form</CardTitle>
-                        <CardDescription>
-                            XML configuration for the custom annotation form shown to annotators.
-                            Leave empty to use the default form.
-                        </CardDescription>
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <CardTitle>Annotation Form</CardTitle>
+                                        <CardDescription>
+                                    XML configuration for the custom annotation form shown to annotators.
+                                    Leave empty to use the default form.
+                                </CardDescription>
+                            </div>
+                            <Button variant="outline" size="sm" onClick={() => setShowTemplatePicker(true)}>
+                                <Layers className="w-4 h-4 mr-1.5" />
+                                Use Template
+                            </Button>
+                        </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        <Textarea
-                            value={xmlConfig}
-                            onChange={e => { setXmlConfig(e.target.value); setXmlError(""); }}
-                            rows={10}
-                            className="font-mono text-sm"
-                            placeholder="<annotation-config>&#10;  <!-- paste your XML here -->&#10;</annotation-config>"
-                        />
-                        {xmlError && (
-                            <p className="text-sm text-destructive">{xmlError}</p>
+                        {/* Mode toggle */}
+                        <div className="flex items-center gap-1 rounded-md border w-fit p-0.5">
+                            <Button
+                                variant={builderMode === 'visual' ? 'secondary' : 'ghost'}
+                                size="sm"
+                                className="h-7 text-xs gap-1.5"
+                                onClick={() => {
+                                    if (builderMode === 'xml' && xmlConfig.trim()) {
+                                        try {
+                                            // Validate XML before switching to visual
+                                            parseAnnotationConfigXML(xmlConfig);
+                                        } catch {
+                                            toast({ title: "Cannot switch to Visual Builder", description: "Fix the XML error first.", variant: "destructive" });
+                                            return;
+                                        }
+                                    }
+                                    setBuilderMode('visual');
+                                }}
+                            >
+                                <Eye className="w-3.5 h-3.5" /> Visual
+                            </Button>
+                            <Button
+                                variant={builderMode === 'xml' ? 'secondary' : 'ghost'}
+                                size="sm"
+                                className="h-7 text-xs gap-1.5"
+                                onClick={() => setBuilderMode('xml')}
+                            >
+                                <Code2 className="w-3.5 h-3.5" /> XML
+                            </Button>
+                        </div>
+
+                        {builderMode === 'visual' ? (
+                            /* Visual builder + preview side-by-side on desktop */
+                            <div className="hidden md:grid md:grid-cols-2 md:gap-6">
+                                <div className="space-y-3">
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Builder</p>
+                                    <FormBuilder
+                                        xmlConfig={xmlConfig}
+                                        onChange={xml => { setXmlConfig(xml); setXmlError(""); }}
+                                    />
+                                </div>
+                                <div className="space-y-3">
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Preview</p>
+                                    <AnnotationFormPreview xmlConfig={xmlConfig} className="min-h-[200px]" />
+                                </div>
+                            </div>
+                        ) : (
+                            /* XML editor + preview side-by-side on desktop */
+                            <div className="hidden md:grid md:grid-cols-2 md:gap-6">
+                                <div className="space-y-3">
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">XML Editor</p>
+                                    <Textarea
+                                        value={xmlConfig}
+                                        onChange={e => { setXmlConfig(e.target.value); setXmlError(""); }}
+                                        rows={12}
+                                        className="font-mono text-sm"
+                                        placeholder="<annotation-config>&#10;  <!-- paste your XML here -->&#10;</annotation-config>"
+                                    />
+                                    {xmlError && <p className="text-sm text-destructive">{xmlError}</p>}
+                                </div>
+                                <div className="space-y-3">
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Preview</p>
+                                    <AnnotationFormPreview xmlConfig={xmlConfig} className="min-h-[272px]" />
+                                </div>
+                            </div>
                         )}
+
+                        {/* Mobile: always stacked */}
+                        <div className="md:hidden space-y-3">
+                            {builderMode === 'visual' ? (
+                                <FormBuilder
+                                    xmlConfig={xmlConfig}
+                                    onChange={xml => { setXmlConfig(xml); setXmlError(""); }}
+                                />
+                            ) : (
+                                <>
+                                    <Textarea
+                                        value={xmlConfig}
+                                        onChange={e => { setXmlConfig(e.target.value); setXmlError(""); }}
+                                        rows={10}
+                                        className="font-mono text-sm"
+                                        placeholder="<annotation-config>&#10;  <!-- paste your XML here -->&#10;</annotation-config>"
+                                    />
+                                    {xmlError && <p className="text-sm text-destructive">{xmlError}</p>}
+                                </>
+                            )}
+                            <div className="space-y-1.5">
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Preview</p>
+                                <AnnotationFormPreview xmlConfig={xmlConfig} />
+                            </div>
+                        </div>
+
                         <div className="flex items-center justify-between">
                             <Button variant="outline" size="sm" onClick={() => xmlFileRef.current?.click()}>
                                 <Upload className="w-4 h-4 mr-1.5" />
