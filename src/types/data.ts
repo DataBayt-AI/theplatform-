@@ -171,6 +171,37 @@ export interface AnnotatorQualityStats {
     lastAnnotatedAt: number | null;
 }
 
+export interface IAAItemScore {
+    dataPointId: string;
+    contentPreview: string;
+    annotatorCount: number;
+    agreementScore: number;    // 0–1
+    annotations: Array<{ annotatorId: string; annotatorName: string; value: string }>;
+    isLowAgreement: boolean;
+}
+
+export interface IAAStats {
+    projectId: string;
+    threshold: number;
+    overallScore: number | null;
+    totalIAAItems: number;
+    itemsWithEnoughAnnotations: number;
+    lowAgreementCount: number;
+    items: IAAItemScore[];
+}
+
+
+export interface TaskTemplate {
+    id: string;
+    name: string;
+    description?: string;
+    category: string;
+    xmlConfig: string;
+    isGlobal: boolean;
+    createdBy?: string;
+    createdAt: number;
+}
+
 export interface AnnotatorStatsResponse {
     projectId: string;
     annotators: AnnotatorQualityStats[];

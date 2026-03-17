@@ -281,9 +281,25 @@ function createSchema() {
     `ALTER TABLE projects ADD COLUMN iaa_config TEXT`,
     `ALTER TABLE projects ADD COLUMN guidelines TEXT`,
     `ALTER TABLE projects ADD COLUMN is_demo INTEGER DEFAULT 0`,
+    // Task templates
+    `CREATE TABLE IF NOT EXISTS task_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      category TEXT NOT NULL DEFAULT 'Custom',
+      xml_config TEXT NOT NULL,
+      is_global INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_task_templates_global ON task_templates(is_global)`,
+    // QA queue columns
+    `ALTER TABLE data_points ADD COLUMN qa_status TEXT DEFAULT 'pending_review'`,
+    `ALTER TABLE data_points ADD COLUMN qa_reviewer_id TEXT`,
   ];
   for (const sql of migrations) {
-    try { db.exec(sql); } catch (_) { /* column already exists */ }
+    try { db.exec(sql); } catch (_) { /* already exists */ }
   }
 
   // Seed default admin user if no users exist

@@ -3,7 +3,7 @@
  */
 
 import { ProjectIAAConfig } from "@/types/data";
-import type { ProjectDataStatusCounts, AnnotatorStatsResponse } from "@/types/data";
+import type { ProjectDataStatusCounts, AnnotatorStatsResponse, TaskTemplate, IAAStats } from "@/types/data";
 
 export interface AppNotification {
     id: string;
@@ -305,6 +305,21 @@ export const apiClient = {
         delete: (id: string) =>
             request<{ success: boolean }>(`/notifications/${id}`, { method: 'DELETE' }),
     },
+
+    // Task Templates
+    templates: {
+        getAll: () => request<TaskTemplate[]>('/templates'),
+        create: (data: { name: string; description?: string; category?: string; xmlConfig: string }) =>
+            request<TaskTemplate>('/templates', { method: 'POST', body: JSON.stringify(data) }),
+        delete: (id: string) => request<{ success: boolean }>(`/templates/${id}`, { method: 'DELETE' }),
+    },
+
+    // IAA stats
+    iaa: {
+        getStats: (projectId: string, threshold?: number) =>
+            request<IAAStats>(`/projects/${projectId}/iaa${threshold !== undefined ? `?threshold=${threshold}` : ''}`),
+    },
+
 
     // Hugging Face dataset import
     huggingFace: {
