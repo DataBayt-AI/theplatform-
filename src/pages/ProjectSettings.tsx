@@ -248,78 +248,7 @@ export default function ProjectSettings() {
                     </CardContent>
                 </Card>
 
-                {/* 2 — Team */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Team</CardTitle>
-                        <CardDescription>Assign a manager and select annotators for this project.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                        {isAdmin && (
-                            <div className="space-y-1.5">
-                                <Label>Manager</Label>
-                                <Select value={managerId ?? ""} onValueChange={v => setManagerId(v || null)}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select manager…" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {adminUsers.map(u => (
-                                            <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        )}
-                        <div className="space-y-1.5">
-                            <Label>Annotators</Label>
-                            <div className="rounded-md border divide-y max-h-56 overflow-y-auto">
-                                {annotatorUsers.length === 0 && (
-                                    <p className="text-sm text-muted-foreground p-3">No annotator accounts found.</p>
-                                )}
-                                {annotatorUsers.map(u => (
-                                    <label key={u.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 cursor-pointer">
-                                        <Checkbox
-                                            checked={annotatorIds.includes(u.id)}
-                                            onCheckedChange={() => toggleAnnotator(u.id)}
-                                        />
-                                        <span className="text-sm">{u.username}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="flex justify-end">
-                            <Button size="sm" onClick={saveTeam}>
-                                <Save className="w-4 h-4 mr-1.5" />
-                                Save
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* 3 — Guidelines */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Annotation Guidelines</CardTitle>
-                        <CardDescription>Instructions shown to annotators. Supports plain text and Markdown.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <Textarea
-                            value={guidelines}
-                            onChange={e => setGuidelines(e.target.value)}
-                            rows={12}
-                            className="font-mono text-sm"
-                            placeholder="# Guidelines&#10;&#10;Describe how annotators should label items..."
-                        />
-                        <div className="flex justify-end">
-                            <Button size="sm" onClick={saveGuidelines}>
-                                <Save className="w-4 h-4 mr-1.5" />
-                                Save
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* 4 — Annotation Form (XML + Live Preview) */}
+                {/* 2 — Annotation Form */}
                 <TemplatePickerModal
                     open={showTemplatePicker}
                     onClose={() => setShowTemplatePicker(false)}
@@ -455,7 +384,78 @@ export default function ProjectSettings() {
                     </CardContent>
                 </Card>
 
-                {/* 5 — IAA */}
+                {/* 4 — Team */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Team</CardTitle>
+                        <CardDescription>Assign a manager and select annotators for this project.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                        {isAdmin && (
+                            <div className="space-y-1.5">
+                                <Label>Manager</Label>
+                                <Select value={managerId ?? ""} onValueChange={v => setManagerId(v || null)}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select manager…" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {adminUsers.map(u => (
+                                            <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
+                        <div className="space-y-1.5">
+                            <Label>Annotators</Label>
+                            <div className="rounded-md border divide-y max-h-56 overflow-y-auto">
+                                {annotatorUsers.length === 0 && (
+                                    <p className="text-sm text-muted-foreground p-3">No annotator accounts found.</p>
+                                )}
+                                {annotatorUsers.map(u => (
+                                    <label key={u.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 cursor-pointer">
+                                        <Checkbox
+                                            checked={annotatorIds.includes(u.id)}
+                                            onCheckedChange={() => toggleAnnotator(u.id)}
+                                        />
+                                        <span className="text-sm">{u.username}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex justify-end">
+                            <Button size="sm" onClick={saveTeam}>
+                                <Save className="w-4 h-4 mr-1.5" />
+                                Save
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* 5 — Guidelines */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Annotation Guidelines</CardTitle>
+                        <CardDescription>Instructions shown to annotators. Supports plain text and Markdown.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <Textarea
+                            value={guidelines}
+                            onChange={e => setGuidelines(e.target.value)}
+                            rows={12}
+                            className="font-mono text-sm"
+                            placeholder="# Guidelines&#10;&#10;Describe how annotators should label items..."
+                        />
+                        <div className="flex justify-end">
+                            <Button size="sm" onClick={saveGuidelines}>
+                                <Save className="w-4 h-4 mr-1.5" />
+                                Save
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* 6 — IAA */}
                 <Card>
                     <CardHeader>
                         <CardTitle>Inter-Annotator Agreement (IAA)</CardTitle>
@@ -502,7 +502,7 @@ export default function ProjectSettings() {
                     </CardContent>
                 </Card>
 
-                {/* 6 — Danger Zone (admin only) */}
+                {/* 7 — Danger Zone (admin only) */}
                 {isAdmin && (
                     <Card className="border-destructive/40">
                         <CardHeader>
