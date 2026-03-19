@@ -366,7 +366,7 @@ export function registerProjectRoutes(app) {
                     actorId: log.actor_id,
                     actorName: log.actor_name,
                     action: log.action,
-                    details: log.details ? JSON.parse(log.details) : null,
+                    details: log.details ? (() => { try { return JSON.parse(log.details); } catch { return log.details; } })() : null,
                     timestamp: log.timestamp
                 }))
             };

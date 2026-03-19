@@ -3390,6 +3390,34 @@ const DataLabelingWorkspace = () => {
                   disabled={!canUpload}
                   className="hidden"
                 />
+
+                {/* Setup checklist */}
+                {canUpload && (
+                  <div className="rounded-lg border bg-muted/30 px-5 py-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Project setup checklist</p>
+                    <ol className="space-y-2 text-sm">
+                      <li className="flex items-center gap-2.5">
+                        <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-xs flex items-center justify-center font-bold flex-shrink-0">1</span>
+                        <span className="font-medium">Import your dataset</span>
+                        <span className="text-muted-foreground">← you are here</span>
+                      </li>
+                      <li className="flex items-center gap-2.5 text-muted-foreground">
+                        <span className="w-5 h-5 rounded-full border text-xs flex items-center justify-center font-bold flex-shrink-0">2</span>
+                        <span>Configure the annotation form</span>
+                        <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => navigate(`/projects/${projectId}/settings`)}>
+                          Go to Settings
+                        </Button>
+                      </li>
+                      <li className="flex items-center gap-2.5 text-muted-foreground">
+                        <span className="w-5 h-5 rounded-full border text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
+                        <span>Add annotators to the project</span>
+                        <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => navigate(`/projects/${projectId}/settings`)}>
+                          Go to Settings
+                        </Button>
+                      </li>
+                    </ol>
+                  </div>
+                )}
               </div>
             </div>
           ) : (

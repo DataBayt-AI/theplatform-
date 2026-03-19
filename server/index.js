@@ -15,6 +15,8 @@ import { registerUserRoutes } from './routes/users.js';
 import { registerModelRoutes } from './routes/models.js';
 import { registerCommentRoutes } from './routes/comments.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
+import { registerTemplateRoutes } from './routes/templates.js';
+import { registerIAARoutes } from './routes/iaa.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -55,6 +57,8 @@ registerUserRoutes(app);
 registerModelRoutes(app);
 registerCommentRoutes(app);
 registerNotificationRoutes(app);
+registerTemplateRoutes(app);
+registerIAARoutes(app);
 
 // Legacy project param handler (for existing routes)
 app.param('id', async (req, _res, next, _id) => {
