@@ -117,5 +117,33 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Cairo', ui-sans-serif, system-ui, sans-serif;
   }
+}
+
+/* ── RTL / Arabic support ──────────────────────────────── */
+:root {
+  --font-arabic: 'Cairo', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* When the document is set to RTL (Arabic), apply Cairo and flip layout */
+html[dir="rtl"] body {
+  font-family: var(--font-arabic);
+  text-align: right;
+}
+
+/* Ensure logical spacing utilities work correctly in RTL.
+   Tailwind's ms-* / me-* / ps-* / pe-* already handle this natively.
+   The rules below cover any legacy ml-* / mr-* / pl-* / pr-* in third-party
+   components that don't yet use logical properties. */
+html[dir="rtl"] .ml-auto { margin-left: unset; margin-right: auto; }
+html[dir="rtl"] .mr-auto { margin-right: unset; margin-left: auto; }
+
+/* Keep number-only inputs and code blocks LTR even in RTL mode */
+html[dir="rtl"] input[type="number"],
+html[dir="rtl"] input[type="tel"],
+html[dir="rtl"] code,
+html[dir="rtl"] pre {
+  direction: ltr;
+  text-align: left;
 }
