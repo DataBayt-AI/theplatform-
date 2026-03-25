@@ -13,7 +13,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.resolve(__dirname, '..', 'data', 'databayt.sqlite');
+// Match the server's own DB path: process.cwd()/data/databayt.sqlite
+const DB_PATH = process.env.DATA_DIR
+  ? path.join(process.env.DATA_DIR, 'databayt.sqlite')
+  : path.resolve(__dirname, '..', '..', 'data', 'databayt.sqlite');
 const db = new Database(DB_PATH);
 
 // ── helpers ────────────────────────────────────────────────────────────────
