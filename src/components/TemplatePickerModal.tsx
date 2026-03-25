@@ -117,7 +117,7 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
                                 <button
                                     key={tpl.id}
                                     onClick={() => handleApply(tpl)}
-                                    className="text-left rounded-lg border bg-card p-3 hover:bg-accent hover:border-primary transition-colors group"
+                                    className="text-start rounded-lg border bg-card p-3 hover:bg-accent hover:border-primary transition-colors group"
                                 >
                                     <div className="flex items-start justify-between gap-2">
                                         <p className="text-sm font-medium leading-snug">{tpl.name}</p>
@@ -196,7 +196,7 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
                                         key={tpl.id}
                                         className="rounded-lg border bg-card p-3 flex items-start justify-between gap-2 group"
                                     >
-                                        <button className="text-left flex-1 min-w-0" onClick={() => handleApply(tpl)}>
+                                        <button className="text-start flex-1 min-w-0" onClick={() => handleApply(tpl)}>
                                             <div className="flex items-center gap-2">
                                                 <p className="text-sm font-medium truncate">{tpl.name}</p>
                                                 <CategoryBadge category={tpl.category} />

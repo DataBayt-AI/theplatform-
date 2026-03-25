@@ -282,7 +282,7 @@ const DataLabelingWorkspace = () => {
   const [publishProgress, setPublishProgress] = useState<{ step: string; pct: number } | null>(null);
 
   // Dynamic Labels
-  const [annotationLabel, setAnnotationLabel] = useState('Original Annotation');
+  const [annotationLabel, setAnnotationLabel] = useState(() => t('workspace.originalAnnotation'));
   const [promptLabel, setPromptLabel] = useState('Upload Instructions');
   const [isPublishing, setIsPublishing] = useState(false);
 
@@ -814,18 +814,18 @@ const DataLabelingWorkspace = () => {
     if (isAnnotatorForProject) {
       const assignment = getAssignmentForCurrentUser(dataPoint);
       if (assignment?.status === 'done') {
-        return { code: 'accepted' as const, label: 'done' };
+        return { code: 'accepted' as const, label: t('workspace.statusDone') };
       }
       if (!dataPoint.isIAA && getDoneCount(dataPoint) > 0) {
-        return { code: 'accepted' as const, label: 'done' };
+        return { code: 'accepted' as const, label: t('workspace.statusDone') };
       }
-      return { code: 'pending' as const, label: 'pending' };
+      return { code: 'pending' as const, label: t('workspace.statusPending') };
     }
     const complete = isCompleteByRequirement(dataPoint);
     return complete
-      ? { code: 'accepted' as const, label: 'done' }
-      : { code: 'pending' as const, label: 'pending' };
-  }, [getAssignmentForCurrentUser, getDoneCount, isAnnotatorForProject, isCompleteByRequirement]);
+      ? { code: 'accepted' as const, label: t('workspace.statusDone') }
+      : { code: 'pending' as const, label: t('workspace.statusPending') };
+  }, [getAssignmentForCurrentUser, getDoneCount, isAnnotatorForProject, isCompleteByRequirement, t]);
 
   const getStatusVariant = (statusCode: DataPoint['status']) => {
     if (statusCode === 'accepted') return 'default';
@@ -839,13 +839,13 @@ const DataLabelingWorkspace = () => {
   const getAnnotationPreview = (dataPoint: DataPoint) => {
     const visibleFinal = getVisibleFinalAnnotation(dataPoint);
     const visibleDraft = getVisibleDraftAnnotation(dataPoint);
-    if (visibleFinal) return { label: 'Final', text: visibleFinal };
-    if (visibleDraft) return { label: 'Human', text: visibleDraft };
-    if (dataPoint.originalAnnotation) return { label: 'Original', text: dataPoint.originalAnnotation };
-    if (dataPoint.customField) return { label: dataPoint.customFieldName || 'Custom', text: dataPoint.customField };
+    if (visibleFinal) return { label: t('workspace.annotationFinal'), text: visibleFinal };
+    if (visibleDraft) return { label: t('workspace.annotationHuman'), text: visibleDraft };
+    if (dataPoint.originalAnnotation) return { label: t('workspace.annotationOriginal'), text: dataPoint.originalAnnotation };
+    if (dataPoint.customField) return { label: dataPoint.customFieldName || t('workspace.annotationCustom'), text: dataPoint.customField };
     const aiSuggestion = Object.values(dataPoint.aiSuggestions || {})[0];
-    if (aiSuggestion) return { label: 'AI', text: aiSuggestion };
-    return { label: 'None', text: '' };
+    if (aiSuggestion) return { label: t('workspace.annotationAI'), text: aiSuggestion };
+    return { label: t('workspace.annotationNone'), text: '' };
   };
 
   // Handle starting a new task
@@ -1319,7 +1319,7 @@ const DataLabelingWorkspace = () => {
         if (annotationColumn) {
           setAnnotationLabel(annotationColumn);
         } else {
-          setAnnotationLabel('Original Annotation');
+          setAnnotationLabel(t('workspace.originalAnnotation'));
         }
 
         parsedData = importedRows.map((row) => {
@@ -3134,7 +3134,7 @@ const DataLabelingWorkspace = () => {
                     <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                       <DialogHeader>
                         <DialogTitle>{t("workspace.quality")}</DialogTitle>
-                        <DialogDescription>Per-annotator performance metrics for this project.</DialogDescription>
+                        <DialogDescription>{t("quality.dialogDesc")}</DialogDescription>
                       </DialogHeader>
                       <AnnotationQualityDashboard projectId={projectId} />
                     </DialogContent>
@@ -3727,10 +3727,10 @@ const DataLabelingWorkspace = () => {
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <Badge variant={currentDataPoint.isIAA ? "default" : "secondary"}>
-                                      {currentDataPoint.isIAA ? "IAA" : "Not IAA"}
+                                      {currentDataPoint.isIAA ? "IAA" : t('workspace.notIAA')}
                                     </Badge>
                                     <Badge variant="outline">
-                                      {getDoneCount(currentDataPoint)}/{getIaaRequiredCount(currentDataPoint)} done
+                                      {t('workspace.iaaCountDone', { done: getDoneCount(currentDataPoint), required: getIaaRequiredCount(currentDataPoint) })}
                                     </Badge>
                                   </div>
                                 </div>
@@ -3928,7 +3928,7 @@ const DataLabelingWorkspace = () => {
                             </p>
                           </div>
                           <Badge variant="secondary" className="w-fit">
-                            {globalFilteredCount} total
+                            {t("workspace.totalBadge", { count: globalFilteredCount })}
                           </Badge>
                         </div>
 
@@ -4062,7 +4062,7 @@ const DataLabelingWorkspace = () => {
                                   variant="ghost"
                                   onClick={() => setMetadataFilters({})}
                                 >
-                                  Clear
+                                  {t("workspace.clearFilters")}
                                 </Button>
                               )}
                             </div>
@@ -4231,7 +4231,7 @@ const DataLabelingWorkspace = () => {
                                         {canViewIaaDetails && dataPoint.isIAA && (
                                           <Badge variant="default">IAA</Badge>
                                         )}
-                                        {preview.label !== 'None' && (
+                                        {preview.text !== '' && (
                                           <Badge variant="secondary">{preview.label}</Badge>
                                         )}
                                         {!isAnnotatorForProject && (
@@ -4259,7 +4259,7 @@ const DataLabelingWorkspace = () => {
                                         {isAnnotatorForProject && getDoneCount(dataPoint) > 0 && (
                                           <Badge variant="outline" className="flex items-center gap-1">
                                             <User className="w-3 h-3" />
-                                            {(getDoneAnnotatorNames(dataPoint).join(', ')) || "Annotated"}
+                                            {(getDoneAnnotatorNames(dataPoint).join(', ')) || t("workspace.annotatedFallback")}
                                           </Badge>
                                         )}
                                       </div>

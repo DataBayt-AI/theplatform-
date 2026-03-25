@@ -699,7 +699,7 @@ const Dashboard = () => {
                                                 {project.isDemo && (
                                                     <Badge variant="secondary" className="shrink-0 gap-1 text-[10px] px-1.5 py-0.5">
                                                         <FlaskConical className="w-3 h-3" />
-                                                        Example
+                                                        {t('dashboard.exampleBadge')}
                                                     </Badge>
                                                 )}
                                             </div>

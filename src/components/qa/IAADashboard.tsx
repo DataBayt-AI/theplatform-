@@ -121,9 +121,9 @@ export function IAADashboard({ projectId }: IAADashboardProps) {
                     <table className="w-full text-sm">
                         <thead className="bg-muted/50 text-xs text-muted-foreground">
                             <tr>
-                                <th className="text-left px-3 py-2 font-medium">{t('iaa.colContent')}</th>
+                                <th className="text-start px-3 py-2 font-medium">{t('iaa.colContent')}</th>
                                 <th className="text-center px-3 py-2 font-medium w-24">{t('iaa.colAgreement')}</th>
-                                <th className="text-left px-3 py-2 font-medium">{t('iaa.colAnnotations')}</th>
+                                <th className="text-start px-3 py-2 font-medium">{t('iaa.colAnnotations')}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y">

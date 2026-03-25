@@ -186,27 +186,27 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b border-border text-muted-foreground text-xs">
-                                    <th className="text-left py-2 pr-4 font-medium">{t('quality.colAnnotator')}</th>
-                                    <th className="text-right py-2 px-4 font-medium">{t('quality.colItems')}</th>
-                                    <th className="text-right py-2 px-4 font-medium">{t('quality.colSpeed')}</th>
-                                    <th className="text-right py-2 px-4 font-medium">{t('quality.colEditRate')}</th>
-                                    <th className="text-right py-2 px-4 font-medium">{t('quality.colRejectionRate')}</th>
-                                    <th className="text-right py-2 pl-4 font-medium">{t('quality.colAgreement')}</th>
+                                    <th className="text-start py-2 pe-4 font-medium">{t('quality.colAnnotator')}</th>
+                                    <th className="text-end py-2 px-4 font-medium">{t('quality.colItems')}</th>
+                                    <th className="text-end py-2 px-4 font-medium">{t('quality.colSpeed')}</th>
+                                    <th className="text-end py-2 px-4 font-medium">{t('quality.colEditRate')}</th>
+                                    <th className="text-end py-2 px-4 font-medium">{t('quality.colRejectionRate')}</th>
+                                    <th className="text-end py-2 ps-4 font-medium">{t('quality.colAgreement')}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {sorted.map((a: AnnotatorQualityStats) => (
                                     <tr key={a.annotatorId} className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors">
-                                        <td className="py-2 pr-4 font-medium">{a.annotatorName}</td>
-                                        <td className="text-right py-2 px-4 text-foreground">{a.totalAnnotated}</td>
-                                        <td className="text-right py-2 px-4 font-medium text-primary">{a.speedPerHour}</td>
-                                        <td className={`text-right py-2 px-4 font-medium ${rateColor(a.editRate)}`}>
+                                        <td className="py-2 pe-4 font-medium">{a.annotatorName}</td>
+                                        <td className="text-end py-2 px-4 text-foreground">{a.totalAnnotated}</td>
+                                        <td className="text-end py-2 px-4 font-medium text-primary">{a.speedPerHour}</td>
+                                        <td className={`text-end py-2 px-4 font-medium ${rateColor(a.editRate)}`}>
                                             {fmt(a.editRate)}
                                         </td>
-                                        <td className={`text-right py-2 px-4 font-medium ${rateColor(a.rejectionRate)}`}>
+                                        <td className={`text-end py-2 px-4 font-medium ${rateColor(a.rejectionRate)}`}>
                                             {fmt(a.rejectionRate)}
                                         </td>
-                                        <td className={`text-right py-2 pl-4 font-medium ${agreementColor(a.agreementRate)}`}>
+                                        <td className={`text-end py-2 ps-4 font-medium ${agreementColor(a.agreementRate)}`}>
                                             {a.agreementRate !== null ? fmt(a.agreementRate) : "—"}
                                         </td>
                                     </tr>

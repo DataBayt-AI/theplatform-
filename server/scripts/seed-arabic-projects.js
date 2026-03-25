@@ -25,7 +25,7 @@ const now = () => Date.now();
 
 const insertProject = db.prepare(`
   INSERT INTO projects (id, name, description, manager_id, xml_config, guidelines, is_demo, created_at, updated_at)
-  VALUES (@id, @name, @description, @managerId, @xmlConfig, @guidelines, 1, @ts, @ts)
+  VALUES (@id, @name, @description, @managerId, @xmlConfig, @guidelines, 0, @ts, @ts)
 `);
 
 const insertPoint = db.prepare(`
