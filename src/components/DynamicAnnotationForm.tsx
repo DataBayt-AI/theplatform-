@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,6 +28,7 @@ const interpolate = (text: string | undefined, metadata?: Record<string, string>
 };
 
 export const DynamicAnnotationForm = ({ fields, values, onChange, metadata }: DynamicAnnotationFormProps) => {
+    const { t } = useTranslation();
     return (
         <div className="space-y-4">
             {fields.map((field) => (
@@ -119,7 +121,7 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata }: Dy
                         return (
                             <div className="space-y-2">
                                 {entities.length === 0 && (
-                                    <p className="text-xs text-muted-foreground italic">No entities added yet.</p>
+                                    <p className="text-xs text-muted-foreground italic">{t('annotationForm.noEntities')}</p>
                                 )}
                                 {entities.map((ent, i) => (
                                     <div key={i} className="flex items-center gap-2 flex-wrap">
@@ -130,7 +132,7 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata }: Dy
                                                 next[i] = { ...next[i], text: e.target.value };
                                                 updateEntities(next);
                                             }}
-                                            placeholder={interpolate(field.placeholder, metadata) || 'Entity text…'}
+                                            placeholder={interpolate(field.placeholder, metadata) || t('annotationForm.entityPlaceholder')}
                                             className="flex-1 min-w-32 h-8 text-sm"
                                         />
                                         <Select
@@ -193,7 +195,7 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata }: Dy
                                     onClick={() => updateEntities([...entities, { text: '', type: defaultType }])}
                                 >
                                     <Plus className="w-3 h-3" />
-                                    Add entity
+                                    {t('annotationForm.addEntity')}
                                 </Button>
                             </div>
                         );

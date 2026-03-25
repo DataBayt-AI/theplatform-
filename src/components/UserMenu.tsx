@@ -1,13 +1,23 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 export const UserMenu = () => {
+  const { t } = useTranslation();
   const { currentUser, logout, changePassword } = useAuth();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -17,8 +27,10 @@ export const UserMenu = () => {
 
   const mustChangePassword = !!currentUser?.mustChangePassword;
   const roleLabel = currentUser?.roles?.includes("admin")
-    ? "admin"
-    : currentUser?.roles?.join(", ");
+    ? t("dashboard.roles.admin")
+    : currentUser?.roles?.includes("manager")
+    ? t("dashboard.roles.manager")
+    : t("dashboard.roles.annotator");
 
   useEffect(() => {
     if (mustChangePassword) {
@@ -28,12 +40,12 @@ export const UserMenu = () => {
 
   const handleChangePassword = async () => {
     if (newPassword !== confirmPassword) {
-      setChangeError("Passwords do not match");
+      setChangeError(t("auth.passwordsDoNotMatch"));
       return;
     }
     const result = await changePassword(currentPassword, newPassword);
     if (!result.ok) {
-      setChangeError(result.error || "Failed to change password");
+      setChangeError(result.error || t("auth.changePasswordFailed"));
       return;
     }
     setChangeError("");
@@ -59,8 +71,16 @@ export const UserMenu = () => {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setShowChangePassword(true)}>Change Password</DropdownMenuItem>
-          <DropdownMenuItem onClick={logout}>Log Out</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setShowChangePassword(true)}>
+            {t("auth.changePassword")}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+            {t("user.language")}
+          </DropdownMenuLabel>
+          <LanguageSwitcher />
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={logout}>{t("user.logout")}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -73,11 +93,13 @@ export const UserMenu = () => {
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>{mustChangePassword ? "Set a new password" : "Change Password"}</DialogTitle>
+            <DialogTitle>
+              {mustChangePassword ? t("auth.setNewPassword") : t("auth.changePassword")}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="current-password">Current password</Label>
+              <Label htmlFor="current-password">{t("auth.currentPassword")}</Label>
               <Input
                 id="current-password"
                 type="password"
@@ -86,7 +108,7 @@ export const UserMenu = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="new-password">New password</Label>
+              <Label htmlFor="new-password">{t("auth.newPassword")}</Label>
               <Input
                 id="new-password"
                 type="password"
@@ -95,7 +117,7 @@ export const UserMenu = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="confirm-password">Confirm new password</Label>
+              <Label htmlFor="confirm-password">{t("auth.confirmPassword")}</Label>
               <Input
                 id="confirm-password"
                 type="password"
@@ -106,17 +128,17 @@ export const UserMenu = () => {
             {changeError && <p className="text-sm text-destructive">{changeError}</p>}
             {mustChangePassword && (
               <p className="text-xs text-muted-foreground">
-                You must change your password before continuing.
+                {t("auth.mustChangePassword")}
               </p>
             )}
           </div>
           <DialogFooter>
             {!mustChangePassword && (
               <Button variant="outline" onClick={() => setShowChangePassword(false)}>
-                Cancel
+                {t("common.cancel")}
               </Button>
             )}
-            <Button onClick={handleChangePassword}>Save</Button>
+            <Button onClick={handleChangePassword}>{t("common.save")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

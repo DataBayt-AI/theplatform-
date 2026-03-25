@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +40,7 @@ export function GuidelinesDialog({
     onUpdate,
 }: GuidelinesDialogProps) {
     const navigate = useNavigate();
+    const { t } = useTranslation();
     const [isEditing, setIsEditing] = useState(false);
     const [guidelines, setGuidelines] = useState(project.guidelines || "");
 
@@ -54,14 +56,14 @@ export function GuidelinesDialog({
             onUpdate?.(updatedProject);
             setIsEditing(false);
             toast({
-                title: "Guidelines updated",
-                description: "Project annotation guidelines have been saved.",
+                title: t("guidelinesDialog.savedTitle"),
+                description: t("guidelinesDialog.savedDesc"),
             });
         } catch (error) {
             console.error("Failed to update guidelines:", error);
             toast({
-                title: "Error",
-                description: "Failed to save guidelines. Please try again.",
+                title: t("common.error"),
+                description: t("guidelinesDialog.saveError"),
                 variant: "destructive",
             });
         }
@@ -74,17 +76,17 @@ export function GuidelinesDialog({
                     <div className="flex items-center justify-between">
                         <DialogTitle className="flex items-center gap-2">
                             <Book className="w-5 h-5 text-purple-500" />
-                            Annotation Guidelines
+                            {t("guidelinesDialog.title")}
                         </DialogTitle>
                         {!readOnly && canEdit && !isEditing && (
                             <Button size="sm" variant="ghost" onClick={() => setIsEditing(true)}>
                                 <Edit2 className="w-4 h-4 mr-2" />
-                                Edit
+                                {t("guidelinesDialog.edit")}
                             </Button>
                         )}
                     </div>
                     <DialogDescription>
-                        Reference instructions for annotating data in this project.
+                        {t("guidelinesDialog.description")}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -94,7 +96,7 @@ export function GuidelinesDialog({
                             value={guidelines}
                             onChange={(e) => setGuidelines(e.target.value)}
                             className="min-h-[300px] font-mono text-sm leading-relaxed resize-none border-0 focus-visible:ring-0 bg-transparent p-0"
-                            placeholder="Enter comprehensive guidelines for annotators here..."
+                            placeholder={t("guidelinesDialog.placeholder")}
                         />
                     ) : (
                         <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed">
@@ -102,7 +104,7 @@ export function GuidelinesDialog({
                                 <ReactMarkdown>{guidelines}</ReactMarkdown>
                             ) : (
                                 <span className="text-muted-foreground italic">
-                                    No guidelines have been set for this project yet.
+                                    {t("guidelinesDialog.noGuidelines")}
                                 </span>
                             )}
                         </div>
@@ -113,11 +115,11 @@ export function GuidelinesDialog({
                     {!readOnly && isEditing ? (
                         <>
                             <Button variant="outline" onClick={() => setIsEditing(false)}>
-                                Cancel
+                                {t("common.cancel")}
                             </Button>
                             <Button onClick={handleSave}>
                                 <Save className="w-4 h-4 mr-2" />
-                                Save Guidelines
+                                {t("guidelinesDialog.saveGuidelines")}
                             </Button>
                         </>
                     ) : (
@@ -129,11 +131,11 @@ export function GuidelinesDialog({
                                     onClick={() => { onClose(); navigate(settingsPath); }}
                                 >
                                     <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                                    Edit in Project Settings
+                                    {t("guidelinesDialog.editInSettings")}
                                 </Button>
                             )}
                             <Button variant="secondary" onClick={onClose}>
-                                Close
+                                {t("common.close")}
                             </Button>
                         </>
                     )}

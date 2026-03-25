@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Plus, Trash2, ChevronUp, ChevronDown, GripVertical, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,14 +16,15 @@ interface FormBuilderProps {
     className?: string;
 }
 
-const FIELD_TYPE_LABELS: Record<FieldConfig['type'], string> = {
-    text: 'Text',
-    textarea: 'Long Text',
-    dropdown: 'Dropdown',
-    radio: 'Radio',
-    checkbox: 'Checkbox',
-    'rating-scale': 'Rating',
-    'entity-list': 'Entity List',
+// Labels are computed inside the component using t() so they update with language
+const FIELD_TYPE_KEYS: Record<FieldConfig['type'], string> = {
+    text: 'formBuilder.typeText',
+    textarea: 'formBuilder.typeLongText',
+    dropdown: 'formBuilder.typeDropdown',
+    radio: 'formBuilder.typeRadio',
+    checkbox: 'formBuilder.typeCheckbox',
+    'rating-scale': 'formBuilder.typeRating',
+    'entity-list': 'formBuilder.typeEntityList',
 };
 
 const FIELD_TYPE_COLORS: Record<FieldConfig['type'], string> = {
@@ -36,6 +38,7 @@ const FIELD_TYPE_COLORS: Record<FieldConfig['type'], string> = {
 };
 
 export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps) {
+    const { t } = useTranslation();
     const [fields, setFields] = useState<FieldConfig[]>([]);
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
     const [parseError, setParseError] = useState<string>('');
@@ -156,9 +159,9 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
     if (parseError) {
         return (
             <div className={`rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive ${className ?? ''}`}>
-                <p className="font-medium mb-1">Cannot open Visual Builder — XML is invalid</p>
+                <p className="font-medium mb-1">{t('formBuilder.invalidXml')}</p>
                 <p className="font-mono text-xs break-all">{parseError}</p>
-                <p className="mt-2 text-muted-foreground">Switch to "XML" mode to fix the error first.</p>
+                <p className="mt-2 text-muted-foreground">{t('formBuilder.fixXmlHint')}</p>
             </div>
         );
     }
@@ -168,7 +171,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
             {/* Field list */}
             {fields.length === 0 ? (
                 <div className="flex items-center justify-center h-24 rounded-md border border-dashed bg-muted/30 text-muted-foreground text-sm">
-                    No fields yet — add one below.
+                    {t('formBuilder.noFields')}
                 </div>
             ) : (
                 <div className="space-y-2">
@@ -178,21 +181,21 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                             <div className="flex items-center gap-2 px-3 py-2">
                                 <GripVertical className="w-4 h-4 text-muted-foreground shrink-0" />
                                 <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${FIELD_TYPE_COLORS[field.type]}`}>
-                                    {FIELD_TYPE_LABELS[field.type]}
+                                    {t(FIELD_TYPE_KEYS[field.type])}
                                 </span>
-                                <span className="text-sm font-medium truncate flex-1">{field.label || <span className="text-muted-foreground italic">Untitled</span>}</span>
-                                {field.required && <span className="text-xs text-red-500 shrink-0">required</span>}
+                                <span className="text-sm font-medium truncate flex-1">{field.label || <span className="text-muted-foreground italic">{t('formBuilder.untitled')}</span>}</span>
+                                {field.required && <span className="text-xs text-red-500 shrink-0">{t('formBuilder.requiredBadge')}</span>}
                                 <div className="flex items-center gap-1 shrink-0">
-                                    <button onClick={() => moveField(index, -1)} disabled={index === 0} className="p-1 rounded hover:bg-muted disabled:opacity-30" aria-label="Move up"><ChevronUp className="w-3.5 h-3.5" /></button>
-                                    <button onClick={() => moveField(index, 1)} disabled={index === fields.length - 1} className="p-1 rounded hover:bg-muted disabled:opacity-30" aria-label="Move down"><ChevronDown className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => moveField(index, -1)} disabled={index === 0} className="p-1 rounded hover:bg-muted disabled:opacity-30" aria-label={t('formBuilder.ariaUp')}><ChevronUp className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => moveField(index, 1)} disabled={index === fields.length - 1} className="p-1 rounded hover:bg-muted disabled:opacity-30" aria-label={t('formBuilder.ariaDown')}><ChevronDown className="w-3.5 h-3.5" /></button>
                                     <button
                                         onClick={() => setEditingIndex(editingIndex === index ? null : index)}
                                         className={`p-1 rounded hover:bg-muted ${editingIndex === index ? 'bg-muted text-primary' : ''}`}
-                                        aria-label="Edit field"
+                                        aria-label={t('formBuilder.ariaEdit')}
                                     >
                                         <Settings2 className="w-3.5 h-3.5" />
                                     </button>
-                                    <button onClick={() => removeField(index)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive" aria-label="Remove field"><Trash2 className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => removeField(index)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive" aria-label={t('formBuilder.ariaRemove')}><Trash2 className="w-3.5 h-3.5" /></button>
                                 </div>
                             </div>
 
@@ -201,7 +204,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                 <div className="border-t px-3 py-3 bg-muted/20 space-y-3">
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1">
-                                            <Label className="text-xs">Label *</Label>
+                                            <Label className="text-xs">{t('formBuilder.labelField')}</Label>
                                             <Input
                                                 value={field.label}
                                                 onChange={e => handleLabelChange(index, e.target.value)}
@@ -209,7 +212,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                             />
                                         </div>
                                         <div className="space-y-1">
-                                            <Label className="text-xs">Field ID</Label>
+                                            <Label className="text-xs">{t('formBuilder.fieldId')}</Label>
                                             <Input
                                                 value={field.id}
                                                 onChange={e => updateField(index, { id: e.target.value })}
@@ -219,7 +222,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                     </div>
                                     {(field.type !== 'checkbox' && field.type !== 'rating-scale' && field.type !== 'entity-list') && (
                                         <div className="space-y-1">
-                                            <Label className="text-xs">Placeholder</Label>
+                                            <Label className="text-xs">{t('formBuilder.placeholder')}</Label>
                                             <Input
                                                 value={field.placeholder ?? ''}
                                                 onChange={e => updateField(index, { placeholder: e.target.value || undefined })}
@@ -233,13 +236,13 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                             checked={!!field.required}
                                             onCheckedChange={v => updateField(index, { required: !!v })}
                                         />
-                                        <label htmlFor={`req-${field.id}`} className="text-xs cursor-pointer">Required</label>
+                                        <label htmlFor={`req-${field.id}`} className="text-xs cursor-pointer">{t('formBuilder.requiredField')}</label>
                                     </div>
 
                                     {/* Options editor for dropdown / radio */}
                                     {(field.type === 'dropdown' || field.type === 'radio') && (
                                         <div className="space-y-2">
-                                            <Label className="text-xs">Options</Label>
+                                            <Label className="text-xs">{t('formBuilder.options')}</Label>
                                             {(field.options ?? []).map((opt, oi) => (
                                                 <div key={oi} className="flex items-center gap-2">
                                                     <Input
@@ -260,7 +263,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                                 </div>
                                             ))}
                                             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => addOption(index)}>
-                                                <Plus className="w-3 h-3 mr-1" /> Add Option
+                                                <Plus className="w-3 h-3 me-1" /> {t('formBuilder.addOption')}
                                             </Button>
                                         </div>
                                     )}
@@ -274,10 +277,10 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                                     checked={!!field.entityConfidence}
                                                     onCheckedChange={v => updateField(index, { entityConfidence: !!v })}
                                                 />
-                                                <label htmlFor={`conf-${field.id}`} className="text-xs cursor-pointer">Show per-entity confidence (1–3)</label>
+                                                <label htmlFor={`conf-${field.id}`} className="text-xs cursor-pointer">{t('formBuilder.entityConfidence')}</label>
                                             </div>
                                         <div className="space-y-2">
-                                            <Label className="text-xs">Entity Types</Label>
+                                            <Label className="text-xs">{t('formBuilder.entityTypes')}</Label>
                                             {(field.entityTypes ?? []).map((et, ei) => (
                                                 <div key={ei} className="flex items-center gap-2">
                                                     <Input
@@ -298,7 +301,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                                 </div>
                                             ))}
                                             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => addEntityType(index)}>
-                                                <Plus className="w-3 h-3 mr-1" /> Add Type
+                                                <Plus className="w-3 h-3 me-1" /> {t('formBuilder.addType')}
                                             </Button>
                                         </div>
                                         </div>
@@ -308,7 +311,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                     {field.type === 'rating-scale' && field.ratingConfig && (
                                         <div className="grid grid-cols-2 gap-3">
                                             <div className="space-y-1">
-                                                <Label className="text-xs">Min</Label>
+                                                <Label className="text-xs">{t('formBuilder.min')}</Label>
                                                 <Input
                                                     type="number"
                                                     value={field.ratingConfig.min}
@@ -317,7 +320,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                                 />
                                             </div>
                                             <div className="space-y-1">
-                                                <Label className="text-xs">Max</Label>
+                                                <Label className="text-xs">{t('formBuilder.max')}</Label>
                                                 <Input
                                                     type="number"
                                                     value={field.ratingConfig.max}
@@ -326,7 +329,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                                 />
                                             </div>
                                             <div className="space-y-1">
-                                                <Label className="text-xs">Min Label</Label>
+                                                <Label className="text-xs">{t('formBuilder.minLabel')}</Label>
                                                 <Input
                                                     value={field.ratingConfig.minLabel ?? ''}
                                                     onChange={e => updateField(index, { ratingConfig: { ...field.ratingConfig!, minLabel: e.target.value || undefined } })}
@@ -335,7 +338,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                                 />
                                             </div>
                                             <div className="space-y-1">
-                                                <Label className="text-xs">Max Label</Label>
+                                                <Label className="text-xs">{t('formBuilder.maxLabel')}</Label>
                                                 <Input
                                                     value={field.ratingConfig.maxLabel ?? ''}
                                                     onChange={e => updateField(index, { ratingConfig: { ...field.ratingConfig!, maxLabel: e.target.value || undefined } })}
@@ -344,7 +347,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                                 />
                                             </div>
                                             <div className="col-span-2 space-y-1">
-                                                <Label className="text-xs">Style</Label>
+                                                <Label className="text-xs">{t('formBuilder.style')}</Label>
                                                 <Select
                                                     value={field.ratingConfig.style}
                                                     onValueChange={v => updateField(index, { ratingConfig: { ...field.ratingConfig!, style: v as 'stars' | 'numbers' } })}
@@ -353,8 +356,8 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                                                         <SelectValue />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        <SelectItem value="numbers">Numbers</SelectItem>
-                                                        <SelectItem value="stars">Stars</SelectItem>
+                                                        <SelectItem value="numbers">{t('formBuilder.styleNumbers')}</SelectItem>
+                                                        <SelectItem value="stars">{t('formBuilder.styleStars')}</SelectItem>
                                                     </SelectContent>
                                                 </Select>
                                             </div>
@@ -369,8 +372,8 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
 
             {/* Add field row */}
             <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                <span className="text-xs text-muted-foreground mr-1">Add:</span>
-                {(Object.keys(FIELD_TYPE_LABELS) as FieldConfig['type'][]).map(type => (
+                <span className="text-xs text-muted-foreground me-1">{t('formBuilder.addField')}</span>
+                {(Object.keys(FIELD_TYPE_KEYS) as FieldConfig['type'][]).map(type => (
                     <Button
                         key={type}
                         variant="outline"
@@ -379,7 +382,7 @@ export function FormBuilder({ xmlConfig, onChange, className }: FormBuilderProps
                         onClick={() => addField(type)}
                     >
                         <Plus className="w-3 h-3" />
-                        {FIELD_TYPE_LABELS[type]}
+                        {t(FIELD_TYPE_KEYS[type])}
                     </Button>
                 ))}
             </div>

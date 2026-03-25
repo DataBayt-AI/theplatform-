@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 import { Loader2, Users, Zap, Edit3 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +39,7 @@ function agreementColor(rate: number | null): string {
 }
 
 export function AnnotationQualityDashboard({ projectId }: Props) {
+    const { t } = useTranslation();
     const [data, setData] = useState<AnnotatorStatsResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
     if (!data || data.annotators.length === 0) {
         return (
             <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-                No annotation data yet.
+                {t('quality.noData')}
             </div>
         );
     }
@@ -87,8 +89,8 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
     return (
         <Tabs defaultValue="annotators" className="p-6">
         <TabsList className="mb-6">
-            <TabsTrigger value="annotators">Annotator Stats</TabsTrigger>
-            <TabsTrigger value="iaa">IAA</TabsTrigger>
+            <TabsTrigger value="annotators">{t('quality.tabAnnotators')}</TabsTrigger>
+            <TabsTrigger value="iaa">{t('quality.tabIAA')}</TabsTrigger>
         </TabsList>
         <TabsContent value="iaa">
             <IAADashboard projectId={projectId} />
@@ -100,7 +102,7 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">
-                            Total Annotators
+                            {t('quality.totalAnnotators')}
                         </CardTitle>
                         <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
                             <Users className="h-4 w-4 text-primary" />
@@ -114,7 +116,7 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">
-                            Avg Speed
+                            {t('quality.avgSpeed')}
                         </CardTitle>
                         <div className="h-8 w-8 rounded-md bg-success/10 flex items-center justify-center">
                             <Zap className="h-4 w-4 text-success" />
@@ -122,14 +124,14 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                     </CardHeader>
                     <CardContent>
                         <p className="text-2xl font-bold">{data.summary.avgSpeedPerHour}</p>
-                        <p className="text-xs text-muted-foreground">items / hr</p>
+                        <p className="text-xs text-muted-foreground">{t('quality.itemsPerHour')}</p>
                     </CardContent>
                 </Card>
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">
-                            Avg Edit Rate
+                            {t('quality.avgEditRate')}
                         </CardTitle>
                         <div className="h-8 w-8 rounded-md bg-warning/10 flex items-center justify-center">
                             <Edit3 className="h-4 w-4 text-warning" />
@@ -144,7 +146,7 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
             {/* Speed bar chart */}
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-sm font-medium">Speed by Annotator (items / hr)</CardTitle>
+                    <CardTitle className="text-sm font-medium">{t('quality.speedChart')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <ChartContainer config={chartConfig} className="h-56 w-full">
@@ -164,18 +166,18 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
             {/* Per-annotator table */}
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle className="text-sm font-medium">Per-Annotator Breakdown</CardTitle>
+                    <CardTitle className="text-sm font-medium">{t('quality.perAnnotatorBreakdown')}</CardTitle>
                     <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Sort by</span>
+                        <span className="text-xs text-muted-foreground">{t('quality.sortBy')}</span>
                         <select
                             value={sortKey}
                             onChange={e => setSortKey(e.target.value as SortKey)}
                             className="text-xs border border-border rounded-md px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                         >
-                            <option value="totalAnnotated">Items</option>
-                            <option value="speedPerHour">Speed</option>
-                            <option value="editRate">Edit Rate</option>
-                            <option value="rejectionRate">Rejection Rate</option>
+                            <option value="totalAnnotated">{t('quality.sortItems')}</option>
+                            <option value="speedPerHour">{t('quality.sortSpeed')}</option>
+                            <option value="editRate">{t('quality.sortEditRate')}</option>
+                            <option value="rejectionRate">{t('quality.sortRejectionRate')}</option>
                         </select>
                     </div>
                 </CardHeader>
@@ -184,12 +186,12 @@ export function AnnotationQualityDashboard({ projectId }: Props) {
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b border-border text-muted-foreground text-xs">
-                                    <th className="text-left py-2 pr-4 font-medium">Annotator</th>
-                                    <th className="text-right py-2 px-4 font-medium">Items</th>
-                                    <th className="text-right py-2 px-4 font-medium">Speed (items/hr)</th>
-                                    <th className="text-right py-2 px-4 font-medium">Edit Rate</th>
-                                    <th className="text-right py-2 px-4 font-medium">Rejection Rate</th>
-                                    <th className="text-right py-2 pl-4 font-medium">Agreement</th>
+                                    <th className="text-left py-2 pr-4 font-medium">{t('quality.colAnnotator')}</th>
+                                    <th className="text-right py-2 px-4 font-medium">{t('quality.colItems')}</th>
+                                    <th className="text-right py-2 px-4 font-medium">{t('quality.colSpeed')}</th>
+                                    <th className="text-right py-2 px-4 font-medium">{t('quality.colEditRate')}</th>
+                                    <th className="text-right py-2 px-4 font-medium">{t('quality.colRejectionRate')}</th>
+                                    <th className="text-right py-2 pl-4 font-medium">{t('quality.colAgreement')}</th>
                                 </tr>
                             </thead>
                             <tbody>
