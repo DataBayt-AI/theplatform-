@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { AlertTriangle, CheckCircle2, Users, BarChart3 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,7 @@ function StatCard({ icon: Icon, label, value, sub }: { icon: any; label: string;
 }
 
 export function IAADashboard({ projectId }: IAADashboardProps) {
+    const { t } = useTranslation();
     const [stats, setStats] = useState<IAAStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -60,7 +62,7 @@ export function IAADashboard({ projectId }: IAADashboardProps) {
     }, [pendingThreshold]);
 
     if (loading && !stats) {
-        return <div className="text-sm text-muted-foreground p-4">Loading IAA stats…</div>;
+        return <div className="text-sm text-muted-foreground p-4">{t('iaa.loading')}</div>;
     }
 
     if (error) {
@@ -75,27 +77,27 @@ export function IAADashboard({ projectId }: IAADashboardProps) {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <StatCard
                     icon={BarChart3}
-                    label="Overall Agreement"
+                    label={t('iaa.overallAgreement')}
                     value={stats.overallScore !== null ? `${Math.round(stats.overallScore * 100)}%` : '—'}
-                    sub={stats.itemsWithEnoughAnnotations > 0 ? `across ${stats.itemsWithEnoughAnnotations} items` : 'Not enough data'}
+                    sub={stats.itemsWithEnoughAnnotations > 0 ? t('iaa.acrossItems', { count: stats.itemsWithEnoughAnnotations }) : t('iaa.notEnoughData')}
                 />
                 <StatCard
                     icon={Users}
-                    label="IAA Items"
+                    label={t('iaa.iaaItems')}
                     value={stats.totalIAAItems}
-                    sub={`${stats.itemsWithEnoughAnnotations} with ≥2 annotations`}
+                    sub={t('iaa.withAnnotations', { count: stats.itemsWithEnoughAnnotations })}
                 />
                 <StatCard
                     icon={AlertTriangle}
-                    label="Low Agreement"
+                    label={t('iaa.lowAgreement')}
                     value={stats.lowAgreementCount}
-                    sub={`below ${Math.round(threshold * 100)}% threshold`}
+                    sub={t('iaa.belowThreshold', { pct: Math.round(threshold * 100) })}
                 />
             </div>
 
             {/* Threshold slider */}
             <div className="flex items-center gap-4">
-                <Label className="text-xs text-muted-foreground whitespace-nowrap">Agreement threshold</Label>
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">{t('iaa.agreementThreshold')}</Label>
                 <Slider
                     value={[pendingThreshold]}
                     onValueChange={([v]) => setPendingThreshold(v)}
@@ -111,17 +113,17 @@ export function IAADashboard({ projectId }: IAADashboardProps) {
             {stats.items.length === 0 ? (
                 <div className="flex items-center justify-center h-24 rounded-md border border-dashed bg-muted/30 text-muted-foreground text-sm">
                     {stats.totalIAAItems === 0
-                        ? 'No IAA items configured for this project.'
-                        : 'No items have enough annotations yet (need ≥ 2).'}
+                        ? t('iaa.noIAAItems')
+                        : t('iaa.noEnoughAnnotations')}
                 </div>
             ) : (
                 <div className="rounded-md border overflow-hidden">
                     <table className="w-full text-sm">
                         <thead className="bg-muted/50 text-xs text-muted-foreground">
                             <tr>
-                                <th className="text-left px-3 py-2 font-medium">Content</th>
-                                <th className="text-center px-3 py-2 font-medium w-24">Agreement</th>
-                                <th className="text-left px-3 py-2 font-medium">Annotations</th>
+                                <th className="text-start px-3 py-2 font-medium">{t('iaa.colContent')}</th>
+                                <th className="text-center px-3 py-2 font-medium w-24">{t('iaa.colAgreement')}</th>
+                                <th className="text-start px-3 py-2 font-medium">{t('iaa.colAnnotations')}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y">
@@ -131,7 +133,7 @@ export function IAADashboard({ projectId }: IAADashboardProps) {
                                         <p className="truncate text-xs font-mono">{item.contentPreview}</p>
                                         {item.isLowAgreement && (
                                             <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400 mt-0.5">
-                                                <AlertTriangle className="w-3 h-3" /> Low agreement
+                                                <AlertTriangle className="w-3 h-3" /> {t('iaa.lowAgreementLabel')}
                                             </span>
                                         )}
                                     </td>

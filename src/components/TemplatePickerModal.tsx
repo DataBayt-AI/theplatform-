@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Layers, Plus, Trash2, BookOpen } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ function CategoryBadge({ category }: { category: string }) {
 }
 
 export function TemplatePickerModal({ open, onClose, onApply, currentXml }: TemplatePickerModalProps) {
+    const { t } = useTranslation();
     const [userTemplates, setUserTemplates] = useState<TaskTemplate[]>([]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -53,13 +55,13 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
     const handleApply = (template: TaskTemplate) => {
         onApply(template.xmlConfig);
         onClose();
-        toast({ title: `Template applied`, description: `"${template.name}" loaded into the editor.` });
+        toast({ title: t('templatePicker.toastApplied'), description: t('templatePicker.toastAppliedDesc', { name: template.name }) });
     };
 
     const handleSave = async () => {
         if (!saveName.trim()) return;
         if (!currentXml?.trim()) {
-            toast({ title: "Nothing to save", description: "The editor is empty.", variant: "destructive" });
+            toast({ title: t('templatePicker.toastNothingToSave'), description: t('templatePicker.toastEditorEmpty'), variant: "destructive" });
             return;
         }
         setSaving(true);
@@ -75,9 +77,9 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
             setSaveDesc("");
             setSaveCategory("Custom");
             setShowSaveForm(false);
-            toast({ title: "Template saved", description: `"${created.name}" added to your templates.` });
+            toast({ title: t('templatePicker.toastSaved'), description: t('templatePicker.toastSavedDesc', { name: created.name }) });
         } catch (err) {
-            toast({ title: "Save failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+            toast({ title: t('templatePicker.toastSaveFailed'), description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
         } finally {
             setSaving(false);
         }
@@ -87,9 +89,9 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
         try {
             await apiClient.templates.delete(template.id);
             setUserTemplates(prev => prev.filter(t => t.id !== template.id));
-            toast({ title: "Template deleted" });
+            toast({ title: t('templatePicker.toastDeleted') });
         } catch (err) {
-            toast({ title: "Delete failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+            toast({ title: t('templatePicker.toastDeleteFailed'), description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
         }
     };
 
@@ -99,7 +101,7 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Layers className="w-5 h-5" />
-                        Task Templates
+                        {t('templatePicker.title')}
                     </DialogTitle>
                 </DialogHeader>
 
@@ -108,21 +110,21 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
                     <section>
                         <div className="flex items-center gap-2 mb-3">
                             <BookOpen className="w-4 h-4 text-muted-foreground" />
-                            <h3 className="text-sm font-semibold">Built-in Templates</h3>
+                            <h3 className="text-sm font-semibold">{t('templatePicker.builtIn')}</h3>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {BUILTIN_TEMPLATES.map(t => (
+                            {BUILTIN_TEMPLATES.map(tpl => (
                                 <button
-                                    key={t.id}
-                                    onClick={() => handleApply(t)}
-                                    className="text-left rounded-lg border bg-card p-3 hover:bg-accent hover:border-primary transition-colors group"
+                                    key={tpl.id}
+                                    onClick={() => handleApply(tpl)}
+                                    className="text-start rounded-lg border bg-card p-3 hover:bg-accent hover:border-primary transition-colors group"
                                 >
                                     <div className="flex items-start justify-between gap-2">
-                                        <p className="text-sm font-medium leading-snug">{t.name}</p>
-                                        <CategoryBadge category={t.category} />
+                                        <p className="text-sm font-medium leading-snug">{tpl.name}</p>
+                                        <CategoryBadge category={tpl.category} />
                                     </div>
-                                    {t.description && (
-                                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.description}</p>
+                                    {tpl.description && (
+                                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{tpl.description}</p>
                                     )}
                                 </button>
                             ))}
@@ -132,11 +134,11 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
                     {/* User templates */}
                     <section>
                         <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-sm font-semibold">Your Templates</h3>
+                            <h3 className="text-sm font-semibold">{t('templatePicker.yourTemplates')}</h3>
                             {currentXml?.trim() && (
                                 <Button variant="outline" size="sm" onClick={() => setShowSaveForm(v => !v)}>
-                                    <Plus className="w-3.5 h-3.5 mr-1.5" />
-                                    Save current form
+                                    <Plus className="w-3.5 h-3.5 me-1.5" />
+                                    {t('templatePicker.saveCurrentForm')}
                                 </Button>
                             )}
                         </div>
@@ -145,68 +147,68 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
                             <div className="rounded-lg border bg-muted/40 p-4 space-y-3 mb-3">
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="space-y-1.5">
-                                        <Label htmlFor="tpl-name">Template Name *</Label>
+                                        <Label htmlFor="tpl-name">{t('templatePicker.templateName')}</Label>
                                         <Input
                                             id="tpl-name"
                                             value={saveName}
                                             onChange={e => setSaveName(e.target.value)}
-                                            placeholder="e.g. My Sentiment Form"
+                                            placeholder={t('templatePicker.namePlaceholder')}
                                         />
                                     </div>
                                     <div className="space-y-1.5">
-                                        <Label htmlFor="tpl-cat">Category</Label>
+                                        <Label htmlFor="tpl-cat">{t('templatePicker.category')}</Label>
                                         <Input
                                             id="tpl-cat"
                                             value={saveCategory}
                                             onChange={e => setSaveCategory(e.target.value)}
-                                            placeholder="e.g. Classification"
+                                            placeholder={t('templatePicker.catPlaceholder')}
                                         />
                                     </div>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <Label htmlFor="tpl-desc">Description</Label>
+                                    <Label htmlFor="tpl-desc">{t('templatePicker.description')}</Label>
                                     <Input
                                         id="tpl-desc"
                                         value={saveDesc}
                                         onChange={e => setSaveDesc(e.target.value)}
-                                        placeholder="Optional short description..."
+                                        placeholder={t('templatePicker.descPlaceholder')}
                                     />
                                 </div>
                                 <div className="flex justify-end gap-2">
-                                    <Button variant="ghost" size="sm" onClick={() => setShowSaveForm(false)}>Cancel</Button>
+                                    <Button variant="ghost" size="sm" onClick={() => setShowSaveForm(false)}>{t('common.cancel')}</Button>
                                     <Button size="sm" onClick={handleSave} disabled={saving || !saveName.trim()}>
-                                        {saving ? "Saving…" : "Save Template"}
+                                        {saving ? t('templatePicker.saving') : t('templatePicker.saveTemplate')}
                                     </Button>
                                 </div>
                             </div>
                         )}
 
                         {loading ? (
-                            <p className="text-sm text-muted-foreground">Loading…</p>
+                            <p className="text-sm text-muted-foreground">{t('templatePicker.loading')}</p>
                         ) : userTemplates.length === 0 ? (
                             <p className="text-sm text-muted-foreground italic">
-                                No saved templates yet. Build a form and click "Save current form" to create one.
+                                {t('templatePicker.noTemplates')}
                             </p>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                {userTemplates.map(t => (
+                                {userTemplates.map(tpl => (
                                     <div
-                                        key={t.id}
+                                        key={tpl.id}
                                         className="rounded-lg border bg-card p-3 flex items-start justify-between gap-2 group"
                                     >
-                                        <button className="text-left flex-1 min-w-0" onClick={() => handleApply(t)}>
+                                        <button className="text-start flex-1 min-w-0" onClick={() => handleApply(tpl)}>
                                             <div className="flex items-center gap-2">
-                                                <p className="text-sm font-medium truncate">{t.name}</p>
-                                                <CategoryBadge category={t.category} />
+                                                <p className="text-sm font-medium truncate">{tpl.name}</p>
+                                                <CategoryBadge category={tpl.category} />
                                             </div>
-                                            {t.description && (
-                                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{t.description}</p>
+                                            {tpl.description && (
+                                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{tpl.description}</p>
                                             )}
                                         </button>
                                         <button
-                                            onClick={() => handleDelete(t)}
+                                            onClick={() => handleDelete(tpl)}
                                             className="text-muted-foreground hover:text-destructive transition-colors shrink-0 mt-0.5"
-                                            aria-label="Delete template"
+                                            aria-label={t('templatePicker.deleteTemplate')}
                                         >
                                             <Trash2 className="w-3.5 h-3.5" />
                                         </button>
@@ -219,7 +221,7 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
 
                 <Separator />
                 <div className="flex justify-end pt-1">
-                    <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+                    <Button variant="outline" size="sm" onClick={onClose}>{t('templatePicker.close')}</Button>
                 </div>
             </DialogContent>
         </Dialog>

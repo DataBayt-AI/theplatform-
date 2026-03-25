@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { projectService } from "@/services/projectService";
 import { Project } from "@/types/data";
@@ -12,6 +13,7 @@ import { Plus, FolderOpen, Clock, BarChart3, Settings, Target, Shield, Briefcase
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { ar as arLocale } from "date-fns/locale";
 import { UserMenu } from "@/components/UserMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -23,10 +25,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { useTutorial, hasSeenTutorial } from "@/components/Tutorial/useTutorial";
 import { getDashboardSteps, type UserRole } from "@/components/Tutorial/tourSteps";
+import { LanguageSwitcherInline } from "@/components/LanguageSwitcher";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const Dashboard = () => {
     const navigate = useNavigate();
     const { toast } = useToast();
+    const { t } = useTranslation();
+    const { language } = useLanguage();
     const { currentUser, login, users, createUser, getUserById, deleteUser, updateUserRoles, adminResetPassword } = useAuth();
     const [loginUsername, setLoginUsername] = useState("");
     const [loginPassword, setLoginPassword] = useState("");
@@ -39,9 +45,9 @@ const Dashboard = () => {
         setLoginLoading(true);
         try {
             const ok = await login(loginUsername, loginPassword);
-            if (!ok) setLoginError("Invalid username or password.");
+            if (!ok) setLoginError(t("auth.invalidCredentials"));
         } catch {
-            setLoginError("Login failed. Please try again.");
+            setLoginError(t("auth.loginFailed"));
         } finally {
             setLoginLoading(false);
         }
@@ -288,7 +294,7 @@ const Dashboard = () => {
                         <img src="/favicon.svg" alt="DataBayt.AI Logo" className="w-6 h-6 invert brightness-0" />
                     </div>
                     <CardTitle className="text-2xl">DataBayt.AI Studio</CardTitle>
-                    <CardDescription>Sign in to your account</CardDescription>
+                    <CardDescription>{t("auth.loginSubtitle")}</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleLogin} className="space-y-4">
@@ -299,11 +305,11 @@ const Dashboard = () => {
                             </Alert>
                         )}
                         <div className="space-y-2">
-                            <Label htmlFor="login-username">Username</Label>
+                            <Label htmlFor="login-username">{t("auth.usernameLabel")}</Label>
                             <Input
                                 id="login-username"
                                 type="text"
-                                placeholder="Enter your username"
+                                placeholder={t("auth.usernameLabel")}
                                 value={loginUsername}
                                 onChange={(e) => setLoginUsername(e.target.value)}
                                 disabled={loginLoading}
@@ -311,20 +317,26 @@ const Dashboard = () => {
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="login-password">Password</Label>
+                            <Label htmlFor="login-password">{t("auth.passwordLabel")}</Label>
                             <Input
                                 id="login-password"
                                 type="password"
-                                placeholder="Enter your password"
+                                placeholder={t("auth.passwordLabel")}
                                 value={loginPassword}
                                 onChange={(e) => setLoginPassword(e.target.value)}
                                 disabled={loginLoading}
                             />
                         </div>
                         <Button type="submit" className="w-full" disabled={loginLoading}>
-                            {loginLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in...</> : "Sign In"}
+                            {loginLoading
+                                ? <><Loader2 className="me-2 h-4 w-4 animate-spin" />{t("auth.loggingIn")}</>
+                                : t("auth.loginButton")}
                         </Button>
                     </form>
+                    {/* Language switcher on the login screen */}
+                    <div className="mt-4 flex justify-center gap-2 text-sm text-muted-foreground">
+                        <LanguageSwitcherInline />
+                    </div>
                 </CardContent>
             </Card>
         </div>
@@ -341,47 +353,47 @@ const Dashboard = () => {
                         </div>
                         <div>
                             <h1 className="text-3xl font-bold tracking-tight">DataBayt.AI Studio</h1>
-                            <p className="text-muted-foreground">Manage your annotation projects</p>
+                            <p className="text-muted-foreground">{t("dashboard.manageProjects")}</p>
                         </div>
                     </div>
 
                     <div className="flex items-center gap-3">
                         {isManager && (
                             <Button id="tutorial-model-management" variant="outline" size="sm" onClick={() => navigate("/model-management")}>
-                                Model Management
+                                {t("nav.modelManagement")}
                             </Button>
                         )}
                         {isAdmin && (
                             <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
                                 <DialogTrigger asChild>
-                                    <Button id="tutorial-manage-users" variant="outline" size="sm">Manage Users</Button>
+                                    <Button id="tutorial-manage-users" variant="outline" size="sm">{t("dashboard.userManagement")}</Button>
                                 </DialogTrigger>
                                 <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                                     <DialogHeader>
-                                        <DialogTitle>User Management</DialogTitle>
-                                        <DialogDescription>Create, edit, or remove system users.</DialogDescription>
+                                        <DialogTitle>{t("dashboard.userManagement")}</DialogTitle>
+                                        <DialogDescription>{t("dashboard.userManagementDesc")}</DialogDescription>
                                     </DialogHeader>
 
                                     <div className="space-y-6">
                                         {/* Create User Section */}
                                         <div className="space-y-3 p-4 bg-muted/20 rounded-lg border">
-                                            <h3 className="font-semibold text-sm">Create New User</h3>
+                                            <h3 className="font-semibold text-sm">{t("dashboard.createNewUser")}</h3>
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                                 <div className="space-y-1.5">
-                                                    <Label htmlFor="new-user">Username</Label>
+                                                    <Label htmlFor="new-user">{t("common.username")}</Label>
                                                     <Input id="new-user" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="jdoe" />
                                                 </div>
                                                 <div className="space-y-1.5">
-                                                    <Label htmlFor="new-pass">Password</Label>
+                                                    <Label htmlFor="new-pass">{t("common.password")}</Label>
                                                     <Input id="new-pass" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="******" />
                                                 </div>
                                                 <div className="space-y-1.5">
-                                                    <Label>Roles</Label>
+                                                    <Label>{t("dashboard.role")}</Label>
                                                     <div className="flex flex-wrap gap-2">
                                                         {[
-                                                            { id: "manager", label: "Manager", icon: Briefcase },
-                                                            { id: "annotator", label: "Annotator", icon: PenTool },
-                                                            { id: "admin", label: "Admin", icon: Shield }
+                                                            { id: "manager", label: t("dashboard.roles.manager"), icon: Briefcase },
+                                                            { id: "annotator", label: t("dashboard.roles.annotator"), icon: PenTool },
+                                                            { id: "admin", label: t("dashboard.roles.admin"), icon: Shield }
                                                         ].map(({ id, label, icon: Icon }) => {
                                                             const isSelected = id === "admin" ? newRoles.includes("admin") : newRoles.includes(id as Role);
                                                             const isDisabled = newRoles.includes("admin") && id !== "admin";
@@ -422,7 +434,7 @@ const Dashboard = () => {
                                             </div>
                                             {createUserError && <p className="text-sm text-destructive">{createUserError}</p>}
                                             <div className="flex justify-end">
-                                                <Button size="sm" onClick={handleCreateUser}>Create User</Button>
+                                                <Button size="sm" onClick={handleCreateUser}>{t("dashboard.newUser")}</Button>
                                             </div>
                                         </div>
 
@@ -430,10 +442,10 @@ const Dashboard = () => {
                                         <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
                                             <div className="flex items-center gap-2">
                                                 <Link className="h-4 w-4 text-blue-600" />
-                                                <h3 className="font-semibold text-sm">Invite Link</h3>
+                                                <h3 className="font-semibold text-sm">{t("dashboard.inviteLink")}</h3>
                                             </div>
                                             <p className="text-sm text-muted-foreground">
-                                                Generate a link that allows new users to sign up as annotators.
+                                                {t("dashboard.inviteLinkDesc")}
                                             </p>
                                             {inviteLink ? (
                                                 <div className="flex gap-2">
@@ -474,14 +486,14 @@ const Dashboard = () => {
                                                     }}
                                                 >
                                                     {generatingInvite ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Link className="h-4 w-4 mr-2" />}
-                                                    Generate Invite Link
+                                                    {t("dashboard.generateInviteLink")}
                                                 </Button>
                                             )}
                                         </div>
 
                                         {/* User List Section */}
                                         <div className="space-y-3">
-                                            <h3 className="font-semibold text-sm">Existing Users</h3>
+                                            <h3 className="font-semibold text-sm">{t("dashboard.existingUsers")}</h3>
                                             <div className="border rounded-md divide-y">
                                                 {users.map(user => {
                                                     const isEditing = editingUser?.id === user.id;
@@ -490,11 +502,11 @@ const Dashboard = () => {
                                                             {isEditing ? (
                                                                 <div className="space-y-3 bg-muted/30 -m-3 p-3">
                                                                     <div className="flex justify-between items-center mb-2">
-                                                                        <span className="font-medium">Editing: {user.username}</span>
+                                                                        <span className="font-medium">{t("dashboard.editingUser", { username: user.username })}</span>
                                                                     </div>
                                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                                         <div className="space-y-1.5">
-                                                                            <Label>Reset Password (Optional)</Label>
+                                                                            <Label>{t("dashboard.resetPassword")}</Label>
                                                                             <Input
                                                                                 type="password"
                                                                                 value={resetPassword}
@@ -503,12 +515,12 @@ const Dashboard = () => {
                                                                             />
                                                                         </div>
                                                                         <div className="space-y-1.5">
-                                                                            <Label>Roles</Label>
+                                                                            <Label>{t("dashboard.role")}</Label>
                                                                             <div className="flex flex-wrap gap-2 pt-2">
                                                                                 {[
-                                                                                    { id: "manager", label: "Manager", icon: Briefcase },
-                                                                                    { id: "annotator", label: "Annotator", icon: PenTool },
-                                                                                    { id: "admin", label: "Admin", icon: Shield }
+                                                                                    { id: "manager", label: t("dashboard.roles.manager"), icon: Briefcase },
+                                                                                    { id: "annotator", label: t("dashboard.roles.annotator"), icon: PenTool },
+                                                                                    { id: "admin", label: t("dashboard.roles.admin"), icon: Shield }
                                                                                 ].map(({ id, label, icon: Icon }) => {
                                                                                     const isSelected = id === "admin" ? editRoles.includes("admin") : editRoles.includes(id as Role);
                                                                                     const isDisabled = editRoles.includes("admin") && id !== "admin";
@@ -545,8 +557,8 @@ const Dashboard = () => {
                                                                         </div>
                                                                     </div>
                                                                     <div className="flex justify-end gap-2 pt-2">
-                                                                        <Button variant="ghost" size="sm" onClick={() => setEditingUser(null)}>Cancel</Button>
-                                                                        <Button size="sm" onClick={handleUpdateUser}>Save Changes</Button>
+                                                                        <Button variant="ghost" size="sm" onClick={() => setEditingUser(null)}>{t("common.cancel")}</Button>
+                                                                        <Button size="sm" onClick={handleUpdateUser}>{t("workspace.saveChanges")}</Button>
                                                                     </div>
                                                                 </div>
                                                             ) : (
@@ -556,7 +568,7 @@ const Dashboard = () => {
                                                                             {user.username}
                                                                             {user.username === "admin" && <span className="text-[10px] bg-primary/20 text-primary px-1 rounded">SUPER</span>}
                                                                         </div>
-                                                                        <div className="text-muted-foreground text-xs">{user.roles.join(", ")}</div>
+                                                                        <div className="text-muted-foreground text-xs">{user.roles.map(r => t(`dashboard.roles.${r}`, r)).join(", ")}</div>
                                                                     </div>
                                                                     <div className="flex items-center gap-2">
                                                                         {user.username !== "admin" && (
@@ -571,7 +583,7 @@ const Dashboard = () => {
                                                                                         setResetPassword("");
                                                                                     }}
                                                                                 >
-                                                                                    Edit
+                                                                                    {t("common.edit")}
                                                                                 </Button>
                                                                                 <Button
                                                                                     variant="destructive"
@@ -579,7 +591,7 @@ const Dashboard = () => {
                                                                                     className="h-7 text-xs"
                                                                                     onClick={() => handleDeleteUser(user.id)}
                                                                                 >
-                                                                                    Delete
+                                                                                    {t("common.delete")}
                                                                                 </Button>
                                                                             </>
                                                                         )}
@@ -601,19 +613,19 @@ const Dashboard = () => {
                                 <DialogTrigger asChild>
                                     <Button id="tutorial-new-project" className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
                                         <Plus className="w-4 h-4 mr-2" />
-                                        New Project
+                                        {t("dashboard.newProject")}
                                     </Button>
                                 </DialogTrigger>
                                 <DialogContent>
                                     <DialogHeader>
-                                        <DialogTitle>Create New Project</DialogTitle>
+                                        <DialogTitle>{t("dashboard.createNewProject")}</DialogTitle>
                                         <DialogDescription>
-                                            Start a new data labeling project and choose how you want to import data.
+                                            {t("dashboard.createProjectDesc")}
                                         </DialogDescription>
                                     </DialogHeader>
                                     <div className="space-y-4 py-4">
                                         <div className="space-y-2">
-                                            <Label htmlFor="name">Project Name</Label>
+                                            <Label htmlFor="name">{t("dashboard.projectName")}</Label>
                                             <Input
                                                 id="name"
                                                 placeholder="e.g., Sentiment Analysis V1"
@@ -622,7 +634,7 @@ const Dashboard = () => {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label htmlFor="desc">Description (Optional)</Label>
+                                            <Label htmlFor="desc">{t("dashboard.descriptionOptional")}</Label>
                                             <Textarea
                                                 id="desc"
                                                 placeholder="Brief description of the dataset and goals"
@@ -632,8 +644,8 @@ const Dashboard = () => {
                                         </div>
                                     </div>
                                     <DialogFooter>
-                                        <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
-                                        <Button onClick={handleCreateProject} disabled={!newProjectName.trim()}>Create Project</Button>
+                                        <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>{t("common.cancel")}</Button>
+                                        <Button onClick={handleCreateProject} disabled={!newProjectName.trim()}>{t("dashboard.createProject")}</Button>
                                     </DialogFooter>
                                 </DialogContent>
                             </Dialog>
@@ -659,13 +671,13 @@ const Dashboard = () => {
                     visibleProjects.length === 0 ? (
                         <div className="text-center py-20 border-2 border-dashed rounded-xl bg-muted/30">
                             <FolderOpen className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-                            <h2 className="text-xl font-semibold mb-2">No projects yet</h2>
+                            <h2 className="text-xl font-semibold mb-2">{t("dashboard.noProjectsHeading")}</h2>
                             <p className="text-muted-foreground mb-6">
-                                {isAdmin ? "Create your first project to start labeling data" : "You are not assigned to any projects yet"}
+                                {isAdmin ? t("dashboard.noProjectsAdminDesc") : t("dashboard.noProjectsAnnotatorDesc")}
                             </p>
                             {isAdmin && (
                                 <Button onClick={() => setIsCreateDialogOpen(true)}>
-                                    Create Project
+                                    {t("dashboard.createProject")}
                                 </Button>
                             )}
                         </div>
@@ -687,7 +699,7 @@ const Dashboard = () => {
                                                 {project.isDemo && (
                                                     <Badge variant="secondary" className="shrink-0 gap-1 text-[10px] px-1.5 py-0.5">
                                                         <FlaskConical className="w-3 h-3" />
-                                                        Example
+                                                        {t('dashboard.exampleBadge')}
                                                     </Badge>
                                                 )}
                                             </div>
@@ -706,28 +718,28 @@ const Dashboard = () => {
                                             )}
                                         </div>
                                         <CardDescription className="line-clamp-2 min-h-[2.5em]">
-                                            {project.description || "No description"}
+                                            {project.description || t("dashboard.noDescription")}
                                         </CardDescription>
                                     </CardHeader>
                                     <CardContent className="pb-3">
                                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                                             <div className="flex items-center gap-1">
                                                 <FolderOpen className="w-4 h-4" />
-                                                <span>{project.totalDataPoints ?? project.dataPoints.length} items</span>
+                                                <span>{project.totalDataPoints ?? project.dataPoints.length} {t("dashboard.items")}</span>
                                             </div>
                                             <div className="flex items-center gap-1">
                                                 <BarChart3 className="w-4 h-4" />
-                                                <span>{Math.round((project.stats.totalAccepted + project.stats.totalEdited) / ((project.totalDataPoints ?? project.dataPoints.length) || 1) * 100)}% done</span>
+                                                <span>{Math.round((project.stats.totalAccepted + project.stats.totalEdited) / ((project.totalDataPoints ?? project.dataPoints.length) || 1) * 100)}% {t("dashboard.done")}</span>
                                             </div>
                                         </div>
                                         <div className="mt-2 text-xs text-muted-foreground">
-                                            Manager: {getUserById(project.managerId)?.username || "Unassigned"}
+                                            {t("dashboard.manager")} {getUserById(project.managerId)?.username || t("dashboard.unassigned")}
                                         </div>
                                     </CardContent>
                                     <CardFooter className="pt-3 border-t bg-muted/20 text-xs text-muted-foreground flex justify-between">
                                         <div className="flex items-center gap-1">
                                             <Clock className="w-3 h-3" />
-                                            <span>Updated {formatDistanceToNow(project.updatedAt)} ago</span>
+                                            <span>{t("dashboard.updatedAgo", { time: formatDistanceToNow(project.updatedAt, { locale: language === "ar" ? arLocale : undefined }) })}</span>
                                         </div>
                                     </CardFooter>
                                 </Card>
@@ -740,24 +752,24 @@ const Dashboard = () => {
             <Dialog open={!!accessProject} onOpenChange={(open) => !open && setAccessProject(null)}>
                 <DialogContent className="max-w-lg">
                     <DialogHeader>
-                        <DialogTitle>Project Access</DialogTitle>
+                        <DialogTitle>{t("dashboard.projectAccess")}</DialogTitle>
                         <DialogDescription>
-                            Assign a manager and annotators for this project.
+                            {t("dashboard.projectAccessDesc")}
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
                         {isAdmin && (
                             <div className="space-y-2">
-                                <Label>Manager</Label>
+                                <Label>{t("projectSettings.manager")}</Label>
                                 <Select
                                     value={selectedManagerId ?? "unassigned"}
                                     onValueChange={(value) => setSelectedManagerId(value === "unassigned" ? null : value)}
                                 >
                                     <SelectTrigger>
-                                        <SelectValue placeholder="Select a manager" />
+                                        <SelectValue placeholder={t("dashboard.selectManager")} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                                        <SelectItem value="unassigned">{t("dashboard.unassigned")}</SelectItem>
                                         {managerUsers.map(user => (
                                             <SelectItem key={user.id} value={user.id}>{user.username}</SelectItem>
                                         ))}
@@ -767,10 +779,10 @@ const Dashboard = () => {
                         )}
 
                         <div className="space-y-2">
-                            <Label>Annotators</Label>
+                            <Label>{t("dashboard.annotators")}</Label>
                             <div className="space-y-2 border rounded-md p-3 max-h-48 overflow-y-auto">
                                 {annotatorUsers.length === 0 && (
-                                    <p className="text-xs text-muted-foreground">No annotators available</p>
+                                    <p className="text-xs text-muted-foreground">{t("dashboard.noAnnotatorsAvailable")}</p>
                                 )}
                                 {annotatorUsers.map(user => {
                                     const checked = selectedAnnotators.includes(user.id);
@@ -797,8 +809,8 @@ const Dashboard = () => {
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setAccessProject(null)}>Cancel</Button>
-                        <Button onClick={handleSaveAccess}>Save</Button>
+                        <Button variant="outline" onClick={() => setAccessProject(null)}>{t("common.cancel")}</Button>
+                        <Button onClick={handleSaveAccess}>{t("common.save")}</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -806,14 +818,14 @@ const Dashboard = () => {
             <AlertDialog open={!!projectToDelete} onOpenChange={(open) => !open && setProjectToDelete(null)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogTitle>{t("dashboard.areYouSure")}</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the project
-                            {projectToDelete && ` "${projectToDelete.name}"`} and all its annotations.
+                            {t("dashboard.confirmDeleteDescription")}
+                            {projectToDelete && ` "${projectToDelete.name}"`}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                         <AlertDialogAction
                             className="bg-destructive hover:bg-destructive/90"
                             onClick={() => {
@@ -822,7 +834,7 @@ const Dashboard = () => {
                                 }
                             }}
                         >
-                            Delete
+                            {t("common.delete")}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

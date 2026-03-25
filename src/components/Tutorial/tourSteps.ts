@@ -1,4 +1,5 @@
 import type { DriveStep } from "driver.js";
+import i18n from "@/i18n";
 
 export type UserRole = "admin" | "manager" | "annotator";
 
@@ -7,12 +8,12 @@ export function getDashboardSteps(roles: UserRole[]): DriveStep[] {
   const isManager = roles.includes("manager") || isAdmin;
   const isAnnotator = roles.includes("annotator") && !isManager;
 
+  const t = i18n.t.bind(i18n);
   const steps: DriveStep[] = [
     {
       popover: {
-        title: "Welcome to DataBayt.AI Studio",
-        description:
-          "This quick tour will walk you through the key features of the platform. Use <b>Next</b> to continue or press <b>Esc</b> to exit at any time.",
+        title: t("tour.dashboard.welcome.title"),
+        description: t("tour.dashboard.welcome.description"),
         side: "over",
         align: "center",
       },
@@ -24,9 +25,8 @@ export function getDashboardSteps(roles: UserRole[]): DriveStep[] {
       {
         element: "#tutorial-projects-list",
         popover: {
-          title: "Your Assigned Projects",
-          description:
-            "These are the annotation projects you have been assigned to. Click on a project card to open the workspace and start annotating.",
+          title: t("tour.dashboard.assignedProjects.title"),
+          description: t("tour.dashboard.assignedProjects.description"),
           side: "top",
           align: "start",
         },
@@ -34,9 +34,8 @@ export function getDashboardSteps(roles: UserRole[]): DriveStep[] {
       {
         element: "#tutorial-open-project",
         popover: {
-          title: "Open a Project",
-          description:
-            'Click <b>Open</b> on any project card to enter the annotation workspace. Your progress is saved automatically.',
+          title: t("tour.dashboard.openProject.title"),
+          description: t("tour.dashboard.openProject.description"),
           side: "top",
         },
       }
@@ -48,9 +47,8 @@ export function getDashboardSteps(roles: UserRole[]): DriveStep[] {
   steps.push({
     element: "#tutorial-new-project",
     popover: {
-      title: "Create a New Project",
-      description:
-        "Click here to create an annotation project. You can configure the name, description, IAA (Inter-Annotator Agreement) settings, and assign team members.",
+      title: t("tour.dashboard.newProject.title"),
+      description: t("tour.dashboard.newProject.description"),
       side: "bottom",
       align: "end",
     },
@@ -59,9 +57,8 @@ export function getDashboardSteps(roles: UserRole[]): DriveStep[] {
   steps.push({
     element: "#tutorial-projects-list",
     popover: {
-      title: "Your Projects",
-      description:
-        "All your annotation projects appear here. Each card shows the project name, description, and quick actions like <b>Open</b>, <b>Settings</b>, and <b>Access</b>.",
+      title: t("tour.dashboard.yourProjects.title"),
+      description: t("tour.dashboard.yourProjects.description"),
       side: "top",
       align: "start",
     },
@@ -71,9 +68,8 @@ export function getDashboardSteps(roles: UserRole[]): DriveStep[] {
     steps.push({
       element: "#tutorial-model-management",
       popover: {
-        title: "Model Management",
-        description:
-          "Configure AI model connections (OpenAI, Gemini, OpenRouter, etc.) and manage model profiles used to auto-annotate your data.",
+        title: t("tour.dashboard.modelManagement.title"),
+        description: t("tour.dashboard.modelManagement.description"),
         side: "bottom",
         align: "end",
       },
@@ -84,9 +80,8 @@ export function getDashboardSteps(roles: UserRole[]): DriveStep[] {
     steps.push({
       element: "#tutorial-manage-users",
       popover: {
-        title: "User Management",
-        description:
-          "As an admin, you can create users, assign roles (Admin, Manager, Annotator), reset passwords, and generate invite links for new team members.",
+        title: t("tour.dashboard.userManagement.title"),
+        description: t("tour.dashboard.userManagement.description"),
         side: "bottom",
         align: "end",
       },
@@ -96,9 +91,8 @@ export function getDashboardSteps(roles: UserRole[]): DriveStep[] {
   steps.push({
     element: "#tutorial-help-btn",
     popover: {
-      title: "Replay This Tour",
-      description:
-        "You can always reopen this tour by clicking the <b>?</b> button here. Enjoy using DataBayt.AI!",
+      title: t("tour.dashboard.replayTour.title"),
+      description: t("tour.dashboard.replayTour.description"),
       side: "bottom",
       align: "end",
     },
@@ -108,12 +102,12 @@ export function getDashboardSteps(roles: UserRole[]): DriveStep[] {
 }
 
 export function getWorkspaceSteps(canManage: boolean): DriveStep[] {
+  const t = i18n.t.bind(i18n);
   const steps: DriveStep[] = [
     {
       popover: {
-        title: "Annotation Workspace",
-        description:
-          "Welcome to the workspace! This tour covers the main controls. Use <b>Next</b> to continue.",
+        title: t("tour.workspace.welcome.title"),
+        description: t("tour.workspace.welcome.description"),
         side: "over",
         align: "center",
       },
@@ -121,9 +115,8 @@ export function getWorkspaceSteps(canManage: boolean): DriveStep[] {
     {
       element: "#tutorial-progress",
       popover: {
-        title: "Your Progress",
-        description:
-          "This progress bar shows how many items have been annotated out of the total. Keep going!",
+        title: t("tour.workspace.progress.title"),
+        description: t("tour.workspace.progress.description"),
         side: "bottom",
         align: "end",
       },
@@ -131,18 +124,16 @@ export function getWorkspaceSteps(canManage: boolean): DriveStep[] {
     {
       element: "#tutorial-nav-prev",
       popover: {
-        title: "Navigate Items",
-        description:
-          "Use the <b>Previous</b> and <b>Next</b> arrow buttons to move between data points. You can also use <kbd>←</kbd> / <kbd>→</kbd> keyboard shortcuts.",
+        title: t("tour.workspace.navigation.title"),
+        description: t("tour.workspace.navigation.description"),
         side: "bottom",
       },
     },
     {
       element: "#tutorial-annotation-form",
       popover: {
-        title: "Annotation Panel",
-        description:
-          "This is where you label each data point. Fill in the required fields and click <b>Accept</b> to save your annotation, or <b>Reject</b> to flag the item.",
+        title: t("tour.workspace.annotationPanel.title"),
+        description: t("tour.workspace.annotationPanel.description"),
         side: "left",
         align: "start",
       },
@@ -150,18 +141,16 @@ export function getWorkspaceSteps(canManage: boolean): DriveStep[] {
     {
       element: "#tutorial-guidelines-btn",
       popover: {
-        title: "Annotation Guidelines",
-        description:
-          "Click here to read the project guidelines. Always refer to them when unsure how to label an item.",
+        title: t("tour.workspace.guidelines.title"),
+        description: t("tour.workspace.guidelines.description"),
         side: "bottom",
       },
     },
     {
       element: "#tutorial-shortcuts-btn",
       popover: {
-        title: "Keyboard Shortcuts",
-        description:
-          "Open the keyboard shortcut reference to speed up your annotation workflow significantly.",
+        title: t("tour.workspace.shortcuts.title"),
+        description: t("tour.workspace.shortcuts.description"),
         side: "bottom",
       },
     },
@@ -171,9 +160,8 @@ export function getWorkspaceSteps(canManage: boolean): DriveStep[] {
     steps.push({
       element: "#tutorial-workspace-help-btn",
       popover: {
-        title: "Replay This Tour",
-        description:
-          "Click the <b>?</b> button any time to re-run this workspace tour.",
+        title: t("tour.workspace.replayTour.title"),
+        description: t("tour.workspace.replayTour.description"),
         side: "bottom",
       },
     });

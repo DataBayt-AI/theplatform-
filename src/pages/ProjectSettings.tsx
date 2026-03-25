@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ArrowLeft, ExternalLink, Trash2, Save, Upload, AlertTriangle, Layers, Code2, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,7 @@ import type { Project } from "@/types/data";
 export default function ProjectSettings() {
     const { projectId } = useParams<{ projectId: string }>();
     const navigate = useNavigate();
+    const { t } = useTranslation();
     const { currentUser } = useAuth();
 
     const [project, setProject] = useState<Project | null>(null);
@@ -94,9 +96,9 @@ export default function ProjectSettings() {
         try {
             await projectService.update({ ...project, name, description });
             setProject(p => p ? { ...p, name, description } : p);
-            toast({ title: "Saved", description: "Project details updated." });
+            toast({ title: t("common.success"), description: t("projectSettings.savedDetails") });
         } catch {
-            toast({ title: "Error", description: "Failed to save.", variant: "destructive" });
+            toast({ title: t("common.error"), description: t("projectSettings.failedSave"), variant: "destructive" });
         }
     };
 
@@ -108,9 +110,9 @@ export default function ProjectSettings() {
                 annotatorIds,
             });
             setProject(p => p ? { ...p, managerId: isAdmin ? managerId : p.managerId, annotatorIds } : p);
-            toast({ title: "Saved", description: "Team updated." });
+            toast({ title: t("common.success"), description: t("projectSettings.savedTeam") });
         } catch {
-            toast({ title: "Error", description: "Failed to save team.", variant: "destructive" });
+            toast({ title: t("common.error"), description: t("projectSettings.failedSaveTeam"), variant: "destructive" });
         }
     };
 
@@ -119,9 +121,9 @@ export default function ProjectSettings() {
         try {
             await projectService.update({ ...project, guidelines });
             setProject(p => p ? { ...p, guidelines } : p);
-            toast({ title: "Saved", description: "Guidelines updated." });
+            toast({ title: t("common.success"), description: t("projectSettings.savedGuidelines") });
         } catch {
-            toast({ title: "Error", description: "Failed to save guidelines.", variant: "destructive" });
+            toast({ title: t("common.error"), description: t("projectSettings.failedSaveGuidelines"), variant: "destructive" });
         }
     };
 
@@ -139,9 +141,9 @@ export default function ProjectSettings() {
         try {
             await projectService.update({ ...project, xmlConfig });
             setProject(p => p ? { ...p, xmlConfig } : p);
-            toast({ title: "Saved", description: "Annotation form updated." });
+            toast({ title: t("common.success"), description: t("projectSettings.savedAnnotationForm") });
         } catch {
-            toast({ title: "Error", description: "Failed to save XML.", variant: "destructive" });
+            toast({ title: t("common.error"), description: t("projectSettings.failedSaveXml"), variant: "destructive" });
         }
     };
 
@@ -160,9 +162,9 @@ export default function ProjectSettings() {
             const iaaConfig = { enabled: iaaEnabled, portionPercent: iaaPortion, annotatorsPerIAAItem: iaaAnnotatorsPerItem };
             await projectService.update({ ...project, iaaConfig });
             setProject(p => p ? { ...p, iaaConfig } : p);
-            toast({ title: "Saved", description: "IAA configuration updated." });
+            toast({ title: t("common.success"), description: t("projectSettings.savedIAA") });
         } catch {
-            toast({ title: "Error", description: "Failed to save IAA config.", variant: "destructive" });
+            toast({ title: t("common.error"), description: t("projectSettings.failedSaveIAA"), variant: "destructive" });
         }
     };
 
@@ -172,7 +174,7 @@ export default function ProjectSettings() {
             await projectService.delete(project.id);
             navigate("/");
         } catch {
-            toast({ title: "Error", description: "Failed to delete project.", variant: "destructive" });
+            toast({ title: t("common.error"), description: t("projectSettings.failedDeleteProject"), variant: "destructive" });
         }
     };
 
@@ -186,7 +188,7 @@ export default function ProjectSettings() {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-screen text-muted-foreground">
-                Loading project settings…
+                {t("projectSettings.loadingSettings")}
             </div>
         );
     }
@@ -204,13 +206,13 @@ export default function ProjectSettings() {
                     <div className="flex items-center gap-3 min-w-0">
                         <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
                             <ArrowLeft className="w-4 h-4 mr-1.5" />
-                            Projects
+                            {t("projectSettings.projects")}
                         </Button>
                         <span className="text-muted-foreground">/</span>
                         <span className="font-semibold truncate">{project.name}</span>
                     </div>
                     <Button size="sm" onClick={() => navigate(`/project/${projectId}`)}>
-                        Open Workspace
+                        {t("projectSettings.openWorkspace")}
                         <ExternalLink className="w-4 h-4 ml-1.5" />
                     </Button>
                 </div>
@@ -218,31 +220,31 @@ export default function ProjectSettings() {
 
             <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
                 <div>
-                    <h1 className="text-2xl font-bold">Project Settings</h1>
+                    <h1 className="text-2xl font-bold">{t("projectSettings.title")}</h1>
                     <p className="text-muted-foreground text-sm mt-1">
-                        Configure this project before annotators start working.
+                        {t("projectSettings.pageSubtitle")}
                     </p>
                 </div>
 
                 {/* 1 — General */}
                 <Card>
                     <CardHeader>
-                        <CardTitle>General</CardTitle>
-                        <CardDescription>Project name and description.</CardDescription>
+                        <CardTitle>{t("projectSettings.general")}</CardTitle>
+                        <CardDescription>{t("projectSettings.generalDescription")}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="space-y-1.5">
-                            <Label htmlFor="proj-name">Project Name</Label>
+                            <Label htmlFor="proj-name">{t("projectSettings.projectName")}</Label>
                             <Input id="proj-name" value={name} onChange={e => setName(e.target.value)} />
                         </div>
                         <div className="space-y-1.5">
-                            <Label htmlFor="proj-desc">Description</Label>
+                            <Label htmlFor="proj-desc">{t("projectSettings.description")}</Label>
                             <Textarea id="proj-desc" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
                         </div>
                         <div className="flex justify-end">
                             <Button size="sm" onClick={saveGeneral} disabled={!name.trim()}>
                                 <Save className="w-4 h-4 mr-1.5" />
-                                Save
+                                {t("common.save")}
                             </Button>
                         </div>
                     </CardContent>
@@ -259,15 +261,14 @@ export default function ProjectSettings() {
                     <CardHeader>
                         <div className="flex items-start justify-between">
                             <div>
-                                <CardTitle>Annotation Form</CardTitle>
+                                <CardTitle>{t("projectSettings.annotationFormTitle")}</CardTitle>
                                         <CardDescription>
-                                    XML configuration for the custom annotation form shown to annotators.
-                                    Leave empty to use the default form.
+                                    {t("projectSettings.annotationFormDescription")}
                                 </CardDescription>
                             </div>
                             <Button variant="outline" size="sm" onClick={() => setShowTemplatePicker(true)}>
                                 <Layers className="w-4 h-4 mr-1.5" />
-                                Use Template
+                                {t("projectSettings.useTemplate")}
                             </Button>
                         </div>
                     </CardHeader>
@@ -284,14 +285,14 @@ export default function ProjectSettings() {
                                             // Validate XML before switching to visual
                                             parseAnnotationConfigXML(xmlConfig);
                                         } catch {
-                                            toast({ title: "Cannot switch to Visual Builder", description: "Fix the XML error first.", variant: "destructive" });
+                                            toast({ title: t("projectSettings.cannotSwitchToVisual"), description: t("projectSettings.fixXmlError"), variant: "destructive" });
                                             return;
                                         }
                                     }
                                     setBuilderMode('visual');
                                 }}
                             >
-                                <Eye className="w-3.5 h-3.5" /> Visual
+                                <Eye className="w-3.5 h-3.5" /> {t("projectSettings.visual")}
                             </Button>
                             <Button
                                 variant={builderMode === 'xml' ? 'secondary' : 'ghost'}
@@ -299,7 +300,7 @@ export default function ProjectSettings() {
                                 className="h-7 text-xs gap-1.5"
                                 onClick={() => setBuilderMode('xml')}
                             >
-                                <Code2 className="w-3.5 h-3.5" /> XML
+                                <Code2 className="w-3.5 h-3.5" /> {t("projectSettings.xml")}
                             </Button>
                         </div>
 
@@ -307,14 +308,14 @@ export default function ProjectSettings() {
                             /* Visual builder + preview side-by-side on desktop */
                             <div className="hidden md:grid md:grid-cols-2 md:gap-6">
                                 <div className="space-y-3">
-                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Builder</p>
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("projectSettings.builder")}</p>
                                     <FormBuilder
                                         xmlConfig={xmlConfig}
                                         onChange={xml => { setXmlConfig(xml); setXmlError(""); }}
                                     />
                                 </div>
                                 <div className="space-y-3">
-                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Preview</p>
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("projectSettings.preview")}</p>
                                     <AnnotationFormPreview xmlConfig={xmlConfig} className="min-h-[200px]" />
                                 </div>
                             </div>
@@ -322,7 +323,7 @@ export default function ProjectSettings() {
                             /* XML editor + preview side-by-side on desktop */
                             <div className="hidden md:grid md:grid-cols-2 md:gap-6">
                                 <div className="space-y-3">
-                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">XML Editor</p>
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("projectSettings.xmlEditor")}</p>
                                     <Textarea
                                         value={xmlConfig}
                                         onChange={e => { setXmlConfig(e.target.value); setXmlError(""); }}
@@ -333,7 +334,7 @@ export default function ProjectSettings() {
                                     {xmlError && <p className="text-sm text-destructive">{xmlError}</p>}
                                 </div>
                                 <div className="space-y-3">
-                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Preview</p>
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("projectSettings.preview")}</p>
                                     <AnnotationFormPreview xmlConfig={xmlConfig} className="min-h-[272px]" />
                                 </div>
                             </div>
@@ -359,7 +360,7 @@ export default function ProjectSettings() {
                                 </>
                             )}
                             <div className="space-y-1.5">
-                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Preview</p>
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("projectSettings.preview")}</p>
                                 <AnnotationFormPreview xmlConfig={xmlConfig} />
                             </div>
                         </div>
@@ -367,7 +368,7 @@ export default function ProjectSettings() {
                         <div className="flex items-center justify-between">
                             <Button variant="outline" size="sm" onClick={() => xmlFileRef.current?.click()}>
                                 <Upload className="w-4 h-4 mr-1.5" />
-                                Upload XML file
+                                {t("projectSettings.uploadXmlFile")}
                             </Button>
                             <input
                                 ref={xmlFileRef}
@@ -378,7 +379,7 @@ export default function ProjectSettings() {
                             />
                             <Button size="sm" onClick={saveXmlConfig}>
                                 <Save className="w-4 h-4 mr-1.5" />
-                                Save
+                                {t("common.save")}
                             </Button>
                         </div>
                     </CardContent>
@@ -387,16 +388,16 @@ export default function ProjectSettings() {
                 {/* 4 — Team */}
                 <Card>
                     <CardHeader>
-                        <CardTitle>Team</CardTitle>
-                        <CardDescription>Assign a manager and select annotators for this project.</CardDescription>
+                        <CardTitle>{t("projectSettings.team")}</CardTitle>
+                        <CardDescription>{t("projectSettings.teamDescription")}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-5">
                         {isAdmin && (
                             <div className="space-y-1.5">
-                                <Label>Manager</Label>
+                                <Label>{t("projectSettings.manager")}</Label>
                                 <Select value={managerId ?? ""} onValueChange={v => setManagerId(v || null)}>
                                     <SelectTrigger>
-                                        <SelectValue placeholder="Select manager…" />
+                                        <SelectValue placeholder={t("projectSettings.selectManager")} />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {adminUsers.map(u => (
@@ -407,10 +408,10 @@ export default function ProjectSettings() {
                             </div>
                         )}
                         <div className="space-y-1.5">
-                            <Label>Annotators</Label>
+                            <Label>{t("projectSettings.annotatorsLabel")}</Label>
                             <div className="rounded-md border divide-y max-h-56 overflow-y-auto">
                                 {annotatorUsers.length === 0 && (
-                                    <p className="text-sm text-muted-foreground p-3">No annotator accounts found.</p>
+                                    <p className="text-sm text-muted-foreground p-3">{t("projectSettings.noAnnotatorAccounts")}</p>
                                 )}
                                 {annotatorUsers.map(u => (
                                     <label key={u.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 cursor-pointer">
@@ -426,7 +427,7 @@ export default function ProjectSettings() {
                         <div className="flex justify-end">
                             <Button size="sm" onClick={saveTeam}>
                                 <Save className="w-4 h-4 mr-1.5" />
-                                Save
+                                {t("common.save")}
                             </Button>
                         </div>
                     </CardContent>
@@ -435,8 +436,8 @@ export default function ProjectSettings() {
                 {/* 5 — Guidelines */}
                 <Card>
                     <CardHeader>
-                        <CardTitle>Annotation Guidelines</CardTitle>
-                        <CardDescription>Instructions shown to annotators. Supports plain text and Markdown.</CardDescription>
+                        <CardTitle>{t("projectSettings.annotationGuidelines")}</CardTitle>
+                        <CardDescription>{t("projectSettings.guidelinesDescription")}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <Textarea
@@ -449,7 +450,7 @@ export default function ProjectSettings() {
                         <div className="flex justify-end">
                             <Button size="sm" onClick={saveGuidelines}>
                                 <Save className="w-4 h-4 mr-1.5" />
-                                Save
+                                {t("common.save")}
                             </Button>
                         </div>
                     </CardContent>
@@ -458,20 +459,19 @@ export default function ProjectSettings() {
                 {/* 6 — IAA */}
                 <Card>
                     <CardHeader>
-                        <CardTitle>Inter-Annotator Agreement (IAA)</CardTitle>
+                        <CardTitle>{t("projectSettings.iaaTitle")}</CardTitle>
                         <CardDescription>
-                            Assign a random portion of items to multiple annotators to measure consistency.
-                            Annotators cannot see that an item is an IAA check.
+                            {t("projectSettings.iaaDescription")}
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-5">
                         <div className="flex items-center gap-3">
                             <Switch checked={iaaEnabled} onCheckedChange={setIaaEnabled} id="iaa-toggle" />
-                            <Label htmlFor="iaa-toggle">Enable IAA</Label>
+                            <Label htmlFor="iaa-toggle">{t("projectSettings.enableIAA")}</Label>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1.5">
-                                <Label htmlFor="iaa-portion">IAA Portion (%)</Label>
+                                <Label htmlFor="iaa-portion">{t("projectSettings.iaaPortion")}</Label>
                                 <Input
                                     id="iaa-portion"
                                     type="number"
@@ -482,7 +482,7 @@ export default function ProjectSettings() {
                                 />
                             </div>
                             <div className="space-y-1.5">
-                                <Label htmlFor="iaa-count">Annotators per IAA Item</Label>
+                                <Label htmlFor="iaa-count">{t("projectSettings.annotatorsPerIAA")}</Label>
                                 <Input
                                     id="iaa-count"
                                     type="number"
@@ -496,7 +496,7 @@ export default function ProjectSettings() {
                         <div className="flex justify-end">
                             <Button size="sm" onClick={saveIaa}>
                                 <Save className="w-4 h-4 mr-1.5" />
-                                Save
+                                {t("common.save")}
                             </Button>
                         </div>
                     </CardContent>
@@ -508,18 +508,18 @@ export default function ProjectSettings() {
                         <CardHeader>
                             <CardTitle className="text-destructive flex items-center gap-2">
                                 <AlertTriangle className="w-5 h-5" />
-                                Danger Zone
+                                {t("projectSettings.dangerZoneTitle")}
                             </CardTitle>
                             <CardDescription>
-                                Irreversible actions. Proceed with caution.
+                                {t("projectSettings.irreversibleActions")}
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
                             <div className="flex items-center justify-between rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3">
                                 <div>
-                                    <p className="text-sm font-medium">Delete this project</p>
+                                    <p className="text-sm font-medium">{t("projectSettings.deleteThisProject")}</p>
                                     <p className="text-xs text-muted-foreground mt-0.5">
-                                        All data points, annotations, and history will be permanently deleted.
+                                        {t("projectSettings.deleteProjectWarning")}
                                     </p>
                                 </div>
                                 <Button
@@ -528,7 +528,7 @@ export default function ProjectSettings() {
                                     onClick={() => setShowDeleteConfirm(true)}
                                 >
                                     <Trash2 className="w-4 h-4 mr-1.5" />
-                                    Delete
+                                    {t("common.delete")}
                                 </Button>
                             </div>
                         </CardContent>
@@ -540,19 +540,18 @@ export default function ProjectSettings() {
             <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Delete "{project.name}"?</DialogTitle>
+                        <DialogTitle>{t("projectSettings.deleteConfirmTitle", { name: project.name })}</DialogTitle>
                         <DialogDescription>
-                            This will permanently delete the project and all its data points, annotations,
-                            snapshots, and history. This action cannot be undone.
+                            {t("projectSettings.deleteConfirmDescription")}
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
-                            Cancel
+                            {t("common.cancel")}
                         </Button>
                         <Button variant="destructive" onClick={deleteProject}>
                             <Trash2 className="w-4 h-4 mr-1.5" />
-                            Delete Project
+                            {t("projectSettings.deleteProject")}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

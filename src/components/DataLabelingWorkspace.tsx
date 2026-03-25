@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Tiktoken } from "js-tiktoken/lite";
 import o200k_base from "js-tiktoken/ranks/o200k_base";
 import cl100k_base from "js-tiktoken/ranks/cl100k_base";
@@ -88,6 +89,7 @@ const COMMENTS_PAGE_SIZE = 10;
 const DataLabelingWorkspace = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser, getUserById } = useAuth();
   const annotatorMeta = currentUser ? { id: currentUser.id, name: currentUser.username } : undefined;
@@ -280,7 +282,7 @@ const DataLabelingWorkspace = () => {
   const [publishProgress, setPublishProgress] = useState<{ step: string; pct: number } | null>(null);
 
   // Dynamic Labels
-  const [annotationLabel, setAnnotationLabel] = useState('Original Annotation');
+  const [annotationLabel, setAnnotationLabel] = useState(() => t('workspace.originalAnnotation'));
   const [promptLabel, setPromptLabel] = useState('Upload Instructions');
   const [isPublishing, setIsPublishing] = useState(false);
 
@@ -492,8 +494,8 @@ const DataLabelingWorkspace = () => {
                 <Target className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold text-foreground">Access Denied</h1>
-                <p className="text-sm text-muted-foreground">You are not assigned to this project.</p>
+                <h1 className="text-xl font-semibold text-foreground">{t("workspace.accessDenied")}</h1>
+                <p className="text-sm text-muted-foreground">{t("workspace.notAssigned")}</p>
               </div>
             </div>
             <ThemeToggle />
@@ -501,11 +503,11 @@ const DataLabelingWorkspace = () => {
           </div>
           <Card className="p-6">
             <p className="text-sm text-muted-foreground">
-              Ask an admin or project manager to grant you access.
+              {t("workspace.askAdmin")}
             </p>
             <div className="mt-4 flex gap-2">
               <Button variant="outline" onClick={() => navigate('/')}>
-                Back to Dashboard
+                {t("workspace.backToDashboard")}
               </Button>
             </div>
           </Card>
@@ -812,18 +814,18 @@ const DataLabelingWorkspace = () => {
     if (isAnnotatorForProject) {
       const assignment = getAssignmentForCurrentUser(dataPoint);
       if (assignment?.status === 'done') {
-        return { code: 'accepted' as const, label: 'done' };
+        return { code: 'accepted' as const, label: t('workspace.statusDone') };
       }
       if (!dataPoint.isIAA && getDoneCount(dataPoint) > 0) {
-        return { code: 'accepted' as const, label: 'done' };
+        return { code: 'accepted' as const, label: t('workspace.statusDone') };
       }
-      return { code: 'pending' as const, label: 'pending' };
+      return { code: 'pending' as const, label: t('workspace.statusPending') };
     }
     const complete = isCompleteByRequirement(dataPoint);
     return complete
-      ? { code: 'accepted' as const, label: 'done' }
-      : { code: 'pending' as const, label: 'pending' };
-  }, [getAssignmentForCurrentUser, getDoneCount, isAnnotatorForProject, isCompleteByRequirement]);
+      ? { code: 'accepted' as const, label: t('workspace.statusDone') }
+      : { code: 'pending' as const, label: t('workspace.statusPending') };
+  }, [getAssignmentForCurrentUser, getDoneCount, isAnnotatorForProject, isCompleteByRequirement, t]);
 
   const getStatusVariant = (statusCode: DataPoint['status']) => {
     if (statusCode === 'accepted') return 'default';
@@ -837,13 +839,13 @@ const DataLabelingWorkspace = () => {
   const getAnnotationPreview = (dataPoint: DataPoint) => {
     const visibleFinal = getVisibleFinalAnnotation(dataPoint);
     const visibleDraft = getVisibleDraftAnnotation(dataPoint);
-    if (visibleFinal) return { label: 'Final', text: visibleFinal };
-    if (visibleDraft) return { label: 'Human', text: visibleDraft };
-    if (dataPoint.originalAnnotation) return { label: 'Original', text: dataPoint.originalAnnotation };
-    if (dataPoint.customField) return { label: dataPoint.customFieldName || 'Custom', text: dataPoint.customField };
+    if (visibleFinal) return { label: t('workspace.annotationFinal'), text: visibleFinal };
+    if (visibleDraft) return { label: t('workspace.annotationHuman'), text: visibleDraft };
+    if (dataPoint.originalAnnotation) return { label: t('workspace.annotationOriginal'), text: dataPoint.originalAnnotation };
+    if (dataPoint.customField) return { label: dataPoint.customFieldName || t('workspace.annotationCustom'), text: dataPoint.customField };
     const aiSuggestion = Object.values(dataPoint.aiSuggestions || {})[0];
-    if (aiSuggestion) return { label: 'AI', text: aiSuggestion };
-    return { label: 'None', text: '' };
+    if (aiSuggestion) return { label: t('workspace.annotationAI'), text: aiSuggestion };
+    return { label: t('workspace.annotationNone'), text: '' };
   };
 
   // Handle starting a new task
@@ -1317,7 +1319,7 @@ const DataLabelingWorkspace = () => {
         if (annotationColumn) {
           setAnnotationLabel(annotationColumn);
         } else {
-          setAnnotationLabel('Original Annotation');
+          setAnnotationLabel(t('workspace.originalAnnotation'));
         }
 
         parsedData = importedRows.map((row) => {
@@ -2406,38 +2408,38 @@ const DataLabelingWorkspace = () => {
             <Card className="p-6 max-w-lg animate-scale-in">
               <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                 <Keyboard className="w-5 h-5" />
-                Keyboard Shortcuts
+                {t("workspace.keyboardShortcuts")}
               </h3>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <span>Next Sample</span>
+                    <span>{t("workspace.nextSample")}</span>
                     <kbd className="px-2 py-1 bg-muted rounded text-xs">→</kbd>
                   </div>
                   <div className="flex justify-between">
-                    <span>Previous Sample</span>
+                    <span>{t("workspace.previousSample")}</span>
                     <kbd className="px-2 py-1 bg-muted rounded text-xs">←</kbd>
                   </div>
                   <div className="flex justify-between">
-                    <span>Save Edit</span>
+                    <span>{t("workspace.saveEdit")}</span>
                     <kbd className="px-2 py-1 bg-muted rounded text-xs">S</kbd>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <span>Process All AI</span>
+                    <span>{t("workspace.processAllAI")}</span>
                     <kbd className="px-2 py-1 bg-muted rounded text-xs">P</kbd>
                   </div>
                   <div className="flex justify-between">
-                    <span>Cancel/Escape</span>
+                    <span>{t("workspace.cancelEscape")}</span>
                     <kbd className="px-2 py-1 bg-muted rounded text-xs">Esc</kbd>
                   </div>
                   <div className="flex justify-between">
-                    <span>Undo</span>
+                    <span>{t("workspace.undo")}</span>
                     <kbd className="px-2 py-1 bg-muted rounded text-xs">Ctrl+Z</kbd>
                   </div>
                   <div className="flex justify-between">
-                    <span>Redo</span>
+                    <span>{t("workspace.redo")}</span>
                     <kbd className="px-2 py-1 bg-muted rounded text-xs">Ctrl+Shift+Z</kbd>
                   </div>
                 </div>
@@ -2447,7 +2449,7 @@ const DataLabelingWorkspace = () => {
                 variant="outline"
                 onClick={() => setShowShortcuts(false)}
               >
-                Close
+                {t("common.close")}
               </Button>
             </Card>
           </div>
@@ -2462,7 +2464,7 @@ const DataLabelingWorkspace = () => {
                     <Undo2 className="w-4 h-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Undo (Ctrl+Z)</TooltipContent>
+                <TooltipContent>{t("workspace.undoCtrl")}</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -2470,7 +2472,7 @@ const DataLabelingWorkspace = () => {
                     <Redo2 className="w-4 h-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Redo (Ctrl+Shift+Z)</TooltipContent>
+                <TooltipContent>{t("workspace.redoCtrl")}</TooltipContent>
               </Tooltip>
               <div className="h-6 w-px bg-border mx-1" />
               <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
@@ -2482,7 +2484,7 @@ const DataLabelingWorkspace = () => {
                   size="sm"
                   onClick={() => setViewMode('list')}
                 >
-                  Back to list
+                  {t("workspace.backToList")}
                 </Button>
               )}
               <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
@@ -2491,7 +2493,7 @@ const DataLabelingWorkspace = () => {
               <div>
                 <h1 className="text-xl font-semibold text-foreground">{projectName || 'DataBayt AI Labeler'}</h1>
                 <p className="text-sm text-muted-foreground">
-                  {dataPoints.length > 0 ? `Data point ${globalCurrentRecordIndex} of ${globalTotalItems}` : 'No data loaded'}
+                  {dataPoints.length > 0 ? t("workspace.dataPointOf", { current: globalCurrentRecordIndex, total: globalTotalItems }) : t("workspace.noDataLoaded")}
                 </p>
               </div>
             </div>
@@ -2499,7 +2501,7 @@ const DataLabelingWorkspace = () => {
             <div className="flex items-center gap-4">
               {dataPoints.length > 0 && (
                 <div id="tutorial-progress" className="text-right">
-                  <p className="text-sm font-medium text-foreground">{globalCompletedCount} completed</p>
+                  <p className="text-sm font-medium text-foreground">{globalCompletedCount} {t("workspace.completed")}</p>
                   <div className="flex items-center gap-2">
                     <Progress value={progress} className="w-32 h-2" />
                     <span className="text-xs text-muted-foreground font-mono">{Math.round(progress)}%</span>
@@ -2535,14 +2537,14 @@ const DataLabelingWorkspace = () => {
                 <Dialog open={showHFImportDialog} onOpenChange={setShowHFImportDialog}>
                   <DialogContent className="max-w-lg">
                     <DialogHeader>
-                      <DialogTitle>Import from Hugging Face</DialogTitle>
+                      <DialogTitle>{t("workspace.importFromHuggingFace")}</DialogTitle>
                       <DialogDescription>
-                        Enter a dataset id and optionally a config/split. Data is fetched automatically.
+                        {t("workspace.hfImportDescription")}
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
                       <div>
-                        <Label htmlFor="hf-import-dataset">Dataset ID</Label>
+                        <Label htmlFor="hf-import-dataset">{t("workspace.datasetId")}</Label>
                         <Input
                           id="hf-import-dataset"
                           placeholder="username/dataset_name"
@@ -2552,7 +2554,7 @@ const DataLabelingWorkspace = () => {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <Label htmlFor="hf-import-config">Config (Optional)</Label>
+                          <Label htmlFor="hf-import-config">{t("workspace.configOptional")}</Label>
                           <Input
                             id="hf-import-config"
                             placeholder="default"
@@ -2561,7 +2563,7 @@ const DataLabelingWorkspace = () => {
                           />
                         </div>
                         <div>
-                          <Label htmlFor="hf-import-split">Split (Optional)</Label>
+                          <Label htmlFor="hf-import-split">{t("workspace.splitOptional")}</Label>
                           <Input
                             id="hf-import-split"
                             placeholder="train"
@@ -2571,7 +2573,7 @@ const DataLabelingWorkspace = () => {
                         </div>
                       </div>
                       <div>
-                        <Label htmlFor="hf-import-max-rows">Max Rows</Label>
+                        <Label htmlFor="hf-import-max-rows">{t("workspace.maxRows")}</Label>
                         <Input
                           id="hf-import-max-rows"
                           type="number"
@@ -2588,13 +2590,13 @@ const DataLabelingWorkspace = () => {
                             setHfImportMaxRows(Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : "");
                           }}
                         />
-                        <p className="text-xs text-muted-foreground mt-1">Leave empty to import the entire resolved split.</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t("workspace.leaveEmptyImport")}</p>
                       </div>
                       <div className="flex justify-end gap-2">
-                        <Button variant="outline" onClick={() => setShowHFImportDialog(false)} disabled={isImportingHF}>Cancel</Button>
+                        <Button variant="outline" onClick={() => setShowHFImportDialog(false)} disabled={isImportingHF}>{t("common.cancel")}</Button>
                         <Button onClick={handleImportFromHuggingFace} disabled={isImportingHF || !hfImportDataset.trim()}>
                           {isImportingHF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Database className="w-4 h-4 mr-2" />}
-                          Import Dataset
+                          {t("workspace.importDataset")}
                         </Button>
                       </div>
                     </div>
@@ -2606,10 +2608,10 @@ const DataLabelingWorkspace = () => {
                     className="mr-1 gap-1.5 bg-gradient-to-r from-violet-500 to-indigo-500 hover:from-violet-600 hover:to-indigo-600 text-white border-0 shadow-sm shadow-violet-200 dark:shadow-violet-900/30"
                     onClick={() => setShowQualityDialog(true)}
                     disabled={!projectId}
-                    title="Annotation Quality Dashboard"
+                    title={t("workspace.quality")}
                   >
                     <BarChart3 className="h-4 w-4" />
-                    Quality
+                    {t("workspace.quality")}
                   </Button>
                 )}
                 <Button
@@ -2618,7 +2620,7 @@ const DataLabelingWorkspace = () => {
                   className="mr-1"
                   onClick={() => setShowHistoryDialog(true)}
                   disabled={!projectId}
-                  title="Version History"
+                  title={t("workspace.versionHistory")}
                 >
                   <History className="h-5 w-5" />
                 </Button>
@@ -2629,7 +2631,7 @@ const DataLabelingWorkspace = () => {
                   className="mr-1"
                   onClick={() => setShowGuidelinesDialog(true)}
                   disabled={!projectId}
-                  title="Project Guidelines"
+                  title={t("workspace.projectGuidelines")}
                 >
                   <Book className="h-5 w-5" />
                 </Button>
@@ -2647,14 +2649,14 @@ const DataLabelingWorkspace = () => {
                   </DialogTrigger>
                   <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
                     <DialogHeader>
-                      <DialogTitle>Model Selection</DialogTitle>
+                      <DialogTitle>{t("workspace.modelSelection")}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-6">
                       <div>
-                        <Label className="mb-2 block">Available Model Profiles</Label>
+                        <Label className="mb-2 block">{t("workspace.availableModelProfiles")}</Label>
                         {availableModelProfiles.length === 0 ? (
                           <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                            No model profiles assigned to this project yet.
+                            {t("workspace.noModelProfiles")}
                           </div>
                         ) : (
                           <div className="space-y-2">
@@ -2691,7 +2693,7 @@ const DataLabelingWorkspace = () => {
 
                       {canProcessAI && (
                         <Button variant="outline" onClick={() => navigate('/model-management')}>
-                          Manage Model Profiles
+                          {t("workspace.manageModelProfiles")}
                         </Button>
                       )}
                     </div>
@@ -2702,22 +2704,22 @@ const DataLabelingWorkspace = () => {
                 <Dialog open={showUploadPrompt} onOpenChange={setShowUploadPrompt}>
                   <DialogContent className="max-w-lg">
                     <DialogHeader>
-                      <DialogTitle>Configure Dataset Options</DialogTitle>
+                      <DialogTitle>{t("workspace.configureDatasetsOptions")}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4">
                       <div>
-                        <Label htmlFor="upload-prompt">Custom AI Instructions (Optional)</Label>
+                        <Label htmlFor="upload-prompt">{t("workspace.customAIInstructions")}</Label>
                         <Textarea
                           id="upload-prompt"
                           value={uploadPrompt}
                           onChange={(e) => setUploadPrompt(e.target.value)}
-                          placeholder="Enter specific instructions for the AI model (optional)..."
+                          placeholder={t("workspace.customAIPlaceholder")}
                           rows={3}
                         />
 
                         {availableColumns.length > 0 && (
                           <div className="mt-2">
-                            <p className="text-xs text-muted-foreground mb-1.5">Available variables (click to insert):</p>
+                            <p className="text-xs text-muted-foreground mb-1.5">{t("workspace.availableVariables")}</p>
                             <div className="flex flex-wrap gap-1.5">
                               {availableColumns.map(col => (
                                 <Badge
@@ -2734,20 +2736,20 @@ const DataLabelingWorkspace = () => {
                         )}
 
                         <p className="text-xs text-muted-foreground mt-1">
-                          This prompt will be applied to each data point for AI processing. Use variables like <code>{`{{ColumnName}}`}</code> to insert dynamic data.
+                          {t("workspace.promptHelp")}
                         </p>
                       </div>
 
                       <div>
-                        <Label htmlFor="custom-field">Custom Annotation Field (Optional)</Label>
+                        <Label htmlFor="custom-field">{t("workspace.customAnnotationField")}</Label>
                         <Input
                           id="custom-field"
                           value={customFieldName}
                           onChange={(e) => setCustomFieldName(e.target.value)}
-                          placeholder="e.g., Priority Level, Category, Notes..."
+                          placeholder={t("workspace.customAnnotationFieldPlaceholder")}
                         />
                         <p className="text-xs text-muted-foreground mt-1">
-                          Create your own annotation field alongside AI suggestions for custom labeling.
+                          {t("workspace.customAnnotationFieldHelp")}
                         </p>
                       </div>
 
@@ -2755,13 +2757,13 @@ const DataLabelingWorkspace = () => {
                       {availableColumns.length > 0 && (
                         <div className="space-y-4 pt-2 border-t">
                           <div>
-                            <Label htmlFor="content-column">Primary Content Column</Label>
+                            <Label htmlFor="content-column">{t("workspace.primaryContentColumn")}</Label>
                             <Select
                               value={selectedContentColumn}
                               onValueChange={setSelectedContentColumn}
                             >
                               <SelectTrigger id="content-column">
-                                <SelectValue placeholder="Select the main content column" />
+                                <SelectValue placeholder={t("workspace.selectMainContentColumn")} />
                               </SelectTrigger>
                               <SelectContent>
                                 {availableColumns.map(col => (
@@ -2770,12 +2772,12 @@ const DataLabelingWorkspace = () => {
                               </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground mt-1">
-                              This column will be displayed as the main content for annotation.
+                              {t("workspace.primaryContentColumnHelp")}
                             </p>
                           </div>
 
                           <div>
-                            <Label>Additional Columns to Display</Label>
+                            <Label>{t("workspace.additionalColumns")}</Label>
                             <div className="grid grid-cols-2 gap-2 mt-2 max-h-32 overflow-y-auto">
                               {availableColumns.filter(col => col !== selectedContentColumn).map(col => (
                                 <div key={col} className="flex items-center space-x-2">
@@ -2800,7 +2802,7 @@ const DataLabelingWorkspace = () => {
                               ))}
                             </div>
                             <p className="text-xs text-muted-foreground mt-1">
-                              Selected columns will appear in the metadata sidebar.
+                              {t("workspace.additionalColumnsHelp")}
                             </p>
                           </div>
                         </div>
@@ -2818,7 +2820,7 @@ const DataLabelingWorkspace = () => {
                             setSelectedDisplayColumns([]);
                           }}
                         >
-                          Cancel
+                          {t("common.cancel")}
                         </Button>
                         <Button
                           onClick={() => {
@@ -2832,7 +2834,7 @@ const DataLabelingWorkspace = () => {
                           }}
                           disabled={(availableColumns.length > 0 && !selectedContentColumn) || (!pendingFile && !pendingHFRows)}
                         >
-                          {pendingHFRows ? 'Import Dataset' : 'Upload File'}
+                          {pendingHFRows ? t("workspace.importDatasetButton") : t("workspace.uploadFile")}
                         </Button>
                       </div>
                     </div>
@@ -2843,21 +2845,20 @@ const DataLabelingWorkspace = () => {
                 <Dialog open={showReRunConfirmation} onOpenChange={setShowReRunConfirmation}>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Re-run AI Processing?</DialogTitle>
+                      <DialogTitle>{t("workspace.reRunAITitle")}</DialogTitle>
                       <DialogDescription>
-                        The selected models have already been run on all available data points.
-                        Do you want to re-run them and overwrite the existing suggestions?
+                        {t("workspace.reRunAIDescription")}
                       </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setShowReRunConfirmation(false)}>
-                        Cancel
+                        {t("common.cancel")}
                       </Button>
                       <Button onClick={() => {
                         setShowReRunConfirmation(false);
                         requestProcessScope(reRunScope, true);
                       }}>
-                        Yes, Re-run
+                        {t("workspace.yesRerun")}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -2867,37 +2868,37 @@ const DataLabelingWorkspace = () => {
                 <Dialog open={showTokenEstimateDialog} onOpenChange={setShowTokenEstimateDialog}>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Confirm AI Processing</DialogTitle>
+                      <DialogTitle>{t("workspace.confirmAITitle")}</DialogTitle>
                       <DialogDescription>
-                        Review the estimated input tokens before processing.
+                        {t("workspace.confirmAIDescription")}
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-3 text-sm">
                       <div className="flex items-center justify-between">
-                        <span>Scope</span>
+                        <span>{t("workspace.scope")}</span>
                         <span className="font-medium capitalize">{pendingProcessScope}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Items</span>
+                        <span>{t("workspace.items")}</span>
                         <span className="font-medium">{tokenEstimate?.items ?? 0}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Models</span>
+                        <span>{t("workspace.models")}</span>
                         <span className="font-medium">{tokenEstimate?.models ?? 0}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Estimated input tokens</span>
+                        <span>{t("workspace.estimatedInputTokens")}</span>
                         <span className="font-medium">{(tokenEstimate?.inputTokens ?? 0).toLocaleString()}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Estimated input cost</span>
+                        <span>{t("workspace.estimatedInputCost")}</span>
                         <span className="font-medium">
-                          {estimatedInputCost ? `$${estimatedInputCost.total.toFixed(4)}` : 'Unavailable'}
+                          {estimatedInputCost ? `$${estimatedInputCost.total.toFixed(4)}` : t("workspace.unavailable")}
                         </span>
                       </div>
                       {perModelCostBreakdown.length > 0 && (
                         <div className="rounded-md border border-border/60 p-3 text-xs space-y-2">
-                          <div className="font-medium text-foreground">Per-model breakdown</div>
+                          <div className="font-medium text-foreground">{t("workspace.perModelBreakdown")}</div>
                           {perModelCostBreakdown.map(item => (
                             <div key={item.id} className="flex items-center justify-between gap-3">
                               <span className="text-muted-foreground truncate">{item.displayName}</span>
@@ -2911,26 +2912,26 @@ const DataLabelingWorkspace = () => {
                       )}
                       {estimatedInputCost?.missing?.length ? (
                         <p className="text-xs text-muted-foreground">
-                          Pricing unavailable for {estimatedInputCost.missing.length} model(s).
+                          {t("workspace.pricingUnavailable", { count: estimatedInputCost.missing.length })}
                         </p>
                       ) : null}
                       <p className="text-xs text-muted-foreground">
-                        OpenAI, Anthropic, and Gemini use built-in official pricing. OpenRouter pricing is loaded from OpenRouter API. Other providers require manual profile pricing.
+                        {t("workspace.pricingNote")}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Token counts are estimates and may differ from provider billing.
+                        {t("workspace.tokenCountNote")}
                       </p>
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setShowTokenEstimateDialog(false)}>
-                        Cancel
+                        {t("common.cancel")}
                       </Button>
                       <Button onClick={() => {
                         setShowTokenEstimateDialog(false);
                         setReRunScope(pendingProcessScope);
                         processScopeWithAI(getScopeDataPoints(pendingProcessScope), pendingProcessForce);
                       }}>
-                        Proceed
+                        {t("workspace.proceed")}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -2940,9 +2941,9 @@ const DataLabelingWorkspace = () => {
                 <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
                   <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                      <DialogTitle>Export Filtered Results</DialogTitle>
+                      <DialogTitle>{t("workspace.exportFilteredResults")}</DialogTitle>
                       <DialogDescription>
-                        Exports the current filtered list ({filteredDataPoints.length} items).
+                        {t("workspace.exportDescription", { count: filteredDataPoints.length })}
                       </DialogDescription>
                     </DialogHeader>
                     <div className="grid grid-cols-1 gap-4 py-4">
@@ -2957,8 +2958,8 @@ const DataLabelingWorkspace = () => {
                         title={!canExport ? "Requires manager or admin role" : undefined}
                       >
                         <div className="flex flex-col items-start gap-1">
-                          <span className="font-semibold">JSON (Standard)</span>
-                          <span className="text-xs text-muted-foreground">Best for backups and re-importing.</span>
+                          <span className="font-semibold">{t("workspace.jsonStandard")}</span>
+                          <span className="text-xs text-muted-foreground">{t("workspace.jsonStandardDesc")}</span>
                         </div>
                       </Button>
                       <Button
@@ -2972,8 +2973,8 @@ const DataLabelingWorkspace = () => {
                         title={!canExport ? "Requires manager or admin role" : undefined}
                       >
                         <div className="flex flex-col items-start gap-1">
-                          <span className="font-semibold">CSV (Spreadsheet)</span>
-                          <span className="text-xs text-muted-foreground">Best for Excel, Google Sheets, and analysis.</span>
+                          <span className="font-semibold">{t("workspace.csvSpreadsheet")}</span>
+                          <span className="text-xs text-muted-foreground">{t("workspace.csvSpreadsheetDesc")}</span>
                         </div>
                       </Button>
                       <Button
@@ -2987,8 +2988,8 @@ const DataLabelingWorkspace = () => {
                         title={!canExport ? "Requires manager or admin role" : undefined}
                       >
                         <div className="flex flex-col items-start gap-1">
-                          <span className="font-semibold">Hugging Face Dataset (JSONL)</span>
-                          <span className="text-xs text-muted-foreground">Best for fine-tuning and machine learning.</span>
+                          <span className="font-semibold">{t("workspace.hfDataset")}</span>
+                          <span className="text-xs text-muted-foreground">{t("workspace.hfDatasetDesc")}</span>
                         </div>
                       </Button>
                       <Button variant="outline" className="justify-start h-auto py-4 px-4 border-purple-200 bg-purple-50/50 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/20 dark:hover:bg-purple-900/40" onClick={() => {
@@ -2997,16 +2998,16 @@ const DataLabelingWorkspace = () => {
                       }}>
                         <div className="flex flex-col items-start gap-1">
                           <span className="font-semibold flex items-center gap-2">
-                            Publish to Hugging Face
+                            {t("workspace.publishToHF")}
                             <Badge variant="secondary" className="text-[10px] h-4">New</Badge>
                           </span>
-                          <span className="text-xs text-muted-foreground">Upload directly to your HF profile.</span>
+                          <span className="text-xs text-muted-foreground">{t("workspace.publishToHFDesc")}</span>
                         </div>
                       </Button>
                     </div>
                     <DialogFooter className="sm:justify-start">
                       <Button type="button" variant="secondary" onClick={() => setShowExportDialog(false)}>
-                        Cancel
+                        {t("common.cancel")}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -3016,15 +3017,14 @@ const DataLabelingWorkspace = () => {
                 <Dialog open={showHFDialog} onOpenChange={setShowHFDialog}>
                   <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                      <DialogTitle>Publish to Hugging Face</DialogTitle>
+                      <DialogTitle>{t("workspace.publishToHF")}</DialogTitle>
                       <DialogDescription>
-                        Upload your dataset directly to the Hugging Face Hub ({filteredDataPoints.length} items).
-                        Important fields are selected automatically.
+                        {t("workspace.publishToHFDialogDesc", { count: filteredDataPoints.length })}
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                       <div className="space-y-2">
-                        <Label htmlFor="hf-username">Username</Label>
+                        <Label htmlFor="hf-username">{t("workspace.hfUsername")}</Label>
                         <Input
                           id="hf-username"
                           placeholder="Hugging Face Username"
@@ -3033,7 +3033,7 @@ const DataLabelingWorkspace = () => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="hf-token">Write Token</Label>
+                        <Label htmlFor="hf-token">{t("workspace.hfWriteToken")}</Label>
                         <Input
                           id="hf-token"
                           type="password"
@@ -3042,11 +3042,11 @@ const DataLabelingWorkspace = () => {
                           onChange={(e) => setHfToken(e.target.value)}
                         />
                         <p className="text-xs text-muted-foreground">
-                          Get your token from <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" className="underline text-primary">huggingface.co/settings/tokens</a> (must have WRITE permissions).
+                          {t("workspace.hfTokenHelp")}
                         </p>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="hf-dataset">Dataset Name</Label>
+                        <Label htmlFor="hf-dataset">{t("workspace.hfDatasetName")}</Label>
                         <Input
                           id="hf-dataset"
                           placeholder="dataset-name"
@@ -3071,17 +3071,17 @@ const DataLabelingWorkspace = () => {
                       )}
                     </div>
                     <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowHFDialog(false)} disabled={isPublishing}>Cancel</Button>
+                      <Button variant="outline" onClick={() => setShowHFDialog(false)} disabled={isPublishing}>{t("common.cancel")}</Button>
                       <Button onClick={publishToHuggingFace} disabled={isPublishing}>
                         {isPublishing ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Publishing...
+                            {t("workspace.publishing")}
                           </>
                         ) : (
                           <>
                             <Upload className="w-4 h-4 mr-2" />
-                            Publish
+                            {t("workspace.publish")}
                           </>
                         )}
                       </Button>
@@ -3095,14 +3095,14 @@ const DataLabelingWorkspace = () => {
                     <DialogHeader>
                       <DialogTitle className="flex items-center gap-2">
                         <Check className="w-5 h-5 text-green-500" />
-                        Published Successfully
+                        {t("workspace.publishedSuccessfully")}
                       </DialogTitle>
                       <DialogDescription>
-                        Your dataset has been published to Hugging Face.
+                        {t("workspace.publishedSuccessDesc")}
                       </DialogDescription>
                     </DialogHeader>
                     <div className="py-4">
-                      <p className="text-sm text-muted-foreground mb-2">View your dataset at:</p>
+                      <p className="text-sm text-muted-foreground mb-2">{t("workspace.viewDatasetAt")}</p>
                       <a
                         href={publishedUrl}
                         target="_blank"
@@ -3113,7 +3113,7 @@ const DataLabelingWorkspace = () => {
                       </a>
                     </div>
                     <DialogFooter>
-                      <Button onClick={() => setShowPublishSuccessDialog(false)}>Close</Button>
+                      <Button onClick={() => setShowPublishSuccessDialog(false)}>{t("common.close")}</Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -3133,8 +3133,8 @@ const DataLabelingWorkspace = () => {
                   <Dialog open={showQualityDialog} onOpenChange={setShowQualityDialog}>
                     <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                       <DialogHeader>
-                        <DialogTitle>Annotation Quality Dashboard</DialogTitle>
-                        <DialogDescription>Per-annotator performance metrics for this project.</DialogDescription>
+                        <DialogTitle>{t("workspace.quality")}</DialogTitle>
+                        <DialogDescription>{t("quality.dialogDesc")}</DialogDescription>
                       </DialogHeader>
                       <AnnotationQualityDashboard projectId={projectId} />
                     </DialogContent>
@@ -3167,7 +3167,7 @@ const DataLabelingWorkspace = () => {
                     <DialogHeader>
                       <DialogTitle className="flex items-center gap-2 text-center">
                         <Trophy className="w-6 h-6 text-yellow-500" />
-                        Congratulations! Task Complete!
+                        {t("workspace.congratulations")}
                         <PartyPopper className="w-6 h-6 text-purple-500" />
                       </DialogTitle>
                     </DialogHeader>
@@ -3177,10 +3177,10 @@ const DataLabelingWorkspace = () => {
                         <div className="text-6xl">🎉</div>
                         <div className="space-y-2">
                           <p className="text-lg font-semibold text-green-600">
-                            100% Complete!
+                            {t("workspace.hundredPercent")}
                           </p>
                           <p className="text-muted-foreground">
-                            You've successfully annotated all {dataPoints.length} data points
+                            {t("workspace.allAnnotated", { count: dataPoints.length })}
                           </p>
                         </div>
                       </div>
@@ -3189,19 +3189,19 @@ const DataLabelingWorkspace = () => {
                       <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
                         <div className="text-center">
                           <div className="text-lg font-bold text-green-600">{annotationStats.totalAccepted}</div>
-                          <div className="text-xs text-muted-foreground">Accepted</div>
+                          <div className="text-xs text-muted-foreground">{t("workspace.accepted")}</div>
                         </div>
                         <div className="text-center">
                           <div className="text-lg font-bold text-orange-600">{annotationStats.totalEdited}</div>
-                          <div className="text-xs text-muted-foreground">Edited</div>
+                          <div className="text-xs text-muted-foreground">{t("workspace.edited")}</div>
                         </div>
                         <div className="text-center">
                           <div className="text-lg font-bold text-blue-600">{formatTime(annotationStats.sessionTime)}</div>
-                          <div className="text-xs text-muted-foreground">Time</div>
+                          <div className="text-xs text-muted-foreground">{t("workspace.time")}</div>
                         </div>
                         <div className="text-center">
                           <div className="text-lg font-bold text-purple-600">{getAnnotationRate()}/hr</div>
-                          <div className="text-xs text-muted-foreground">Rate</div>
+                          <div className="text-xs text-muted-foreground">{t("workspace.rate")}</div>
                         </div>
                       </div>
 
@@ -3213,7 +3213,7 @@ const DataLabelingWorkspace = () => {
                           title={!canUpload ? "Requires manager or admin role" : undefined}
                         >
                           <Upload className="w-4 h-4 mr-2" />
-                          Start New Task
+                          {t("workspace.startNewTask")}
                         </Button>
 
                         <div className="grid grid-cols-2 gap-3">
@@ -3223,7 +3223,7 @@ const DataLabelingWorkspace = () => {
                             disabled={!canExport}
                           >
                             <Download className="w-4 h-4 mr-2" />
-                            Export Results
+                            {t("workspace.exportResults")}
                           </Button>
 
                           <Button
@@ -3234,12 +3234,12 @@ const DataLabelingWorkspace = () => {
                             }}
                           >
                             <RotateCcw className="w-4 h-4 mr-2" />
-                            Review Again
+                            {t("workspace.reviewAgain")}
                           </Button>
                         </div>
 
                         <p className="text-xs text-muted-foreground pt-2">
-                          Great job! Your annotations have been saved and are ready for export.
+                          {t("workspace.greatJob")}
                         </p>
                       </div>
                     </div>
@@ -3283,10 +3283,10 @@ const DataLabelingWorkspace = () => {
                         disabled={!canUpload}
                       >
                         <Upload className="w-4 h-4 mr-2" />
-                        Start New Task
+                        {t("workspace.startNewTask")}
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Upload a new file to start annotating</TooltipContent>
+                    <TooltipContent>{t("workspace.uploadFileForTask")}</TooltipContent>
                   </Tooltip>
                 )}
 
@@ -3297,7 +3297,7 @@ const DataLabelingWorkspace = () => {
                         <Keyboard className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Keyboard Shortcuts (?)</TooltipContent>
+                    <TooltipContent>{t("workspace.keyboardShortcutsTooltip")}</TooltipContent>
                   </Tooltip>
                 )}
 
@@ -3315,7 +3315,7 @@ const DataLabelingWorkspace = () => {
                       <HelpCircle className="w-5 h-5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Start Tutorial</TooltipContent>
+                  <TooltipContent>{t("workspace.startTutorial")}</TooltipContent>
                 </Tooltip>
                 <NotificationBell />
                 <ThemeToggle />
@@ -3331,9 +3331,9 @@ const DataLabelingWorkspace = () => {
             <div className="h-full flex items-center justify-center">
               <div className="w-full max-w-4xl space-y-6">
                 <div className="text-center">
-                  <h3 className="text-xl font-semibold mb-2">Import Data to Start</h3>
+                  <h3 className="text-xl font-semibold mb-2">{t("workspace.importDataToStart")}</h3>
                   <p className="text-muted-foreground">
-                    Choose one import source for your new project.
+                    {t("workspace.importDataDesc")}
                   </p>
                 </div>
 
@@ -3344,8 +3344,8 @@ const DataLabelingWorkspace = () => {
                         {isUploading ? <Loader2 className="w-8 h-8 animate-spin" /> : <Upload className="w-8 h-8" />}
                       </div>
                       <div>
-                        <h4 className="font-semibold">Import Local File</h4>
-                        <p className="text-sm text-muted-foreground">JSON, CSV or TXT from your machine.</p>
+                        <h4 className="font-semibold">{t("workspace.importLocalFile")}</h4>
+                        <p className="text-sm text-muted-foreground">{t("workspace.importLocalFileDesc")}</p>
                       </div>
                       <Button
                         size="lg"
@@ -3354,7 +3354,7 @@ const DataLabelingWorkspace = () => {
                         title={!canUpload ? "Requires manager or admin role" : undefined}
                         onClick={() => document.getElementById('file-upload-main')?.click()}
                       >
-                        Upload File
+                        {t("workspace.uploadFile")}
                       </Button>
                     </div>
                   </Card>
@@ -3365,8 +3365,8 @@ const DataLabelingWorkspace = () => {
                         {isImportingHF ? <Loader2 className="w-8 h-8 animate-spin" /> : <Database className="w-8 h-8" />}
                       </div>
                       <div>
-                        <h4 className="font-semibold">Import Hugging Face</h4>
-                        <p className="text-sm text-muted-foreground">Load a dataset directly from the Hub.</p>
+                        <h4 className="font-semibold">{t("workspace.importHuggingFace")}</h4>
+                        <p className="text-sm text-muted-foreground">{t("workspace.importHFDesc")}</p>
                       </div>
                       <Button
                         size="lg"
@@ -3376,7 +3376,7 @@ const DataLabelingWorkspace = () => {
                         title={!canUpload ? "Requires manager or admin role" : undefined}
                         onClick={() => setShowHFImportDialog(true)}
                       >
-                        Import from Hugging Face
+                        {t("workspace.importFromHuggingFace")}
                       </Button>
                     </div>
                   </Card>
@@ -3394,25 +3394,25 @@ const DataLabelingWorkspace = () => {
                 {/* Setup checklist */}
                 {canUpload && (
                   <div className="rounded-lg border bg-muted/30 px-5 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Project setup checklist</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">{t("workspace.projectSetupChecklist")}</p>
                     <ol className="space-y-2 text-sm">
                       <li className="flex items-center gap-2.5">
                         <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-xs flex items-center justify-center font-bold flex-shrink-0">1</span>
-                        <span className="font-medium">Import your dataset</span>
-                        <span className="text-muted-foreground">← you are here</span>
+                        <span className="font-medium">{t("workspace.importDataset_step")}</span>
+                        <span className="text-muted-foreground">{t("workspace.youAreHere")}</span>
                       </li>
                       <li className="flex items-center gap-2.5 text-muted-foreground">
                         <span className="w-5 h-5 rounded-full border text-xs flex items-center justify-center font-bold flex-shrink-0">2</span>
-                        <span>Configure the annotation form</span>
+                        <span>{t("workspace.configAnnotationForm")}</span>
                         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => navigate(`/projects/${projectId}/settings`)}>
-                          Go to Settings
+                          {t("workspace.goToSettings")}
                         </Button>
                       </li>
                       <li className="flex items-center gap-2.5 text-muted-foreground">
                         <span className="w-5 h-5 rounded-full border text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
-                        <span>Add annotators to the project</span>
+                        <span>{t("workspace.addAnnotators")}</span>
                         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => navigate(`/projects/${projectId}/settings`)}>
-                          Go to Settings
+                          {t("workspace.goToSettings")}
                         </Button>
                       </li>
                     </ol>
@@ -3433,7 +3433,7 @@ const DataLabelingWorkspace = () => {
                         <Card className="min-h-full p-6">
                           <div className="space-y-6">
                             <div className="flex items-center justify-between">
-                              <h2 className="text-lg font-semibold">Data Point</h2>
+                              <h2 className="text-lg font-semibold">{t("workspace.dataPoint")}</h2>
                               {currentDataPoint && (() => {
                                 const displayStatus = getDisplayStatus(currentDataPoint);
                                 return (
@@ -3445,7 +3445,7 @@ const DataLabelingWorkspace = () => {
                             </div>
 
                             <div className="bg-muted/50 p-4 rounded-lg">
-                              <Label className="text-sm font-medium">Original Content</Label>
+                              <Label className="text-sm font-medium">{t("workspace.originalContent")}</Label>
                               {currentDataPoint?.type === 'image' ? (
                                 <div className="mt-2">
                                   <img
@@ -3460,7 +3460,7 @@ const DataLabelingWorkspace = () => {
                               ) : currentDataPoint?.type === 'audio' ? (
                                 <div className="mt-2 space-y-2">
                                   <audio controls src={getPlayableAudioSource(currentDataPoint.content) || ''} className="w-full">
-                                    Your browser does not support the audio element.
+                                    {t("workspace.browserNoAudio")}
                                   </audio>
                                   <p className="text-xs text-muted-foreground break-all">
                                     {currentDataPoint.metadata?.filename || currentDataPoint.content}
@@ -3493,7 +3493,7 @@ const DataLabelingWorkspace = () => {
                             <div className="space-y-4">
                               <div className="flex items-center gap-2">
                                 <Bot className="w-5 h-5 text-purple-600" />
-                                <h3 className="font-semibold">Model Arena</h3>
+                                <h3 className="font-semibold">{t("workspace.modelArena")}</h3>
                               </div>
 
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -3526,7 +3526,7 @@ const DataLabelingWorkspace = () => {
                                             disabled={!canAnnotateCurrent}
                                           >
                                             <Edit3 className="w-3 h-3 mr-1" />
-                                            Edit
+                                            {t("common.edit")}
                                           </Button>
                                           <Button
                                             size="sm"
@@ -3535,7 +3535,7 @@ const DataLabelingWorkspace = () => {
                                             disabled={!canAnnotateCurrent}
                                           >
                                             <Check className="w-3 h-3 mr-1" />
-                                            Use This
+                                            {t("workspace.useThis")}
                                           </Button>
                                         </div>
                                       </div>
@@ -3543,7 +3543,7 @@ const DataLabelingWorkspace = () => {
 
                                       {/* Star Rating */}
                                       <div className="flex items-center gap-2 pt-2 border-t border-purple-200 dark:border-purple-800">
-                                        <span className="text-xs text-muted-foreground">Rate output:</span>
+                                        <span className="text-xs text-muted-foreground">{t("workspace.rateOutput")}</span>
                                         <div className="flex items-center">
                                           {[1, 2, 3, 4, 5].map((star) => (
                                             <button
@@ -3570,7 +3570,7 @@ const DataLabelingWorkspace = () => {
                                   <div className="flex items-center justify-between mb-3">
                                     <Badge variant="outline" className="bg-background flex items-center gap-1">
                                       <User className="w-3 h-3" />
-                                      Human Annotation
+                                      {t("workspace.humanAnnotation")}
                                     </Badge>
                                     <div className="flex gap-2">
                                       {getVisibleDraftAnnotation(currentDataPoint) && (
@@ -3581,7 +3581,7 @@ const DataLabelingWorkspace = () => {
                                           disabled={!canAnnotateCurrent}
                                         >
                                           <Check className="w-3 h-3 mr-1" />
-                                          Use This
+                                          {t("workspace.useThis")}
                                         </Button>
                                       )}
                                     </div>
@@ -3614,7 +3614,7 @@ const DataLabelingWorkspace = () => {
                                             ) ?? false)}
                                         >
                                           <Check className="w-4 h-4 mr-2" />
-                                          Submit Annotation
+                                          {t("workspace.submitAnnotation")}
                                         </Button>
                                       </div>
                                     </>
@@ -3622,15 +3622,15 @@ const DataLabelingWorkspace = () => {
                                     <Textarea
                                       value={getVisibleDraftAnnotation(currentDataPoint) || ''}
                                       onChange={(e) => handleHumanAnnotationChange(e.target.value, annotatorMeta)}
-                                      placeholder="Type your own annotation here..."
+                                      placeholder={t("workspace.typeAnnotationHere")}
                                       className="min-h-[100px] mb-2 bg-background/50"
                                       disabled={!canAnnotateCurrent}
                                     />
                                   )}
                                   <p className="text-xs text-muted-foreground mt-2">
                                     {annotationConfig && annotationConfig.fields.length > 0
-                                      ? 'Fill in the fields above, then click "Submit Annotation" to mark complete.'
-                                      : 'Your manual annotation. Click "Use This" to set it as final.'
+                                      ? t("workspace.fillFieldsPrompt")
+                                      : t("workspace.useThisPrompt")
                                     }
                                   </p>
                                 </Card>
@@ -3640,7 +3640,7 @@ const DataLabelingWorkspace = () => {
                             {/* Edit Mode Area */}
                             {isEditMode && (
                               <div className="bg-background p-4 rounded-lg border-2 border-primary animate-in fade-in zoom-in-95 duration-200">
-                                <Label className="text-sm font-medium mb-2 block">Edit Annotation</Label>
+                                <Label className="text-sm font-medium mb-2 block">{t("workspace.editAnnotation")}</Label>
                                 <Textarea
                                   value={tempAnnotation}
                                   onChange={(e) => setTempAnnotation(e.target.value)}
@@ -3650,11 +3650,11 @@ const DataLabelingWorkspace = () => {
                                 />
                                 <div className="flex gap-2 justify-end">
                                   <Button size="sm" variant="outline" onClick={() => setIsEditMode(false)}>
-                                    Cancel
+                                    {t("common.cancel")}
                                   </Button>
                                   <Button size="sm" onClick={() => handleSaveEdit(annotatorMeta)}>
                                     <Save className="w-4 h-4 mr-2" />
-                                    Save Changes
+                                    {t("workspace.saveChanges")}
                                   </Button>
                                 </div>
                               </div>
@@ -3666,7 +3666,7 @@ const DataLabelingWorkspace = () => {
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="flex items-center gap-2">
                                     <CheckCircle className="w-4 h-4 text-green-700 dark:text-green-300" />
-                                    <Label className="text-sm font-medium text-green-700 dark:text-green-300">Final Selected Annotation</Label>
+                                    <Label className="text-sm font-medium text-green-700 dark:text-green-300">{t("workspace.finalSelectedAnnotation")}</Label>
                                   </div>
                                   <Button
                                     variant="ghost"
@@ -3676,7 +3676,7 @@ const DataLabelingWorkspace = () => {
                                     disabled={!canAnnotateCurrent}
                                   >
                                     <Edit3 className="w-3 h-3 mr-1" />
-                                    Edit
+                                    {t("common.edit")}
                                   </Button>
                                 </div>
                                 <p className="text-foreground whitespace-pre-wrap">{getVisibleFinalAnnotation(currentDataPoint)}</p>
@@ -3687,7 +3687,7 @@ const DataLabelingWorkspace = () => {
                               <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-lg border border-slate-200 dark:border-slate-800">
                                 <div className="flex items-center gap-2 mb-3">
                                   <CheckCircle className="w-4 h-4 text-slate-600" />
-                                  <Label className="text-sm font-medium">Completed Annotations</Label>
+                                  <Label className="text-sm font-medium">{t("workspace.completedAnnotations")}</Label>
                                 </div>
                                 <div className="space-y-2">
                                   {currentDataPoint.assignments && currentDataPoint.assignments.length > 0 ? (
@@ -3704,14 +3704,14 @@ const DataLabelingWorkspace = () => {
                                             </Badge>
                                           </div>
                                           <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
-                                            {assignment.value || <span className="text-muted-foreground">No annotation yet.</span>}
+                                            {assignment.value || <span className="text-muted-foreground">{t("workspace.noAnnotationYet")}</span>}
                                           </p>
                                         </div>
                                       );
                                     })
                                   ) : (
                                     <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
-                                      No annotator records yet.
+                                      {t("workspace.noAnnotatorRecords")}
                                     </div>
                                   )}
                                 </div>
@@ -3723,14 +3723,14 @@ const DataLabelingWorkspace = () => {
                                 <div className="flex items-center justify-between mb-3">
                                   <div className="flex items-center gap-2">
                                     <Target className="w-4 h-4 text-slate-600" />
-                                    <Label className="text-sm font-medium">IAA & Annotation Details</Label>
+                                    <Label className="text-sm font-medium">{t("workspace.iaaAnnotationDetails")}</Label>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <Badge variant={currentDataPoint.isIAA ? "default" : "secondary"}>
-                                      {currentDataPoint.isIAA ? "IAA" : "Not IAA"}
+                                      {currentDataPoint.isIAA ? "IAA" : t('workspace.notIAA')}
                                     </Badge>
                                     <Badge variant="outline">
-                                      {getDoneCount(currentDataPoint)}/{getIaaRequiredCount(currentDataPoint)} done
+                                      {t('workspace.iaaCountDone', { done: getDoneCount(currentDataPoint), required: getIaaRequiredCount(currentDataPoint) })}
                                     </Badge>
                                   </div>
                                 </div>
@@ -3750,14 +3750,14 @@ const DataLabelingWorkspace = () => {
                                             </Badge>
                                           </div>
                                           <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
-                                            {assignment.value || <span className="text-muted-foreground">No annotation yet.</span>}
+                                            {assignment.value || <span className="text-muted-foreground">{t("workspace.noAnnotationYet")}</span>}
                                           </p>
                                         </div>
                                       );
                                     })
                                   ) : (
                                     <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
-                                      No annotator records yet.
+                                      {t("workspace.noAnnotatorRecords")}
                                     </div>
                                   )}
                                 </div>
@@ -3800,14 +3800,14 @@ const DataLabelingWorkspace = () => {
                     <Card className="p-6 mt-4 space-y-3">
                       <div className="flex items-center gap-2">
                         <MessageSquare className="w-4 h-4 text-blue-500" />
-                        <Label className="text-sm font-medium">Comments</Label>
+                        <Label className="text-sm font-medium">{t("workspace.comments")}</Label>
                       </div>
 
                       <div className="space-y-2">
                         <Textarea
                           value={commentDraft}
                           onChange={(e) => setCommentDraft(e.target.value)}
-                          placeholder="Add a comment for this item..."
+                          placeholder={t("workspace.addCommentPlaceholder")}
                           className="min-h-[88px]"
                           disabled={!canCommentOnCurrent}
                         />
@@ -3817,15 +3817,15 @@ const DataLabelingWorkspace = () => {
                           onClick={handleCreateComment}
                           disabled={!canCommentOnCurrent || !commentDraft.trim()}
                         >
-                          Add Comment
+                          {t("workspace.addComment")}
                         </Button>
                       </div>
 
                       <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                         {commentsLoading ? (
-                          <p className="text-xs text-muted-foreground">Loading comments...</p>
+                          <p className="text-xs text-muted-foreground">{t("workspace.loadingComments")}</p>
                         ) : comments.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">No comments yet.</p>
+                          <p className="text-xs text-muted-foreground">{t("workspace.noComments")}</p>
                         ) : (
                           comments.map(comment => (
                             <div key={comment.id} className="rounded-md border border-border/70 bg-muted/30 p-3 space-y-2">
@@ -3844,7 +3844,7 @@ const DataLabelingWorkspace = () => {
                                       className="h-6 px-2 text-xs"
                                       onClick={() => startEditComment(comment)}
                                     >
-                                      Edit
+                                      {t("common.edit")}
                                     </Button>
                                   )}
                                   {canDeleteComment(comment) && (
@@ -3874,7 +3874,7 @@ const DataLabelingWorkspace = () => {
                                       onClick={() => handleUpdateComment(comment.id)}
                                       disabled={!editingCommentBody.trim()}
                                     >
-                                      Save
+                                      {t("common.save")}
                                     </Button>
                                     <Button
                                       size="sm"
@@ -3882,7 +3882,7 @@ const DataLabelingWorkspace = () => {
                                       className="h-7 text-xs"
                                       onClick={cancelEditComment}
                                     >
-                                      Cancel
+                                      {t("common.cancel")}
                                     </Button>
                                   </div>
                                 </div>
@@ -3904,7 +3904,7 @@ const DataLabelingWorkspace = () => {
                         >
                           <ChevronLeft className="w-3 h-3" />
                         </Button>
-                        <span>Page {commentsPage} / {commentsTotalPages}</span>
+                        <span>{t("workspace.pageOf", { page: commentsPage, total: commentsTotalPages })}</span>
                         <Button
                           size="sm"
                           variant="outline"
@@ -3922,59 +3922,59 @@ const DataLabelingWorkspace = () => {
                       <div className="flex flex-col gap-4 min-w-0">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div>
-                            <h3 className="text-lg font-semibold">Annotation Overview</h3>
+                            <h3 className="text-lg font-semibold">{t("workspace.annotationOverview")}</h3>
                             <p className="text-xs text-muted-foreground">
-                              Browse annotations across all data points.
+                              {t("workspace.browseAnnotations")}
                             </p>
                           </div>
                           <Badge variant="secondary" className="w-fit">
-                            {globalFilteredCount} total
+                            {t("workspace.totalBadge", { count: globalFilteredCount })}
                           </Badge>
                         </div>
 
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                           <div className="space-y-1">
-                            <Label htmlFor="annotation-search" className="text-xs text-muted-foreground">Search</Label>
+                            <Label htmlFor="annotation-search" className="text-xs text-muted-foreground">{t("common.search")}</Label>
                             <Input
                               id="annotation-search"
                               value={annotationQuery}
                               onChange={(e) => setAnnotationQuery(e.target.value)}
-                              placeholder="Search content, annotations, or metadata..."
+                              placeholder={t("workspace.searchPlaceholder")}
                             />
                           </div>
 
                           <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Status</Label>
+                            <Label className="text-xs text-muted-foreground">{t("common.status")}</Label>
                             <Select
                               value={annotationStatusFilter}
                               onValueChange={(value) => setAnnotationStatusFilter(value as AnnotationStatusFilter)}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="All statuses" />
+                                <SelectValue placeholder={t("workspace.allStatuses")} />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="all">All statuses</SelectItem>
-                                <SelectItem value="has_final">Has final annotation</SelectItem>
-                                <SelectItem value="accepted">Accepted</SelectItem>
-                                <SelectItem value="edited">Edited</SelectItem>
-                                <SelectItem value="ai_processed">AI processed</SelectItem>
-                                <SelectItem value="pending">Pending</SelectItem>
-                                <SelectItem value="rejected">Rejected</SelectItem>
+                                <SelectItem value="all">{t("workspace.allStatuses")}</SelectItem>
+                                <SelectItem value="has_final">{t("workspace.hasFinalAnnotation")}</SelectItem>
+                                <SelectItem value="accepted">{t("workspace.accepted")}</SelectItem>
+                                <SelectItem value="edited">{t("workspace.edited")}</SelectItem>
+                                <SelectItem value="ai_processed">{t("workspace.aiProcessed")}</SelectItem>
+                                <SelectItem value="pending">{t("workspace.status.pending")}</SelectItem>
+                                <SelectItem value="rejected">{t("workspace.status.rejected")}</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
 
                           <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Annotated By</Label>
+                            <Label className="text-xs text-muted-foreground">{t("workspace.allAnnotators")}</Label>
                             <Select
                               value={annotatedByFilter}
                               onValueChange={setAnnotatedByFilter}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="All annotators" />
+                                <SelectValue placeholder={t("workspace.allAnnotators")} />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="all">All annotators</SelectItem>
+                                <SelectItem value="all">{t("workspace.allAnnotators")}</SelectItem>
                                 {availableAnnotators.map(annotator => (
                                   <SelectItem key={annotator.id} value={annotator.id}>
                                     {annotator.name}
@@ -3985,56 +3985,56 @@ const DataLabelingWorkspace = () => {
                           </div>
 
                           <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Time Frame</Label>
+                            <Label className="text-xs text-muted-foreground">{t("workspace.allTime")}</Label>
                             <Select
                               value={annotatedTimeFilter}
                               onValueChange={setAnnotatedTimeFilter}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="All time" />
+                                <SelectValue placeholder={t("workspace.allTime")} />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="all">All time</SelectItem>
-                                <SelectItem value="today">Today (24h)</SelectItem>
-                                <SelectItem value="this_week">This Week</SelectItem>
-                                <SelectItem value="this_month">This Month</SelectItem>
+                                <SelectItem value="all">{t("workspace.allTime")}</SelectItem>
+                                <SelectItem value="today">{t("workspace.today")}</SelectItem>
+                                <SelectItem value="this_week">{t("workspace.thisWeek")}</SelectItem>
+                                <SelectItem value="this_month">{t("workspace.thisMonth")}</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
 
                           <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Page size</Label>
+                            <Label className="text-xs text-muted-foreground">{t("workspace.pageSize")}</Label>
                             <Select
                               value={`${annotationPageSize}`}
                               onValueChange={(value) => setAnnotationPageSize(Number(value))}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="12 per page" />
+                                <SelectValue placeholder={t("workspace.perPage", { n: 12 })} />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="12">12 per page</SelectItem>
-                                <SelectItem value="36">36 per page</SelectItem>
-                                <SelectItem value="72">72 per page</SelectItem>
+                                <SelectItem value="12">{t("workspace.perPage", { n: 12 })}</SelectItem>
+                                <SelectItem value="36">{t("workspace.perPage", { n: 36 })}</SelectItem>
+                                <SelectItem value="72">{t("workspace.perPage", { n: 72 })}</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
 
                           <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Layout</Label>
+                            <Label className="text-xs text-muted-foreground">{t("workspace.layout")}</Label>
                             <div className="flex items-center gap-2">
                               <Button
                                 size="sm"
                                 variant={listLayout === 'grid' ? "default" : "outline"}
                                 onClick={() => setListLayout('grid')}
                               >
-                                Grid
+                                {t("workspace.grid")}
                               </Button>
                               <Button
                                 size="sm"
                                 variant={listLayout === 'list' ? "default" : "outline"}
                                 onClick={() => setListLayout('list')}
                               >
-                                List
+                                {t("workspace.list")}
                               </Button>
                             </div>
                           </div>
@@ -4043,7 +4043,7 @@ const DataLabelingWorkspace = () => {
                           <div className="space-y-2">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <Label className="text-xs text-muted-foreground">Metadata filters</Label>
+                                <Label className="text-xs text-muted-foreground">{t("workspace.metadataFilters")}</Label>
                                 <Button
                                   size="icon"
                                   variant="ghost"
@@ -4062,7 +4062,7 @@ const DataLabelingWorkspace = () => {
                                   variant="ghost"
                                   onClick={() => setMetadataFilters({})}
                                 >
-                                  Clear
+                                  {t("workspace.clearFilters")}
                                 </Button>
                               )}
                             </div>
@@ -4077,8 +4077,8 @@ const DataLabelingWorkspace = () => {
                                           <Label className="text-xs text-muted-foreground">{key}</Label>
                                           <p className="text-[11px] text-muted-foreground">
                                             {selectedValues.length > 0
-                                              ? `${selectedValues.length} selected`
-                                              : 'No selection'}
+                                              ? t("workspace.selected", { count: selectedValues.length })
+                                              : t("workspace.noSelection")}
                                           </p>
                                         </div>
                                         <Popover>
@@ -4101,7 +4101,7 @@ const DataLabelingWorkspace = () => {
                                                     }))
                                                   }
                                                 >
-                                                  Select all
+                                                  {t("workspace.selectAll")}
                                                 </Button>
                                                 <Button
                                                   size="sm"
@@ -4113,7 +4113,7 @@ const DataLabelingWorkspace = () => {
                                                     }))
                                                   }
                                                 >
-                                                  None
+                                                  {t("workspace.none")}
                                                 </Button>
                                               </div>
                                             </div>
@@ -4165,7 +4165,7 @@ const DataLabelingWorkspace = () => {
                         >
                           {paginatedAnnotationEntries.length === 0 ? (
                             <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                              No annotations match the current filters.
+                              {t("workspace.noAnnotationsMatch")}
                             </div>
                           ) : (
                             paginatedAnnotationEntries.map(({ dataPoint, index }) => {
@@ -4208,7 +4208,7 @@ const DataLabelingWorkspace = () => {
                                         : "w-full sm:w-52 flex-shrink-0 rounded-md border border-border/40 bg-muted/20 p-2"
                                     }>
                                       <audio controls src={getPlayableAudioSource(dataPoint.content) || ''} className="w-full">
-                                        Your browser does not support the audio element.
+                                        {t("workspace.browserNoAudio")}
                                       </audio>
                                     </div>
                                   )}
@@ -4231,7 +4231,7 @@ const DataLabelingWorkspace = () => {
                                         {canViewIaaDetails && dataPoint.isIAA && (
                                           <Badge variant="default">IAA</Badge>
                                         )}
-                                        {preview.label !== 'None' && (
+                                        {preview.text !== '' && (
                                           <Badge variant="secondary">{preview.label}</Badge>
                                         )}
                                         {!isAnnotatorForProject && (
@@ -4259,7 +4259,7 @@ const DataLabelingWorkspace = () => {
                                         {isAnnotatorForProject && getDoneCount(dataPoint) > 0 && (
                                           <Badge variant="outline" className="flex items-center gap-1">
                                             <User className="w-3 h-3" />
-                                            {(getDoneAnnotatorNames(dataPoint).join(', ')) || "Annotated"}
+                                            {(getDoneAnnotatorNames(dataPoint).join(', ')) || t("workspace.annotatedFallback")}
                                           </Badge>
                                         )}
                                       </div>
@@ -4275,7 +4275,7 @@ const DataLabelingWorkspace = () => {
                                             : (dataPoint.content || 'Untitled content')}
                                       </p>
                                       <p className="text-xs text-muted-foreground break-words whitespace-normal line-clamp-2">
-                                        {preview.text || 'No annotation yet.'}
+                                        {preview.text || t("workspace.noAnnotationYet")}
                                       </p>
                                     </div>
 
@@ -4308,7 +4308,7 @@ const DataLabelingWorkspace = () => {
 
                         <div className="flex flex-col gap-3 border-t border-border pt-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
                           <span>
-                            Showing {annotationStartIndex}-{annotationEndIndex} of {filteredAnnotationEntries.length}
+                            {t("workspace.showing", { start: annotationStartIndex, end: annotationEndIndex, total: filteredAnnotationEntries.length })}
                           </span>
                           <div className="flex items-center gap-2">
                             <Button
@@ -4320,7 +4320,7 @@ const DataLabelingWorkspace = () => {
                               <ChevronLeft className="w-4 h-4" />
                             </Button>
                             <span className="text-xs font-medium text-foreground">
-                              Page {safeAnnotationPage} of {totalAnnotationPages}
+                              {t("workspace.pageOf", { page: safeAnnotationPage, total: totalAnnotationPages })}
                             </span>
                             <Button
                               size="sm"
@@ -4357,12 +4357,12 @@ const DataLabelingWorkspace = () => {
                         {isProcessing ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Processing...
+                            {t("workspace.processing")}
                           </>
                         ) : (
                           <>
                             <Brain className="w-4 h-4 mr-2" />
-                            Process Current
+                            {t("workspace.processCurrent")}
                           </>
                         )}
                       </Button>
@@ -4373,12 +4373,12 @@ const DataLabelingWorkspace = () => {
                             className="w-full h-2"
                           />
                           <p className="text-xs text-muted-foreground">
-                            Processing in batches...
+                            {t("workspace.processingBatches")}
                           </p>
                         </div>
                       ) : (
                         <p className="text-xs text-muted-foreground">
-                          Run selected models on all pending items
+                          {t("workspace.runPendingItems")}
                         </p>
                       )}
                     </div>
@@ -4387,7 +4387,7 @@ const DataLabelingWorkspace = () => {
 
                     {/* Annotation Actions */}
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium">Manual Actions</Label>
+                      <Label className="text-sm font-medium">{t("workspace.manualActions")}</Label>
                       <Button
                         size="sm"
                         variant="destructive"
@@ -4396,7 +4396,7 @@ const DataLabelingWorkspace = () => {
                         disabled={!currentAssignment}
                       >
                         <X className="w-4 h-4 mr-2" />
-                        Clear / Reject
+                        {t("workspace.clearReject")}
                       </Button>
                     </div>
 
@@ -4406,18 +4406,18 @@ const DataLabelingWorkspace = () => {
                     <div className="space-y-4">
                       <div className="flex items-center gap-2">
                         <BarChart3 className="w-4 h-4 text-blue-500" />
-                        <Label className="text-sm font-medium">Session Statistics</Label>
+                        <Label className="text-sm font-medium">{t("workspace.sessionStatistics")}</Label>
                       </div>
 
                       {/* Progress Overview */}
                       <div className="grid grid-cols-2 gap-3">
                         <div className="text-center p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
                           <div className="text-lg font-bold text-green-600">{globalCompletedCount}</div>
-                          <div className="text-xs text-muted-foreground">Completed</div>
+                          <div className="text-xs text-muted-foreground">{t("workspace.completed_stat")}</div>
                         </div>
                         <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
                           <div className="text-lg font-bold text-blue-600">{globalRemainingCount}</div>
-                          <div className="text-xs text-muted-foreground">Remaining</div>
+                          <div className="text-xs text-muted-foreground">{t("workspace.remaining")}</div>
                         </div>
                       </div>
 
@@ -4426,7 +4426,7 @@ const DataLabelingWorkspace = () => {
                         <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
                           <div className="flex items-center gap-2 text-xs">
                             <CheckCircle className="w-3 h-3 text-green-600" />
-                            <span>Accepted</span>
+                            <span>{t("workspace.accepted")}</span>
                           </div>
                           <span className="text-xs font-medium">{annotationStats.totalAccepted}</span>
                         </div>
@@ -4434,7 +4434,7 @@ const DataLabelingWorkspace = () => {
                         <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
                           <div className="flex items-center gap-2 text-xs">
                             <Edit className="w-3 h-3 text-orange-600" />
-                            <span>Edited</span>
+                            <span>{t("workspace.edited")}</span>
                           </div>
                           <span className="text-xs font-medium">{annotationStats.totalEdited}</span>
                         </div>
@@ -4442,7 +4442,7 @@ const DataLabelingWorkspace = () => {
                         <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
                           <div className="flex items-center gap-2 text-xs">
                             <Zap className="w-3 h-3 text-purple-600" />
-                            <span>AI Processed</span>
+                            <span>{t("workspace.aiProcessed")}</span>
                           </div>
                           <span className="text-xs font-medium">{annotationStats.totalProcessed}</span>
                         </div>
@@ -4453,7 +4453,7 @@ const DataLabelingWorkspace = () => {
                         <div className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-950/20 rounded border border-blue-200 dark:border-blue-800">
                           <div className="flex items-center gap-2 text-xs">
                             <Clock className="w-3 h-3 text-blue-600" />
-                            <span>Session Time</span>
+                            <span>{t("workspace.sessionTime")}</span>
                           </div>
                           <span className="text-xs font-medium">{formatTime(annotationStats.sessionTime)}</span>
                         </div>
@@ -4461,7 +4461,7 @@ const DataLabelingWorkspace = () => {
                         <div className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-950/20 rounded border border-green-200 dark:border-green-800">
                           <div className="flex items-center gap-2 text-xs">
                             <TrendingUp className="w-3 h-3 text-green-600" />
-                            <span>Rate (per hour)</span>
+                            <span>{t("workspace.ratePerHour")}</span>
                           </div>
                           <span className="text-xs font-medium">{getAnnotationRate()}</span>
                         </div>
@@ -4471,7 +4471,7 @@ const DataLabelingWorkspace = () => {
                       {dataPoints.length > 0 && (
                         <div className="space-y-2">
                           <div className="flex justify-between text-xs">
-                            <span>Overall Progress</span>
+                            <span>{t("workspace.overallProgress")}</span>
                             <span>{Math.round(progress)}%</span>
                           </div>
                           <Progress value={progress} className="h-2" />
@@ -4485,27 +4485,27 @@ const DataLabelingWorkspace = () => {
                   <Card className="p-6 space-y-6 sticky top-6">
                     <div className="flex items-center gap-2">
                       <BarChart3 className="w-4 h-4 text-blue-500" />
-                      <Label className="text-sm font-medium">List Overview</Label>
+                      <Label className="text-sm font-medium">{t("workspace.listOverview")}</Label>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="text-center p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
                         <div className="text-lg font-bold text-green-600">{globalCompletedCount}</div>
-                        <div className="text-xs text-muted-foreground">Completed</div>
+                        <div className="text-xs text-muted-foreground">{t("workspace.completed_stat")}</div>
                       </div>
                       <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
                         <div className="text-lg font-bold text-blue-600">{globalRemainingCount}</div>
-                        <div className="text-xs text-muted-foreground">Remaining</div>
+                        <div className="text-xs text-muted-foreground">{t("workspace.remaining")}</div>
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       <div className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
-                        <span>Filtered items</span>
+                        <span>{t("workspace.filteredItems")}</span>
                         <span className="font-medium">{globalFilteredCount}</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
-                        <span>Total items</span>
+                        <span>{t("workspace.totalItems")}</span>
                         <span className="font-medium">{globalTotalItems}</span>
                       </div>
                     </div>
@@ -4513,7 +4513,7 @@ const DataLabelingWorkspace = () => {
                     <Separator />
 
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium">Batch Actions</Label>
+                      <Label className="text-sm font-medium">{t("workspace.batchActions")}</Label>
                       <Button
                         variant="outline"
                         className="w-full"
@@ -4521,7 +4521,7 @@ const DataLabelingWorkspace = () => {
                         disabled={dataPoints.length === 0 || pendingIndices.length === 0}
                       >
                         <Shuffle className="w-4 h-4 mr-2" />
-                        Random Pending
+                        {t("workspace.randomPending")}
                       </Button>
                       <Button
                         variant="outline"
@@ -4530,7 +4530,7 @@ const DataLabelingWorkspace = () => {
                         disabled={filteredNavigationIndices.length === 0}
                       >
                         <Play className="w-4 h-4 mr-2" />
-                        Start Filtered Scope
+                        {t("workspace.startFilteredScope")}
                       </Button>
                       <Button
                         className="w-full"
@@ -4542,13 +4542,13 @@ const DataLabelingWorkspace = () => {
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                             {processingProgress.total > 0
-                              ? `Processing... (${processingProgress.current}/${processingProgress.total})`
-                              : 'Processing...'}
+                              ? t("workspace.processingCount", { current: processingProgress.current, total: processingProgress.total })
+                              : t("workspace.processing")}
                           </>
                         ) : (
                           <>
                             <Brain className="w-4 h-4 mr-2" />
-                            Process All with AI
+                            {t("workspace.processAllWithAI")}
                           </>
                         )}
                       </Button>
@@ -4562,12 +4562,12 @@ const DataLabelingWorkspace = () => {
                         {isProcessing ? (
                           <>
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Processing...
+                            {t("workspace.processing")}
                           </>
                         ) : (
                           <>
                             <Brain className="w-4 h-4 mr-2" />
-                            Process Filtered with AI
+                            {t("workspace.processFilteredWithAI")}
                           </>
                         )}
                       </Button>
@@ -4579,7 +4579,7 @@ const DataLabelingWorkspace = () => {
                         title={!canExport ? "Requires manager or admin role" : undefined}
                       >
                         <Download className="w-4 h-4 mr-2" />
-                        Export Results
+                        {t("workspace.exportResults")}
                       </Button>
                     </div>
                   </Card>

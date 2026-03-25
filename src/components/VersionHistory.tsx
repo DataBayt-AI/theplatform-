@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ProjectSnapshot } from "@/types/data";
 import { projectService } from "@/services/projectService";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -19,6 +20,7 @@ interface VersionHistoryProps {
 }
 
 export function VersionHistory({ open, onOpenChange, projectId, onRestore }: VersionHistoryProps) {
+    const { t } = useTranslation();
     const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
     const [loading, setLoading] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -31,7 +33,7 @@ export function VersionHistory({ open, onOpenChange, projectId, onRestore }: Ver
             setSnapshots(data.sort((a, b) => b.createdAt - a.createdAt));
         } catch (error) {
             console.error(error);
-            toast.error("Failed to load history");
+            toast.error(t('versionHistory.errorLoad'));
         } finally {
             setLoading(false);
         }
@@ -48,28 +50,28 @@ export function VersionHistory({ open, onOpenChange, projectId, onRestore }: Ver
         setCreating(true);
         try {
             await projectService.createSnapshot(projectId, newVersionName);
-            toast.success("Version saved");
+            toast.success(t('versionHistory.successSave'));
             setNewVersionName("");
             loadSnapshots();
         } catch (error) {
             console.error(error);
-            toast.error("Failed to save version");
+            toast.error(t('versionHistory.errorSave'));
         } finally {
             setCreating(false);
         }
     };
 
     const handleRestore = async (snapshot: ProjectSnapshot) => {
-        if (!confirm(`Are you sure you want to restore "${snapshot.name}"? Current unsaved progress will be lost.`)) return;
+        if (!confirm(t('versionHistory.confirmRestore', { name: snapshot.name }))) return;
 
         try {
             await projectService.restoreSnapshot(snapshot.id);
-            toast.success(`Restored to ${snapshot.name}`);
+            toast.success(t('versionHistory.successRestore', { name: snapshot.name }));
             onRestore();
             onOpenChange(false);
         } catch (error) {
             console.error(error);
-            toast.error("Failed to restore version");
+            toast.error(t('versionHistory.errorRestore'));
         }
     };
 
@@ -79,36 +81,36 @@ export function VersionHistory({ open, onOpenChange, projectId, onRestore }: Ver
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <History className="h-5 w-5" />
-                        Version History
+                        {t('versionHistory.title')}
                     </DialogTitle>
                     <DialogDescription>
-                        Save snapshots of your project or restore previous versions.
+                        {t('versionHistory.description')}
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-4 py-4">
                     <div className="flex gap-2 items-end">
                         <div className="grid w-full gap-1.5">
-                            <Label htmlFor="version-name">New Version Name</Label>
+                            <Label htmlFor="version-name">{t('versionHistory.newVersionName')}</Label>
                             <Input
                                 id="version-name"
-                                placeholder="e.g. v1.0, Pre-cleaning"
+                                placeholder={t('versionHistory.namePlaceholder')}
                                 value={newVersionName}
                                 onChange={(e) => setNewVersionName(e.target.value)}
                             />
                         </div>
                         <Button onClick={handleCreateSnapshot} disabled={creating || !newVersionName.trim()}>
-                            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                            {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : t('versionHistory.save')}
                         </Button>
                     </div>
 
                     <div className="border rounded-md">
-                        <div className="p-2 bg-muted/50 border-b text-sm font-medium">Saved Versions</div>
+                        <div className="p-2 bg-muted/50 border-b text-sm font-medium">{t('versionHistory.savedVersions')}</div>
                         <ScrollArea className="h-[300px]">
                             {loading ? (
                                 <div className="flex justify-center p-4"><Loader2 className="animate-spin" /></div>
                             ) : snapshots.length === 0 ? (
-                                <div className="p-4 text-center text-sm text-muted-foreground">No versions saved yet.</div>
+                                <div className="p-4 text-center text-sm text-muted-foreground">{t('versionHistory.noVersions')}</div>
                             ) : (
                                 <div className="space-y-1 p-1">
                                     {snapshots.map((snap) => (
@@ -120,8 +122,8 @@ export function VersionHistory({ open, onOpenChange, projectId, onRestore }: Ver
                                                 </p>
                                             </div>
                                             <Button size="sm" variant="outline" onClick={() => handleRestore(snap)}>
-                                                <RotateCcw className="h-3 w-3 mr-2" />
-                                                Restore
+                                                <RotateCcw className="h-3 w-3 me-2" />
+                                                {t('versionHistory.restore')}
                                             </Button>
                                         </div>
                                     ))}
