@@ -605,7 +605,35 @@
     "toastSavedDesc": "\"{{name}}\" added to your templates.",
     "toastSaveFailed": "Save failed",
     "toastDeleted": "Template deleted",
-    "toastDeleteFailed": "Delete failed"
+    "toastDeleteFailed": "Delete failed",
+    "categories": {
+      "Classification": "Classification",
+      "Quality": "Quality",
+      "NER": "NER",
+      "Safety": "Safety",
+      "RLHF": "RLHF",
+      "Custom": "Custom"
+    },
+    "builtinNames": {
+      "builtin-sentiment": "Sentiment Classification",
+      "builtin-quality-rating": "Text Quality Rating",
+      "builtin-ner": "Named Entity Tagging",
+      "builtin-binary": "Binary Classification",
+      "builtin-toxicity": "Toxicity Detection",
+      "builtin-summarization": "Summarization Review",
+      "builtin-translation": "Translation Quality",
+      "builtin-rlhf": "RLHF Preference"
+    },
+    "builtinDescriptions": {
+      "builtin-sentiment": "Classify text as positive, neutral, or negative with an optional reason.",
+      "builtin-quality-rating": "Rate the overall quality of a text on a 1–5 scale with optional feedback.",
+      "builtin-ner": "Tag named entities in text with their type using a dynamic entity list.",
+      "builtin-binary": "Simple yes / no decision with optional notes.",
+      "builtin-toxicity": "Identify whether content is toxic and classify the type.",
+      "builtin-summarization": "Rate faithfulness and completeness of a summary.",
+      "builtin-translation": "Evaluate fluency and adequacy of a translation.",
+      "builtin-rlhf": "Pick which AI response is better and explain why."
+    }
   },
   "formBuilder": {
     "typeText": "Text",

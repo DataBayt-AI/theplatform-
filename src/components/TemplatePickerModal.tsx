@@ -28,9 +28,9 @@ const CATEGORY_COLORS: Record<string, string> = {
     Custom: "bg-muted text-muted-foreground",
 };
 
-function CategoryBadge({ category }: { category: string }) {
+function CategoryBadge({ category, translated }: { category: string; translated?: string }) {
     const cls = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.Custom;
-    return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>{category}</span>;
+    return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>{translated ?? category}</span>;
 }
 
 export function TemplatePickerModal({ open, onClose, onApply, currentXml }: TemplatePickerModalProps) {
@@ -120,11 +120,11 @@ export function TemplatePickerModal({ open, onClose, onApply, currentXml }: Temp
                                     className="text-start rounded-lg border bg-card p-3 hover:bg-accent hover:border-primary transition-colors group"
                                 >
                                     <div className="flex items-start justify-between gap-2">
-                                        <p className="text-sm font-medium leading-snug">{tpl.name}</p>
-                                        <CategoryBadge category={tpl.category} />
+                                        <p className="text-sm font-medium leading-snug">{t(`templatePicker.builtinNames.${tpl.id}`, tpl.name)}</p>
+                                        <CategoryBadge category={tpl.category} translated={t(`templatePicker.categories.${tpl.category}`, tpl.category)} />
                                     </div>
                                     {tpl.description && (
-                                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{tpl.description}</p>
+                                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{t(`templatePicker.builtinDescriptions.${tpl.id}`, tpl.description)}</p>
                                     )}
                                 </button>
                             ))}

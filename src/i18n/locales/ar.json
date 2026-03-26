@@ -605,7 +605,35 @@
     "toastSavedDesc": "تمت إضافة «{{name}}» إلى قوالبك.",
     "toastSaveFailed": "فشل الحفظ",
     "toastDeleted": "تم حذف القالب",
-    "toastDeleteFailed": "فشل الحذف"
+    "toastDeleteFailed": "فشل الحذف",
+    "categories": {
+      "Classification": "تصنيف",
+      "Quality": "جودة",
+      "NER": "كيانات مسماة",
+      "Safety": "سلامة",
+      "RLHF": "تعلّم من التفضيل",
+      "Custom": "مخصص"
+    },
+    "builtinNames": {
+      "builtin-sentiment": "تصنيف المشاعر",
+      "builtin-quality-rating": "تقييم جودة النص",
+      "builtin-ner": "وسم الكيانات المسماة",
+      "builtin-binary": "تصنيف ثنائي",
+      "builtin-toxicity": "كشف المحتوى السام",
+      "builtin-summarization": "مراجعة التلخيص",
+      "builtin-translation": "جودة الترجمة",
+      "builtin-rlhf": "تفضيل RLHF"
+    },
+    "builtinDescriptions": {
+      "builtin-sentiment": "تصنيف النص كإيجابي أو محايد أو سلبي مع سبب اختياري.",
+      "builtin-quality-rating": "تقييم الجودة العامة للنص على مقياس من 1 إلى 5 مع ملاحظات اختيارية.",
+      "builtin-ner": "وسم الكيانات المسماة في النص مع نوعها باستخدام قائمة كيانات ديناميكية.",
+      "builtin-binary": "قرار نعم / لا بسيط مع ملاحظات اختيارية.",
+      "builtin-toxicity": "تحديد ما إذا كان المحتوى ساماً وتصنيف نوعه.",
+      "builtin-summarization": "تقييم دقة واكتمال الملخص.",
+      "builtin-translation": "تقييم طلاقة ودقة الترجمة.",
+      "builtin-rlhf": "اختيار أي استجابة ذكاء اصطناعي أفضل وشرح السبب."
+    }
   },
   "formBuilder": {
     "typeText": "نص",
