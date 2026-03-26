@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Tiktoken } from "js-tiktoken/lite";
 import o200k_base from "js-tiktoken/ranks/o200k_base";
 import cl100k_base from "js-tiktoken/ranks/cl100k_base";
@@ -90,6 +91,7 @@ const DataLabelingWorkspace = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { isRTL } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser, getUserById } = useAuth();
   const annotatorMeta = currentUser ? { id: currentUser.id, name: currentUser.username } : undefined;
@@ -246,6 +248,7 @@ const DataLabelingWorkspace = () => {
   const [selectedContentColumn, setSelectedContentColumn] = useState<string>('');
   const [selectedDisplayColumns, setSelectedDisplayColumns] = useState<string[]>([]);
   const [showMetadataSidebar, setShowMetadataSidebar] = useState(true);
+  const [showRightSidebar, setShowRightSidebar] = useState(true);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [annotationQuery, setAnnotationQuery] = useState('');
   const [annotationStatusFilter, setAnnotationStatusFilter] = useState<AnnotationStatusFilter>('all');
@@ -3326,7 +3329,7 @@ const DataLabelingWorkspace = () => {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 pt-20 p-6">
+        <div className="flex-1 pt-24 p-6">
           {dataPoints.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <div className="w-full max-w-4xl space-y-6">
@@ -3594,6 +3597,7 @@ const DataLabelingWorkspace = () => {
                                         values={currentDataPoint?.customFieldValues || {}}
                                         onChange={handleCustomFieldValueChange}
                                         metadata={currentDataPoint?.metadata}
+                                        sourceText={currentDataPoint?.content}
                                       />
                                       <div className="flex justify-end mt-3">
                                         <Button
@@ -4339,11 +4343,17 @@ const DataLabelingWorkspace = () => {
               </div>
 
               {viewMode === 'record' ? (
-                <div id="tutorial-annotation-form" className="w-80 flex-shrink-0">
+                <div id="tutorial-annotation-form" className={`flex-shrink-0 transition-all duration-300 ${showRightSidebar ? 'w-80' : 'w-10'}`}>
+                  {showRightSidebar ? (
                   <Card className="p-6 space-y-6 sticky top-6">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-purple-500" />
-                      <h3 className="font-semibold">Actions</h3>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-purple-500" />
+                        <h3 className="font-semibold">{t("workspace.actionsPanel")}</h3>
+                      </div>
+                      <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setShowRightSidebar(false)} title="Collapse sidebar">
+                        {isRTL ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </Button>
                     </div>
 
                     {/* AI Processing */}
@@ -4479,13 +4489,27 @@ const DataLabelingWorkspace = () => {
                       )}
                     </div>
                   </Card>
+                  ) : (
+                    <div className="sticky top-6 flex flex-col items-center gap-2 pt-2">
+                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setShowRightSidebar(true)} title="Expand sidebar">
+                        {isRTL ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                      </Button>
+                      <Sparkles className="w-4 h-4 text-purple-400 opacity-60" />
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div className="w-80 flex-shrink-0">
+                <div className={`flex-shrink-0 transition-all duration-300 ${showRightSidebar ? 'w-80' : 'w-10'}`}>
+                  {showRightSidebar ? (
                   <Card className="p-6 space-y-6 sticky top-6">
-                    <div className="flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-blue-500" />
-                      <Label className="text-sm font-medium">{t("workspace.listOverview")}</Label>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4 text-blue-500" />
+                        <Label className="text-sm font-medium">{t("workspace.listOverview")}</Label>
+                      </div>
+                      <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setShowRightSidebar(false)} title="Collapse sidebar">
+                        {isRTL ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </Button>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
@@ -4583,6 +4607,14 @@ const DataLabelingWorkspace = () => {
                       </Button>
                     </div>
                   </Card>
+                  ) : (
+                    <div className="sticky top-6 flex flex-col items-center gap-2 pt-2">
+                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setShowRightSidebar(true)} title="Expand sidebar">
+                        {isRTL ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                      </Button>
+                      <BarChart3 className="w-4 h-4 text-blue-400 opacity-60" />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

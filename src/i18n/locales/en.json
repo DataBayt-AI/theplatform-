@@ -115,7 +115,12 @@
     "noAnnotatorsAvailable": "No annotators available",
     "areYouSure": "Are you sure?",
     "confirmDeleteDescription": "This action cannot be undone. This will permanently delete the project and all its annotations.",
-    "editingUser": "Editing: {{username}}"
+    "editingUser": "Editing: {{username}}",
+    "placeholderUsername": "jdoe",
+    "placeholderPassword": "******",
+    "placeholderResetPassword": "New password...",
+    "placeholderProjectName": "e.g., Sentiment Analysis V1",
+    "placeholderProjectDesc": "Brief description of the dataset and goals"
   },
   "workspace": {
     "title": "Annotation Workspace",
@@ -277,6 +282,7 @@
     "noAnnotatorRecords": "No annotator records yet.",
     "noAnnotationYet": "No annotation yet.",
     "iaaAnnotationDetails": "IAA & Annotation Details",
+    "actionsPanel": "Actions",
     "addCommentPlaceholder": "Add a comment for this item...",
     "loadingComments": "Loading comments...",
     "noComments": "No comments yet.",
@@ -637,9 +643,13 @@
     "addField": "Add:"
   },
   "annotationForm": {
-    "noEntities": "No entities added yet.",
+    "noEntities": "No entities tagged yet. Select text above to add entities.",
     "entityPlaceholder": "Entity text…",
-    "addEntity": "Add entity"
+    "addEntity": "Add entity",
+    "noSourceText": "No source text available for NER annotation.",
+    "nerHint": "Select text below to tag entities. Use number keys (1–9) to switch entity type.",
+    "taggedEntities": "Tagged Entities",
+    "clearAll": "Clear all"
   },
   "tour": {
     "dashboard": {

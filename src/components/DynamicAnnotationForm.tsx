@@ -8,12 +8,14 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Button } from "@/components/ui/button";
 import { Star, Plus, X } from "lucide-react";
 import { FieldConfig } from "@/services/xmlConfigService";
+import { NERAnnotator, NEREntity } from "@/components/NERAnnotator";
 
 interface DynamicAnnotationFormProps {
     fields: FieldConfig[];
     values: Record<string, string | boolean>;
     onChange: (fieldId: string, value: string | boolean) => void;
     metadata?: Record<string, string>; // Data from current data point
+    sourceText?: string; // Source text for NER annotation fields
 }
 
 // Interpolate {{columnName}} with actual values from metadata
@@ -27,7 +29,7 @@ const interpolate = (text: string | undefined, metadata?: Record<string, string>
     return result;
 };
 
-export const DynamicAnnotationForm = ({ fields, values, onChange, metadata }: DynamicAnnotationFormProps) => {
+export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sourceText }: DynamicAnnotationFormProps) => {
     const { t } = useTranslation();
     return (
         <div className="space-y-4">
@@ -107,97 +109,22 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata }: Dy
                     )}
 
                     {field.type === 'entity-list' && field.entityTypes && (() => {
-                        type Entity = { text: string; type: string; confidence?: number };
-                        let entities: Entity[] = [];
+                        let entities: NEREntity[] = [];
                         try { entities = JSON.parse((values[field.id] as string) || '[]'); } catch { entities = []; }
 
-                        const updateEntities = (next: Entity[]) =>
-                            onChange(field.id, JSON.stringify(next));
-
-                        const defaultType = field.entityTypes[0]?.value ?? '';
-                        const showConf = field.entityConfidence ?? false;
-                        const CONF_LABELS = ['', 'Low', 'Med', 'High'];
+                        // Resolve source text: field.sourceField → metadata column, else prop
+                        const resolvedText = field.sourceField && metadata?.[field.sourceField]
+                            ? metadata[field.sourceField]
+                            : sourceText || '';
 
                         return (
-                            <div className="space-y-2">
-                                {entities.length === 0 && (
-                                    <p className="text-xs text-muted-foreground italic">{t('annotationForm.noEntities')}</p>
-                                )}
-                                {entities.map((ent, i) => (
-                                    <div key={i} className="flex items-center gap-2 flex-wrap">
-                                        <Input
-                                            value={ent.text}
-                                            onChange={e => {
-                                                const next = [...entities];
-                                                next[i] = { ...next[i], text: e.target.value };
-                                                updateEntities(next);
-                                            }}
-                                            placeholder={interpolate(field.placeholder, metadata) || t('annotationForm.entityPlaceholder')}
-                                            className="flex-1 min-w-32 h-8 text-sm"
-                                        />
-                                        <Select
-                                            value={ent.type}
-                                            onValueChange={val => {
-                                                const next = [...entities];
-                                                next[i] = { ...next[i], type: val };
-                                                updateEntities(next);
-                                            }}
-                                        >
-                                            <SelectTrigger className="w-36 h-8 text-xs shrink-0">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {field.entityTypes!.map(et => (
-                                                    <SelectItem key={et.value} value={et.value} className="text-xs">
-                                                        {et.label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        {showConf && (
-                                            <div className="flex items-center gap-0.5 shrink-0" title="Confidence">
-                                                {[1, 2, 3].map(lvl => (
-                                                    <button
-                                                        key={lvl}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            const next = [...entities];
-                                                            next[i] = { ...next[i], confidence: ent.confidence === lvl ? undefined : lvl };
-                                                            updateEntities(next);
-                                                        }}
-                                                        title={CONF_LABELS[lvl]}
-                                                        className={`w-6 h-6 rounded text-xs font-medium border transition-colors ${
-                                                            ent.confidence === lvl
-                                                                ? 'bg-primary text-primary-foreground border-primary'
-                                                                : 'border-input hover:bg-muted text-muted-foreground'
-                                                        }`}
-                                                    >
-                                                        {lvl}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={() => updateEntities(entities.filter((_, j) => j !== i))}
-                                            className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                                            aria-label="Remove entity"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                ))}
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 text-xs gap-1"
-                                    onClick={() => updateEntities([...entities, { text: '', type: defaultType }])}
-                                >
-                                    <Plus className="w-3 h-3" />
-                                    {t('annotationForm.addEntity')}
-                                </Button>
-                            </div>
+                            <NERAnnotator
+                                sourceText={resolvedText}
+                                entities={entities}
+                                onEntitiesChange={(next) => onChange(field.id, JSON.stringify(next))}
+                                entityTypes={field.entityTypes}
+                                showConfidence={field.entityConfidence}
+                            />
                         );
                     })()}
 

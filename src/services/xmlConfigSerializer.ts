@@ -10,7 +10,8 @@ export function serializeAnnotationConfigXML(config: AnnotationConfig): string {
     for (const field of config.fields) {
         const required = field.required ? ' required="true"' : ' required="false"';
         const showConf = field.type === 'entity-list' && field.entityConfidence ? ' show-confidence="true"' : '';
-        lines.push(`  <field id="${escapeAttr(field.id)}" type="${field.type}"${required}${showConf}>`);
+        const sourceField = field.type === 'entity-list' && field.sourceField ? ` source-field="${escapeAttr(field.sourceField)}"` : '';
+        lines.push(`  <field id="${escapeAttr(field.id)}" type="${field.type}"${required}${showConf}${sourceField}>`);
         lines.push(`    <label>${escapeText(field.label)}</label>`);
 
         if (field.placeholder) {
