@@ -115,7 +115,12 @@
     "noAnnotatorsAvailable": "No annotators available",
     "areYouSure": "Are you sure?",
     "confirmDeleteDescription": "This action cannot be undone. This will permanently delete the project and all its annotations.",
-    "editingUser": "Editing: {{username}}"
+    "editingUser": "Editing: {{username}}",
+    "placeholderUsername": "jdoe",
+    "placeholderPassword": "******",
+    "placeholderResetPassword": "New password...",
+    "placeholderProjectName": "e.g., Sentiment Analysis V1",
+    "placeholderProjectDesc": "Brief description of the dataset and goals"
   },
   "workspace": {
     "title": "Annotation Workspace",
@@ -277,6 +282,7 @@
     "noAnnotatorRecords": "No annotator records yet.",
     "noAnnotationYet": "No annotation yet.",
     "iaaAnnotationDetails": "IAA & Annotation Details",
+    "actionsPanel": "Actions",
     "addCommentPlaceholder": "Add a comment for this item...",
     "loadingComments": "Loading comments...",
     "noComments": "No comments yet.",
@@ -318,6 +324,7 @@
     "ratePerHour": "Rate (per hour)",
     "overallProgress": "Overall Progress",
     "statusDone": "Done",
+    "statusInProgress": "In Progress",
     "statusPending": "Pending",
     "annotationFinal": "Final",
     "annotationHuman": "Human",
@@ -599,7 +606,35 @@
     "toastSavedDesc": "\"{{name}}\" added to your templates.",
     "toastSaveFailed": "Save failed",
     "toastDeleted": "Template deleted",
-    "toastDeleteFailed": "Delete failed"
+    "toastDeleteFailed": "Delete failed",
+    "categories": {
+      "Classification": "Classification",
+      "Quality": "Quality",
+      "NER": "NER",
+      "Safety": "Safety",
+      "RLHF": "RLHF",
+      "Custom": "Custom"
+    },
+    "builtinNames": {
+      "builtin-sentiment": "Sentiment Classification",
+      "builtin-quality-rating": "Text Quality Rating",
+      "builtin-ner": "Named Entity Tagging",
+      "builtin-binary": "Binary Classification",
+      "builtin-toxicity": "Toxicity Detection",
+      "builtin-summarization": "Summarization Review",
+      "builtin-translation": "Translation Quality",
+      "builtin-rlhf": "RLHF Preference"
+    },
+    "builtinDescriptions": {
+      "builtin-sentiment": "Classify text as positive, neutral, or negative with an optional reason.",
+      "builtin-quality-rating": "Rate the overall quality of a text on a 1–5 scale with optional feedback.",
+      "builtin-ner": "Tag named entities in text with their type using a dynamic entity list.",
+      "builtin-binary": "Simple yes / no decision with optional notes.",
+      "builtin-toxicity": "Identify whether content is toxic and classify the type.",
+      "builtin-summarization": "Rate faithfulness and completeness of a summary.",
+      "builtin-translation": "Evaluate fluency and adequacy of a translation.",
+      "builtin-rlhf": "Pick which AI response is better and explain why."
+    }
   },
   "formBuilder": {
     "typeText": "Text",
@@ -637,9 +672,13 @@
     "addField": "Add:"
   },
   "annotationForm": {
-    "noEntities": "No entities added yet.",
+    "noEntities": "No entities tagged yet. Select text above to add entities.",
     "entityPlaceholder": "Entity text…",
-    "addEntity": "Add entity"
+    "addEntity": "Add entity",
+    "noSourceText": "No source text available for NER annotation.",
+    "nerHint": "Select text below to tag entities. Use number keys (1–9) to switch entity type.",
+    "taggedEntities": "Tagged Entities",
+    "clearAll": "Clear all"
   },
   "tour": {
     "dashboard": {

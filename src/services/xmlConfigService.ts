@@ -28,6 +28,7 @@ export interface FieldConfig {
     ratingConfig?: RatingConfig;       // rating-scale
     entityTypes?: EntityTypeOption[];      // entity-list
     entityConfidence?: boolean;           // entity-list: show per-entity confidence
+    sourceField?: string;                 // entity-list: metadata column to use as source text
 }
 
 export interface AnnotationConfig {
@@ -88,6 +89,8 @@ export function parseAnnotationConfigXML(xmlString: string): AnnotationConfig {
                 label: el.textContent || el.getAttribute('value') || '',
             }));
             field.entityConfidence = fieldEl.getAttribute('show-confidence') === 'true';
+            const sourceField = fieldEl.getAttribute('source-field');
+            if (sourceField) field.sourceField = sourceField;
         }
 
         // Parse rating config for rating-scale type

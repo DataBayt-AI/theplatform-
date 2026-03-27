@@ -381,11 +381,11 @@ const Dashboard = () => {
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                                 <div className="space-y-1.5">
                                                     <Label htmlFor="new-user">{t("common.username")}</Label>
-                                                    <Input id="new-user" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="jdoe" />
+                                                    <Input id="new-user" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder={t("dashboard.placeholderUsername")} />
                                                 </div>
                                                 <div className="space-y-1.5">
                                                     <Label htmlFor="new-pass">{t("common.password")}</Label>
-                                                    <Input id="new-pass" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="******" />
+                                                    <Input id="new-pass" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder={t("dashboard.placeholderPassword")} />
                                                 </div>
                                                 <div className="space-y-1.5">
                                                     <Label>{t("dashboard.role")}</Label>
@@ -511,7 +511,7 @@ const Dashboard = () => {
                                                                                 type="password"
                                                                                 value={resetPassword}
                                                                                 onChange={(e) => setResetPassword(e.target.value)}
-                                                                                placeholder="New password..."
+                                                                                placeholder={t("dashboard.placeholderResetPassword")}
                                                                             />
                                                                         </div>
                                                                         <div className="space-y-1.5">
@@ -628,7 +628,7 @@ const Dashboard = () => {
                                             <Label htmlFor="name">{t("dashboard.projectName")}</Label>
                                             <Input
                                                 id="name"
-                                                placeholder="e.g., Sentiment Analysis V1"
+                                                placeholder={t("dashboard.placeholderProjectName")}
                                                 value={newProjectName}
                                                 onChange={(e) => setNewProjectName(e.target.value)}
                                             />
@@ -637,7 +637,7 @@ const Dashboard = () => {
                                             <Label htmlFor="desc">{t("dashboard.descriptionOptional")}</Label>
                                             <Textarea
                                                 id="desc"
-                                                placeholder="Brief description of the dataset and goals"
+                                                placeholder={t("dashboard.placeholderProjectDesc")}
                                                 value={newProjectDesc}
                                                 onChange={(e) => setNewProjectDesc(e.target.value)}
                                             />

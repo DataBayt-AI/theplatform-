@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,18 +60,34 @@ export const UserMenu = () => {
     return null;
   }
 
+  const initials = currentUser.username.slice(0, 2).toUpperCase();
+
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button size="sm" variant="outline" className="gap-2">
-            {currentUser.username}
-            <Badge variant="secondary" className="text-[10px] uppercase">
-              {roleLabel}
-            </Badge>
-          </Button>
-        </DropdownMenuTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full p-0">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-[11px] font-semibold text-white">
+                  {initials}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>
+            <span>{currentUser.username}</span>
+            <Badge variant="secondary" className="ml-1.5 text-[10px] uppercase">{roleLabel}</Badge>
+          </TooltipContent>
+        </Tooltip>
         <DropdownMenuContent align="end">
+          <DropdownMenuLabel className="font-normal">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">{currentUser.username}</span>
+              <span className="text-xs text-muted-foreground uppercase">{roleLabel}</span>
+            </div>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setShowChangePassword(true)}>
             {t("auth.changePassword")}
           </DropdownMenuItem>
