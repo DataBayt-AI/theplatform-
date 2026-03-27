@@ -324,6 +324,7 @@
     "ratePerHour": "Rate (per hour)",
     "overallProgress": "Overall Progress",
     "statusDone": "Done",
+    "statusInProgress": "In Progress",
     "statusPending": "Pending",
     "annotationFinal": "Final",
     "annotationHuman": "Human",

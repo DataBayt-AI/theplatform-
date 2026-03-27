@@ -324,6 +324,7 @@
     "ratePerHour": "المعدل (بالساعة)",
     "overallProgress": "التقدم الإجمالي",
     "statusDone": "مكتمل",
+    "statusInProgress": "قيد التنفيذ",
     "statusPending": "معلق",
     "annotationFinal": "نهائي",
     "annotationHuman": "بشري",
