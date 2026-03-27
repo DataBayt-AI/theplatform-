@@ -25,6 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/components/ui/use-toast";
 import { MetadataSidebar } from "@/components/MetadataSidebar";
+import { GuidelinesSidebar } from "@/components/GuidelinesSidebar";
 import { DynamicAnnotationForm } from "@/components/DynamicAnnotationForm";
 import { AnnotationQualityDashboard } from "@/components/qa/AnnotationQualityDashboard";
 import { AnnotationConfig, loadDefaultAnnotationConfig, loadAnnotationConfigFromFile, parseAnnotationConfigXML } from "@/services/xmlConfigService";
@@ -69,17 +70,17 @@ import {
   Star,
   User,
   ArrowLeft,
+  ArrowRight,
   Undo2,
   Redo2,
   History,
-  Book,
   Database,
   MessageSquare,
   Trash2,
-  HelpCircle
+  HelpCircle,
+  Book
 } from "lucide-react";
 import { VersionHistory } from "@/components/VersionHistory";
-import { GuidelinesDialog } from "@/components/GuidelinesDialog";
 import { projectService } from "@/services/projectService";
 import { modelManagementService } from "@/services/modelManagementService";
 import apiClient from "@/services/apiClient";
@@ -248,6 +249,7 @@ const DataLabelingWorkspace = () => {
   const [selectedContentColumn, setSelectedContentColumn] = useState<string>('');
   const [selectedDisplayColumns, setSelectedDisplayColumns] = useState<string[]>([]);
   const [showMetadataSidebar, setShowMetadataSidebar] = useState(true);
+  const [showGuidelinesSidebar, setShowGuidelinesSidebar] = useState(false);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [annotationQuery, setAnnotationQuery] = useState('');
@@ -264,7 +266,6 @@ const DataLabelingWorkspace = () => {
 
   // Advanced Features State
   const [showHistoryDialog, setShowHistoryDialog] = useState(false);
-  const [showGuidelinesDialog, setShowGuidelinesDialog] = useState(false);
   const [showQualityDialog, setShowQualityDialog] = useState(false);
 
   // Hugging Face State
@@ -2405,6 +2406,7 @@ const DataLabelingWorkspace = () => {
   return (
     <TooltipProvider>
       <div className="flex h-screen bg-background">
+
         {/* Keyboard Shortcuts Overlay */}
         {showShortcuts && (
           <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm">
@@ -2458,85 +2460,269 @@ const DataLabelingWorkspace = () => {
           </div>
         )}
         {/* Header */}
-        <div className="absolute top-0 left-0 right-0 z-10 border-b border-border bg-card p-4">
+        <div className="absolute top-0 left-0 right-0 z-10 border-b border-border bg-card px-4 py-2.5">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+            {/* ── Left: nav + title ── */}
+            <div className="flex items-center gap-2 min-w-0">
+              <Button
+                variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+                onClick={() => viewMode === 'record' ? setViewMode('list') : navigate('/')}
+              >
+                {isRTL ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
+              </Button>
+              <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
+              <div className="w-7 h-7 rounded-md bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center shrink-0">
+                <Target className="w-3.5 h-3.5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-sm font-semibold text-foreground truncate">{projectName || 'DataBayt AI Labeler'}</h1>
+                <p className="text-xs text-muted-foreground">
+                  {dataPoints.length > 0 ? t("workspace.dataPointOf", { current: globalCurrentRecordIndex, total: globalTotalItems }) : t("workspace.noDataLoaded")}
+                </p>
+              </div>
+            </div>
+
+            {/* ── Center: progress ── */}
+            {dataPoints.length > 0 && (
+              <div id="tutorial-progress" className="hidden sm:flex items-center gap-3 mx-4">
+                <Progress value={progress} className="w-28 h-2" />
+                <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">
+                  {globalCompletedCount}/{globalTotalItems} ({Math.round(progress)}%)
+                </span>
+              </div>
+            )}
+
+            {/* ── Right: actions ── */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Undo / Redo */}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo}>
-                    <Undo2 className="w-4 h-4" />
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={undo} disabled={!canUndo}>
+                    {isRTL ? <Redo2 className="w-4 h-4" /> : <Undo2 className="w-4 h-4" />}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{t("workspace.undoCtrl")}</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" onClick={redo} disabled={!canRedo}>
-                    <Redo2 className="w-4 h-4" />
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={redo} disabled={!canRedo}>
+                    {isRTL ? <Undo2 className="w-4 h-4" /> : <Redo2 className="w-4 h-4" />}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{t("workspace.redoCtrl")}</TooltipContent>
               </Tooltip>
-              <div className="h-6 w-px bg-border mx-1" />
-              <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
+
+              <div className="h-5 w-px bg-border mx-0.5" />
+
+              {/* Navigation prev/next */}
+              {dataPoints.length > 0 && viewMode === 'record' && (
+                <>
+                  <Button
+                    id="tutorial-nav-prev"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={navigatePrevious}
+                    disabled={useFilteredNavigation ? !scopedHasPrevious : currentIndex === 0}
+                  >
+                    {isRTL ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                  </Button>
+                  <Button
+                    id="tutorial-nav-next"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={navigateNext}
+                    disabled={useFilteredNavigation ? !scopedHasNext : currentIndex === dataPoints.length - 1}
+                  >
+                    {isRTL ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </Button>
+                </>
+              )}
+
+              <div className="h-5 w-px bg-border mx-0.5" />
+
+              {/* Quality button — stays visible for managers */}
+              {(isAdmin || isManagerForProject) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setShowQualityDialog(true)}
+                      disabled={!projectId}
+                    >
+                      <BarChart3 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("workspace.quality")}</TooltipContent>
+                </Tooltip>
+              )}
+
+
+              <div className="h-5 w-px bg-border mx-0.5" />
+
+              {/* Secondary actions — inline icon buttons */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost" size="icon" className="h-8 w-8"
+                    onClick={() => setShowHistoryDialog(true)}
+                    disabled={!projectId}
+                  >
+                    <History className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("workspace.versionHistory")}</TooltipContent>
+              </Tooltip>
+
+              {canProcessAI && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost" size="icon" className="h-8 w-8"
+                      onClick={() => setShowSettings(true)}
+                    >
+                      <Bot className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("workspace.modelSelection")}</TooltipContent>
+                </Tooltip>
+              )}
+
+              <div className="h-5 w-px bg-border mx-0.5" />
+
               {viewMode === 'record' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setViewMode('list')}
-                >
-                  {t("workspace.backToList")}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost" size="icon" className="h-8 w-8"
+                      onClick={() => setShowShortcuts(true)}
+                    >
+                      <Keyboard className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("workspace.keyboardShortcutsTooltip")}</TooltipContent>
+                </Tooltip>
               )}
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
-                <Target className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold text-foreground">{projectName || 'DataBayt AI Labeler'}</h1>
-                <p className="text-sm text-muted-foreground">
-                  {dataPoints.length > 0 ? t("workspace.dataPointOf", { current: globalCurrentRecordIndex, total: globalTotalItems }) : t("workspace.noDataLoaded")}
-                </p>
-              </div>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost" size="icon" className="h-8 w-8"
+                    onClick={startWorkspaceTour}
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("workspace.startTutorial")}</TooltipContent>
+              </Tooltip>
+
+              <NotificationBell />
+              <ThemeToggle />
+              <UserMenu />
+
+              {/* Hidden file inputs */}
+              <input
+                id="file-upload"
+                type="file"
+                accept=".json,.csv,.txt,.mp3,.wav,.m4a"
+                onChange={handleFileUpload}
+                disabled={!canUpload}
+                className="hidden"
+              />
+              <input
+                id="file-upload-new-task"
+                type="file"
+                accept=".json,.csv,.txt,.mp3,.wav,.m4a"
+                onChange={(e) => {
+                  resetForNewTask();
+                  handleFileUpload(e);
+                }}
+                disabled={!canUpload}
+                className="hidden"
+              />
+
+              {/* Start New Task Button (shows after completion) */}
+              {showCompletionButton && viewMode === 'record' && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="icon"
+                      className="h-8 w-8 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                      onClick={handleStartNewTask}
+                      disabled={!canUpload}
+                    >
+                      <Upload className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("workspace.uploadFileForTask")}</TooltipContent>
+                </Tooltip>
+              )}
             </div>
+          </div>
+        </div>
 
-            <div className="flex items-center gap-4">
-              {dataPoints.length > 0 && (
-                <div id="tutorial-progress" className="text-right">
-                  <p className="text-sm font-medium text-foreground">{globalCompletedCount} {t("workspace.completed")}</p>
-                  <div className="flex items-center gap-2">
-                    <Progress value={progress} className="w-32 h-2" />
-                    <span className="text-xs text-muted-foreground font-mono">{Math.round(progress)}%</span>
-                  </div>
-                </div>
-              )}
+                {/* ═══ Dialogs (portaled, outside header) ═══ */}
 
-              <Separator orientation="vertical" className="h-8" />
+                {/* Settings / Model Selection Dialog */}
+                <Dialog open={showSettings} onOpenChange={setShowSettings}>
+                  <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>{t("workspace.modelSelection")}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-6">
+                      <div>
+                        <Label className="mb-2 block">{t("workspace.availableModelProfiles")}</Label>
+                        {availableModelProfiles.length === 0 ? (
+                          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                            {t("workspace.noModelProfiles")}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {availableModelProfiles.map(profile => {
+                              const connection = connectionById.get(profile.providerConnectionId);
+                              const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
+                              return (
+                                <div key={profile.id} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={profile.id}
+                                    checked={selectedModels.includes(profile.id)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setSelectedModels([...selectedModels, profile.id]);
+                                      } else {
+                                        setSelectedModels(selectedModels.filter(id => id !== profile.id));
+                                      }
+                                    }}
+                                  />
+                                  <Label htmlFor={profile.id} className="text-sm font-normal cursor-pointer">
+                                    {profile.displayName}
+                                    {provider && (
+                                      <span className="ml-2 text-xs text-muted-foreground">
+                                        {provider.name}
+                                      </span>
+                                    )}
+                                  </Label>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
 
-              <div className="flex gap-2">
-                <input
-                  id="file-upload"
-                  type="file"
-                  accept=".json,.csv,.txt,.mp3,.wav,.m4a"
-                  onChange={handleFileUpload}
-                  disabled={!canUpload}
-                  className="hidden"
-                />
+                      {canProcessAI && (
+                        <Button variant="outline" onClick={() => navigate('/model-management')}>
+                          {t("workspace.manageModelProfiles")}
+                        </Button>
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
 
-                {/* Hidden input for new task upload */}
-                <input
-                  id="file-upload-new-task"
-                  type="file"
-                  accept=".json,.csv,.txt,.mp3,.wav,.m4a"
-                  onChange={(e) => {
-                    resetForNewTask();
-                    handleFileUpload(e);
-                  }}
-                  disabled={!canUpload}
-                  className="hidden"
-                />
-
+                {/* HuggingFace Import Dialog */}
                 <Dialog open={showHFImportDialog} onOpenChange={setShowHFImportDialog}>
                   <DialogContent className="max-w-lg">
                     <DialogHeader>
@@ -2602,103 +2788,6 @@ const DataLabelingWorkspace = () => {
                           {t("workspace.importDataset")}
                         </Button>
                       </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-                                {(isAdmin || isManagerForProject) && (
-                  <Button
-                    size="sm"
-                    className="mr-1 gap-1.5 bg-gradient-to-r from-violet-500 to-indigo-500 hover:from-violet-600 hover:to-indigo-600 text-white border-0 shadow-sm shadow-violet-200 dark:shadow-violet-900/30"
-                    onClick={() => setShowQualityDialog(true)}
-                    disabled={!projectId}
-                    title={t("workspace.quality")}
-                  >
-                    <BarChart3 className="h-4 w-4" />
-                    {t("workspace.quality")}
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="mr-1"
-                  onClick={() => setShowHistoryDialog(true)}
-                  disabled={!projectId}
-                  title={t("workspace.versionHistory")}
-                >
-                  <History className="h-5 w-5" />
-                </Button>
-                <Button
-                  id="tutorial-guidelines-btn"
-                  variant="ghost"
-                  size="icon"
-                  className="mr-1"
-                  onClick={() => setShowGuidelinesDialog(true)}
-                  disabled={!projectId}
-                  title={t("workspace.projectGuidelines")}
-                >
-                  <Book className="h-5 w-5" />
-                </Button>
-                {/* Settings */}
-                <Dialog open={showSettings} onOpenChange={setShowSettings}>
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!canProcessAI}
-                      title={!canProcessAI ? "Requires manager or admin role" : undefined}
-                    >
-                      <Bot className="w-4 h-4" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>{t("workspace.modelSelection")}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-6">
-                      <div>
-                        <Label className="mb-2 block">{t("workspace.availableModelProfiles")}</Label>
-                        {availableModelProfiles.length === 0 ? (
-                          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                            {t("workspace.noModelProfiles")}
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {availableModelProfiles.map(profile => {
-                              const connection = connectionById.get(profile.providerConnectionId);
-                              const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
-                              return (
-                                <div key={profile.id} className="flex items-center space-x-2">
-                                  <Checkbox
-                                    id={profile.id}
-                                    checked={selectedModels.includes(profile.id)}
-                                    onCheckedChange={(checked) => {
-                                      if (checked) {
-                                        setSelectedModels([...selectedModels, profile.id]);
-                                      } else {
-                                        setSelectedModels(selectedModels.filter(id => id !== profile.id));
-                                      }
-                                    }}
-                                  />
-                                  <Label htmlFor={profile.id} className="text-sm font-normal cursor-pointer">
-                                    {profile.displayName}
-                                    {provider && (
-                                      <span className="ml-2 text-xs text-muted-foreground">
-                                        {provider.name}
-                                      </span>
-                                    )}
-                                  </Label>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {canProcessAI && (
-                        <Button variant="outline" onClick={() => navigate('/model-management')}>
-                          {t("workspace.manageModelProfiles")}
-                        </Button>
-                      )}
                     </div>
                   </DialogContent>
                 </Dialog>
@@ -3144,16 +3233,6 @@ const DataLabelingWorkspace = () => {
                   </Dialog>
                 )}
 
-                {/* Guidelines Dialog — read-only in workspace; managers edit via Project Settings */}
-                {projectId && projectAccess && (
-                  <GuidelinesDialog
-                    project={projectAccess}
-                    isOpen={showGuidelinesDialog}
-                    onClose={() => setShowGuidelinesDialog(false)}
-                    readOnly
-                    settingsPath={(isAdmin || isManagerForProject) ? `/projects/${projectId}/settings` : undefined}
-                  />
-                )}
 
                 {/* Completion Celebration Dialog */}
                 <Dialog
@@ -3249,87 +3328,8 @@ const DataLabelingWorkspace = () => {
                   </DialogContent>
                 </Dialog>
 
-                {/* Navigation */}
-                {dataPoints.length > 0 && viewMode === 'record' && (
-                  <>
-                    <Button
-                      id="tutorial-nav-prev"
-                      variant="outline"
-                      size="sm"
-                      onClick={navigatePrevious}
-                      disabled={useFilteredNavigation ? !scopedHasPrevious : currentIndex === 0}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      id="tutorial-nav-next"
-                      variant="outline"
-                      size="sm"
-                      onClick={navigateNext}
-                      disabled={useFilteredNavigation ? !scopedHasNext : currentIndex === dataPoints.length - 1}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </>
-                )}
-
-
-                {/* Start New Task Button (shows after completion) */}
-                {showCompletionButton && viewMode === 'record' && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={handleStartNewTask}
-                        className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
-                        disabled={!canUpload}
-                      >
-                        <Upload className="w-4 h-4 mr-2" />
-                        {t("workspace.startNewTask")}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{t("workspace.uploadFileForTask")}</TooltipContent>
-                  </Tooltip>
-                )}
-
-                {viewMode === 'record' && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button id="tutorial-shortcuts-btn" variant="outline" size="sm" onClick={() => setShowShortcuts(true)}>
-                        <Keyboard className="w-4 h-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{t("workspace.keyboardShortcutsTooltip")}</TooltipContent>
-                  </Tooltip>
-                )}
-
-              </div>
-              <div className="ml-2 flex items-center gap-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      id="tutorial-workspace-help-btn"
-                      variant="ghost"
-                      size="icon"
-                      onClick={startWorkspaceTour}
-                      title="Start tutorial"
-                    >
-                      <HelpCircle className="w-5 h-5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{t("workspace.startTutorial")}</TooltipContent>
-                </Tooltip>
-                <NotificationBell />
-                <ThemeToggle />
-                <UserMenu />
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Main Content */}
-        <div className="flex-1 pt-24 p-6">
+        <div className="flex-1 pt-16 p-6">
           {dataPoints.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <div className="w-full max-w-4xl space-y-6">
@@ -3704,7 +3704,7 @@ const DataLabelingWorkspace = () => {
                                               {user?.username || assignment.annotatorId}
                                             </div>
                                             <Badge variant={assignment.status === 'done' ? "default" : "outline"}>
-                                              {assignment.status}
+                                              {assignment.status === 'done' ? t('workspace.statusDone') : assignment.status === 'in_progress' ? t('workspace.statusInProgress') : t('workspace.statusPending')}
                                             </Badge>
                                           </div>
                                           <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
@@ -3750,7 +3750,7 @@ const DataLabelingWorkspace = () => {
                                               {user?.username || assignment.annotatorId}
                                             </div>
                                             <Badge variant={assignment.status === 'done' ? "default" : "outline"}>
-                                              {assignment.status}
+                                              {assignment.status === 'done' ? t('workspace.statusDone') : assignment.status === 'in_progress' ? t('workspace.statusInProgress') : t('workspace.statusPending')}
                                             </Badge>
                                           </div>
                                           <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
@@ -3794,12 +3794,51 @@ const DataLabelingWorkspace = () => {
                         </Card>
                       </div>
 
-                      {/* Metadata Sidebar */}
-                      <MetadataSidebar
-                        metadata={currentDataPoint?.displayMetadata}
-                        isOpen={showMetadataSidebar}
-                        onToggle={() => setShowMetadataSidebar(!showMetadataSidebar)}
-                      />
+                      {/* Stacked sidebar column — fixed header rows, content expands below */}
+                      {(() => {
+                        const isWide = showGuidelinesSidebar || showMetadataSidebar;
+                        const hasMetadata = !!(currentDataPoint?.displayMetadata && Object.keys(currentDataPoint.displayMetadata).length > 0);
+                        return (
+                          <div className={`flex-shrink-0 flex flex-col transition-all duration-300 border border-border rounded-lg overflow-hidden bg-card ${isWide ? 'w-72' : 'w-10'}`}>
+                            {/* Guidelines header row — always visible, never moves */}
+                            <button
+                              className="flex items-center gap-2 h-10 px-3 hover:bg-muted/50 border-b border-border/50 w-full shrink-0 disabled:opacity-40"
+                              onClick={() => setShowGuidelinesSidebar(v => !v)}
+                              disabled={!projectId}
+                            >
+                              <Book className="w-4 h-4 shrink-0 text-purple-500" />
+                              {isWide && <span className="text-xs font-semibold flex-1 text-start truncate">{t("workspace.projectGuidelines")}</span>}
+                              {showGuidelinesSidebar
+                                ? <ChevronUp className="w-3 h-3 shrink-0 text-muted-foreground" />
+                                : <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" />}
+                            </button>
+                            {/* Guidelines content */}
+                            {showGuidelinesSidebar && (
+                              <GuidelinesSidebar project={projectAccess} />
+                            )}
+
+                            {/* Metadata header row — always visible, never moves */}
+                            {hasMetadata && (
+                              <>
+                                <button
+                                  className="flex items-center gap-2 h-10 px-3 hover:bg-muted/50 border-b border-border/50 w-full shrink-0"
+                                  onClick={() => setShowMetadataSidebar(v => !v)}
+                                >
+                                  <FileText className="w-4 h-4 shrink-0 text-muted-foreground" />
+                                  {isWide && <span className="text-xs font-semibold flex-1 text-start truncate">{t("workspace.metadata")}</span>}
+                                  {showMetadataSidebar
+                                    ? <ChevronUp className="w-3 h-3 shrink-0 text-muted-foreground" />
+                                    : <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" />}
+                                </button>
+                                {/* Metadata content */}
+                                {showMetadataSidebar && (
+                                  <MetadataSidebar metadata={currentDataPoint?.displayMetadata} />
+                                )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                     <Card className="p-6 mt-4 space-y-3">
                       <div className="flex items-center gap-2">
@@ -3906,7 +3945,7 @@ const DataLabelingWorkspace = () => {
                           onClick={() => loadComments(Math.max(1, commentsPage - 1))}
                           disabled={commentsPage <= 1 || commentsLoading}
                         >
-                          <ChevronLeft className="w-3 h-3" />
+                          {isRTL ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
                         </Button>
                         <span>{t("workspace.pageOf", { page: commentsPage, total: commentsTotalPages })}</span>
                         <Button
@@ -3916,7 +3955,7 @@ const DataLabelingWorkspace = () => {
                           onClick={() => loadComments(Math.min(commentsTotalPages, commentsPage + 1))}
                           disabled={commentsPage >= commentsTotalPages || commentsLoading}
                         >
-                          <ChevronRight className="w-3 h-3" />
+                          {isRTL ? <ChevronLeft className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                         </Button>
                       </div>
                     </Card>
@@ -4321,7 +4360,7 @@ const DataLabelingWorkspace = () => {
                               onClick={() => setAnnotationPage(prev => Math.max(1, prev - 1))}
                               disabled={safeAnnotationPage === 1}
                             >
-                              <ChevronLeft className="w-4 h-4" />
+                              {isRTL ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
                             </Button>
                             <span className="text-xs font-medium text-foreground">
                               {t("workspace.pageOf", { page: safeAnnotationPage, total: totalAnnotationPages })}
@@ -4332,7 +4371,7 @@ const DataLabelingWorkspace = () => {
                               onClick={() => setAnnotationPage(prev => Math.min(totalAnnotationPages, prev + 1))}
                               disabled={safeAnnotationPage === totalAnnotationPages}
                             >
-                              <ChevronRight className="w-4 h-4" />
+                              {isRTL ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                             </Button>
                           </div>
                         </div>
