@@ -10,7 +10,7 @@ export function registerProjectRoutes(app) {
     const db = getDatabase();
 
     // Get all projects (filtered by user access)
-    app.get('/api/projects', (req, res) => {
+    app.get('/api/projects', requireAuth, (req, res) => {
         try {
             const user = req.user;
             let projects;
@@ -176,7 +176,7 @@ export function registerProjectRoutes(app) {
     });
 
     // Get paginated data points (Moved here to avoid route conflicts)
-    app.get('/api/projects/:id/data', (req, res) => {
+    app.get('/api/projects/:id/data', requireAuth, (req, res) => {
         try {
             const { id } = req.params;
             const parsedPage = parseInt(req.query.page, 10);
@@ -273,7 +273,7 @@ export function registerProjectRoutes(app) {
     });
 
     // Get single project with data points
-    app.get('/api/projects/:id', (req, res) => {
+    app.get('/api/projects/:id', requireAuth, (req, res) => {
         try {
             const { id } = req.params;
             const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
@@ -379,7 +379,7 @@ export function registerProjectRoutes(app) {
     });
 
     // Create project
-    app.post('/api/projects', (req, res) => {
+    app.post('/api/projects', requireAuth, requireRole(['admin', 'manager']), (req, res) => {
         try {
             const { name, description, managerId, annotatorIds = [], xmlConfig, uploadPrompt, customFieldName, guidelines } = req.body;
 
@@ -434,11 +434,11 @@ export function registerProjectRoutes(app) {
     });
 
     // Update project
-    app.put('/api/projects/:id', (req, res) => {
+    app.put('/api/projects/:id', requireAuth, (req, res) => {
         handleUpdateProject(req, res);
     });
 
-    app.patch('/api/projects/:id', (req, res) => {
+    app.patch('/api/projects/:id', requireAuth, (req, res) => {
         handleUpdateProject(req, res);
     });
 
@@ -628,7 +628,7 @@ export function registerProjectRoutes(app) {
     });
 
     // Add audit log entry
-    app.post('/api/projects/:id/audit', (req, res) => {
+    app.post('/api/projects/:id/audit', requireAuth, (req, res) => {
         try {
             const { id } = req.params;
             const { action, details } = req.body;
@@ -650,7 +650,7 @@ export function registerProjectRoutes(app) {
     });
 
     // Snapshots routes
-    app.get('/api/projects/:id/snapshots', (req, res) => {
+    app.get('/api/projects/:id/snapshots', requireAuth, (req, res) => {
         try {
             const { id } = req.params;
             const snapshots = db.prepare('SELECT * FROM snapshots WHERE project_id = ? ORDER BY created_at DESC').all(id);
@@ -670,7 +670,7 @@ export function registerProjectRoutes(app) {
         }
     });
 
-    app.post('/api/projects/:id/snapshots', (req, res) => {
+    app.post('/api/projects/:id/snapshots', requireAuth, (req, res) => {
         try {
             const { id } = req.params;
             const { name, description, dataPoints, stats } = req.body;
@@ -701,7 +701,7 @@ export function registerProjectRoutes(app) {
         }
     });
     // Update single data point (granular update)
-    app.patch('/api/projects/:projectId/data/:dataId', (req, res) => {
+    app.patch('/api/projects/:projectId/data/:dataId', requireAuth, (req, res) => {
         try {
             const { projectId, dataId } = req.params;
             const updates = req.body;
@@ -804,7 +804,7 @@ export function registerProjectRoutes(app) {
     });
 
     // Get paginated data points
-    app.get('/api/projects/:projectId/data', (req, res) => {
+    app.get('/api/projects/:projectId/data', requireAuth, (req, res) => {
         try {
             const { projectId } = req.params;
             const parsedPage = parseInt(req.query.page, 10);

@@ -35,7 +35,10 @@ app.use(helmet({
     contentSecurityPolicy: false       // set separately if needed; avoid breaking existing UI
 }));
 
-app.use(cors({ credentials: true, origin: true }));
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080'];
+app.use(cors({ credentials: true, origin: allowedOrigins }));
 
 app.use(cookieParser());
 app.use(express.json({ limit: '50mb' }));

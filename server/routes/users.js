@@ -2,6 +2,7 @@ import { getDatabase } from '../services/database.js';
 import { generateToken } from '../middleware/auth.js';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
 
 const ALLOWED_ROLES = ['admin', 'manager', 'annotator'];
 const BCRYPT_ROUNDS = 12;
@@ -88,6 +89,14 @@ function createDemoProject(db, userId, username, roles) {
 /**
  * Users API routes
  */
+const signupLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 5,
+    message: { error: 'Too many signup attempts, please try again later' },
+    standardHeaders: 'draft-7',
+    legacyHeaders: false
+});
+
 export function registerUserRoutes(app) {
     const db = getDatabase();
 
@@ -466,7 +475,7 @@ export function registerUserRoutes(app) {
     });
 
     // Signup with invite token (public)
-    app.post('/api/auth/signup', async (req, res) => {
+    app.post('/api/auth/signup', signupLimiter, async (req, res) => {
         try {
             const { username, password, token } = req.body;
 
