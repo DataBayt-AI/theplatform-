@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { attachUser, requireAuth } from './middleware/auth.js';
+import { errorHandler } from './middleware/errors.js';
 import { initDatabase } from './services/database.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { registerUserRoutes } from './routes/users.js';
@@ -623,6 +624,9 @@ if (existsSync(distPath)) {
         res.send(injected);
     });
 }
+
+// Centralized error handler — must be registered after all routes
+app.use(errorHandler);
 
 app.listen(PORT, () => {
     console.log(`\n  DataBayt Platform running at http://localhost:${PORT}\n`);
