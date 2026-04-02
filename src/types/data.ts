@@ -116,6 +116,23 @@ export interface ProjectDataStatusCounts {
     rejected: number;
 }
 
+export type TaskType =
+    | 'text_classification'
+    | 'sequence_labeling'
+    | 'text_generation'
+    | 'image_classification'
+    | 'audio_transcription'
+    | 'custom';
+
+export const TASK_TYPE_LABELS: Record<TaskType, string> = {
+    text_classification: 'Text Classification',
+    sequence_labeling: 'Sequence Labeling (NER)',
+    text_generation: 'Text Generation / Translation',
+    image_classification: 'Image Classification',
+    audio_transcription: 'Audio Transcription',
+    custom: 'Custom Form',
+};
+
 export interface Project {
     id: string;
     name: string;
@@ -123,6 +140,7 @@ export interface Project {
     guidelines?: string;
     managerId?: string | null;
     annotatorIds?: string[];
+    taskType?: TaskType;
     xmlConfig?: string;
     uploadPrompt?: string;
     customFieldName?: string;

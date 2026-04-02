@@ -60,8 +60,8 @@ export const projectService = {
         }
     },
 
-    create: async (name: string, description?: string, managerId?: string, iaaConfig?: ProjectIAAConfig, guidelines?: string): Promise<Project> => {
-        const result = await apiClient.projects.create({ name, description, managerId, iaaConfig, guidelines });
+    create: async (name: string, description?: string, managerId?: string, iaaConfig?: ProjectIAAConfig, guidelines?: string, taskType?: import('@/types/data').TaskType): Promise<Project> => {
+        const result = await apiClient.projects.create({ name, description, managerId, iaaConfig, guidelines, taskType });
         return projectService.normalize({
             ...result,
             name,
@@ -95,6 +95,7 @@ export const projectService = {
             guidelines: project.guidelines,
             managerId: project.managerId,
             annotatorIds: project.annotatorIds,
+            taskType: project.taskType,
             xmlConfig: project.xmlConfig,
             uploadPrompt: project.uploadPrompt,
             customFieldName: project.customFieldName,

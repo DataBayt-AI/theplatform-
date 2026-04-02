@@ -119,6 +119,7 @@ export function registerProjectRoutes(app) {
                 description: p.description,
                 managerId: p.manager_id,
                 annotatorIds: annotatorMap[p.id] || [],
+                taskType: p.task_type ?? 'custom',
                 xmlConfig: p.xml_config,
                 uploadPrompt: p.upload_prompt,
                 customFieldName: p.custom_field_name,
@@ -274,6 +275,7 @@ export function registerProjectRoutes(app) {
             description: project.description,
             managerId: project.manager_id,
             annotatorIds: annotators.map(a => a.user_id),
+            taskType: project.task_type ?? 'custom',
             xmlConfig: project.xml_config,
             uploadPrompt: project.upload_prompt,
             customFieldName: project.custom_field_name,
@@ -303,16 +305,16 @@ export function registerProjectRoutes(app) {
 
     // Create project
     app.post('/api/projects', requireAuth, requireRole(['admin', 'manager']), asyncHandler((req, res) => {
-        const { name, description, managerId, annotatorIds = [], xmlConfig, uploadPrompt, customFieldName, guidelines } = req.body;
+        const { name, description, managerId, annotatorIds = [], taskType, xmlConfig, uploadPrompt, customFieldName, guidelines } = req.body;
         if (!name) throw new HttpError(400, 'Project name is required');
 
         const id = crypto.randomUUID();
         const now = Date.now();
 
         db.prepare(`
-            INSERT INTO projects (id, name, description, manager_id, xml_config, upload_prompt, custom_field_name, guidelines, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(id, name, description || null, managerId || null, xmlConfig || null, uploadPrompt || null, customFieldName || null, guidelines || null, now, now);
+            INSERT INTO projects (id, name, description, manager_id, task_type, xml_config, upload_prompt, custom_field_name, guidelines, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, name, description || null, managerId || null, taskType || 'custom', xmlConfig || null, uploadPrompt || null, customFieldName || null, guidelines || null, now, now);
 
         const insertAnnotator = db.prepare('INSERT INTO project_annotators (project_id, user_id) VALUES (?, ?)');
         for (const userId of annotatorIds) {
@@ -336,7 +338,7 @@ export function registerProjectRoutes(app) {
     // Update project (PUT + PATCH share the same handler)
     const updateProject = asyncHandler((req, res) => {
         const { id } = req.params;
-        const { name, description, managerId, annotatorIds, xmlConfig, uploadPrompt, customFieldName, guidelines, iaaConfig, dataPoints, stats } = req.body;
+        const { name, description, managerId, annotatorIds, taskType, xmlConfig, uploadPrompt, customFieldName, guidelines, iaaConfig, dataPoints, stats } = req.body;
 
         const existing = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
         if (!existing) throw new HttpError(404, 'Project not found');
@@ -346,11 +348,12 @@ export function registerProjectRoutes(app) {
         db.prepare(`
             UPDATE projects SET
               name = COALESCE(?, name), description = COALESCE(?, description),
-              manager_id = COALESCE(?, manager_id), xml_config = COALESCE(?, xml_config),
+              manager_id = COALESCE(?, manager_id), task_type = COALESCE(?, task_type),
+              xml_config = COALESCE(?, xml_config),
               upload_prompt = COALESCE(?, upload_prompt), custom_field_name = COALESCE(?, custom_field_name),
               guidelines = COALESCE(?, guidelines), iaa_config = COALESCE(?, iaa_config), updated_at = ?
             WHERE id = ?
-        `).run(name, description, managerId, xmlConfig, uploadPrompt, customFieldName, guidelines ?? null, iaaConfig ? JSON.stringify(iaaConfig) : null, now, id);
+        `).run(name, description, managerId, taskType ?? null, xmlConfig, uploadPrompt, customFieldName, guidelines ?? null, iaaConfig ? JSON.stringify(iaaConfig) : null, now, id);
 
         if (annotatorIds !== undefined) {
             const previousIds = db.prepare('SELECT user_id FROM project_annotators WHERE project_id = ?').all(id).map(r => r.user_id);
