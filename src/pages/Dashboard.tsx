@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { projectService } from "@/services/projectService";
-import { Project } from "@/types/data";
+import { Project, TASK_TYPE_LABELS, TaskType } from "@/types/data";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -56,6 +56,7 @@ const Dashboard = () => {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [newProjectName, setNewProjectName] = useState("");
     const [newProjectDesc, setNewProjectDesc] = useState("");
+    const [newProjectTaskType, setNewProjectTaskType] = useState<import('@/types/data').TaskType>('custom');
     const [isLoading, setIsLoading] = useState(true);
     const [accessProject, setAccessProject] = useState<Project | null>(null);
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
@@ -148,6 +149,12 @@ const Dashboard = () => {
     const { startTour } = useTutorial({
         userId: currentUser?.id ?? "guest",
         steps: tutorialSteps,
+        labels: {
+            next: t("workspace.tourNext"),
+            prev: t("workspace.tourPrev"),
+            done: t("workspace.tourDone"),
+            stepOf: t("workspace.tourStepOf"),
+        },
     });
 
     useEffect(() => {
@@ -245,11 +252,12 @@ const Dashboard = () => {
                 enabled: false,
                 portionPercent: 0,
                 annotatorsPerIAAItem: 2
-            });
+            }, undefined, newProjectTaskType);
             await loadProjects();
             setIsCreateDialogOpen(false);
             setNewProjectName("");
             setNewProjectDesc("");
+            setNewProjectTaskType('custom');
             navigate(`/project/${project.id}`);
             toast({
                 title: "Success",
