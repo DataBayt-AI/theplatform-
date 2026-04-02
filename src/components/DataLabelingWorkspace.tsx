@@ -7,6 +7,7 @@ import o200k_base from "js-tiktoken/ranks/o200k_base";
 import cl100k_base from "js-tiktoken/ranks/cl100k_base";
 
 import { useDataLabeling } from "@/hooks/useDataLabeling";
+import { generateId } from "@/lib/utils";
 import { exportService, HF_FIELD_CONFIG, FieldConfig } from "@/services/exportService";
 import { huggingFaceService } from "@/services/huggingFaceService";
 import { DataPoint, DataPointComment, ModelProfile, ModelProvider, Project, ProjectModelPolicy, ProviderConnection } from "@/types/data";
@@ -84,6 +85,9 @@ import { VersionHistory } from "@/components/VersionHistory";
 import { projectService } from "@/services/projectService";
 import { modelManagementService } from "@/services/modelManagementService";
 import apiClient from "@/services/apiClient";
+import { useDataImport } from "@/hooks/useDataImport";
+import { ImportWizard } from "@/components/ImportWizard";
+import { TextClassificationView } from "@/components/annotation/TextClassificationView";
 
 type AnnotationStatusFilter = 'all' | 'has_final' | DataPoint['status'];
 const COMMENTS_PAGE_SIZE = 10;
@@ -147,6 +151,7 @@ const DataLabelingWorkspace = () => {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadPrompt, setUploadPrompt] = useState('');
 
+
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const [showCompletionDialog, setShowCompletionDialog] = useState(false);
@@ -201,6 +206,12 @@ const DataLabelingWorkspace = () => {
   const { startTour: startWorkspaceTour } = useTutorial({
     userId: currentUser?.id ?? "guest",
     steps: workspaceTutorialSteps,
+    labels: {
+      next: t("workspace.tourNext"),
+      prev: t("workspace.tourPrev"),
+      done: t("workspace.tourDone"),
+      stepOf: t("workspace.tourStepOf"),
+    },
   });
 
   useEffect(() => {
@@ -228,6 +239,29 @@ const DataLabelingWorkspace = () => {
       console.error("Failed to log project action:", error);
     }
   };
+
+  // ── Import wizard (unified import flow) ───────────────────────────────────
+  const {
+    isWizardOpen,
+    isUploading: isWizardUploading,
+    openWizard,
+    closeWizard,
+    importData,
+    importMultipleFiles,
+    fetchHuggingFaceRows,
+  } = useDataImport({
+    projectId,
+    projectAccess,
+    canUpload,
+    onImported: async (newDataPoints) => {
+      loadNewData(newDataPoints);
+      if (projectId) {
+        await projectService.saveProgress(projectId, newDataPoints, annotationStats);
+      }
+      await logProjectAction('upload', `Items: ${newDataPoints.length}`);
+    },
+    onAnnotationLabelDetected: (label) => setAnnotationLabel(label),
+  });
 
   useEffect(() => {
     if (!projectAccess || !currentUser) return;
@@ -462,10 +496,9 @@ const DataLabelingWorkspace = () => {
       return;
     }
 
-    if (requestedImport === 'huggingface') {
-      setShowHFImportDialog(true);
-    } else if (requestedImport === 'file') {
-      document.getElementById('file-upload')?.click();
+    // Both 'huggingface' and 'file' now open the unified ImportWizard
+    if (requestedImport === 'huggingface' || requestedImport === 'file') {
+      openWizard();
     }
 
     setHandledInitialImportChoice(true);
@@ -1295,7 +1328,7 @@ const DataLabelingWorkspace = () => {
           reader.readAsDataURL(file);
         });
         parsedData = [{
-          id: crypto.randomUUID(),
+          id: generateId(),
           content: audioDataUrl,
           type: 'audio',
           originalAnnotation: '',
@@ -1334,7 +1367,7 @@ const DataLabelingWorkspace = () => {
             || resolveImportedAudioContent(row['content'], hfImportDataset);
           const content = resolvedAudioContent || toDisplayString(rawContent) || JSON.stringify(row);
           return {
-          id: crypto.randomUUID(),
+          id: generateId(),
           content,
           type: inferDataPointType(content, row['type'] || (resolvedAudioContent ? 'audio' : undefined)),
           originalAnnotation: annotationColumn ? toDisplayString(row[annotationColumn]) : '',
@@ -1376,7 +1409,7 @@ const DataLabelingWorkspace = () => {
             }, {} as Record<string, string>);
             const content = typeof item === 'string' ? item : item.text || item.content || JSON.stringify(item);
             return {
-            id: crypto.randomUUID(),
+            id: generateId(),
             content,
             type: inferDataPointType(content, item.type),
             originalAnnotation: item.annotation || item.label || '',
@@ -1476,7 +1509,7 @@ const DataLabelingWorkspace = () => {
 
           const content = contentIndex >= 0 ? values[contentIndex] : (values[0] || line);
           return {
-            id: crypto.randomUUID(),
+            id: generateId(),
             content,
             type: inferDataPointType(content, metadata.type),
             originalAnnotation: annotationIndex >= 0 ? values[annotationIndex] : '',
@@ -1500,7 +1533,7 @@ const DataLabelingWorkspace = () => {
           throw new Error('TXT file is empty.');
         }
         parsedData = lines.map((line, index) => ({
-          id: crypto.randomUUID(),
+          id: generateId(),
           content: line.trim(),
           status: 'pending' as const,
           aiSuggestions: {},
@@ -2792,7 +2825,17 @@ const DataLabelingWorkspace = () => {
                   </DialogContent>
                 </Dialog>
 
-                {/* Upload Prompt Dialog */}
+                {/* ── Unified Import Wizard ──────────────────────────────────── */}
+                <ImportWizard
+                  open={isWizardOpen}
+                  onClose={closeWizard}
+                  onImport={importData}
+                  onImportMultiple={importMultipleFiles}
+                  isImporting={isWizardUploading}
+                  fetchHFRows={fetchHuggingFaceRows}
+                />
+
+                {/* Upload Prompt Dialog (legacy — kept for backward compat) */}
                 <Dialog open={showUploadPrompt} onOpenChange={setShowUploadPrompt}>
                   <DialogContent className="max-w-lg">
                     <DialogHeader>
@@ -3340,59 +3383,24 @@ const DataLabelingWorkspace = () => {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Card className="p-6">
-                    <div className="text-center space-y-4">
-                      <div className="w-16 h-16 rounded-xl bg-muted mx-auto flex items-center justify-center">
-                        {isUploading ? <Loader2 className="w-8 h-8 animate-spin" /> : <Upload className="w-8 h-8" />}
-                      </div>
-                      <div>
-                        <h4 className="font-semibold">{t("workspace.importLocalFile")}</h4>
-                        <p className="text-sm text-muted-foreground">{t("workspace.importLocalFileDesc")}</p>
-                      </div>
-                      <Button
-                        size="lg"
-                        className="w-full"
-                        disabled={isUploading || !canUpload}
-                        title={!canUpload ? "Requires manager or admin role" : undefined}
-                        onClick={() => document.getElementById('file-upload-main')?.click()}
-                      >
-                        {t("workspace.uploadFile")}
-                      </Button>
-                    </div>
-                  </Card>
-
-                  <Card className="p-6">
-                    <div className="text-center space-y-4">
-                      <div className="w-16 h-16 rounded-xl bg-muted mx-auto flex items-center justify-center">
-                        {isImportingHF ? <Loader2 className="w-8 h-8 animate-spin" /> : <Database className="w-8 h-8" />}
-                      </div>
-                      <div>
-                        <h4 className="font-semibold">{t("workspace.importHuggingFace")}</h4>
-                        <p className="text-sm text-muted-foreground">{t("workspace.importHFDesc")}</p>
-                      </div>
-                      <Button
-                        size="lg"
-                        variant="outline"
-                        className="w-full"
-                        disabled={isImportingHF || !canUpload}
-                        title={!canUpload ? "Requires manager or admin role" : undefined}
-                        onClick={() => setShowHFImportDialog(true)}
-                      >
-                        {t("workspace.importFromHuggingFace")}
-                      </Button>
-                    </div>
-                  </Card>
+                {/* Unified import button */}
+                <div className="flex justify-center">
+                  <Button
+                    size="lg"
+                    disabled={isWizardUploading || !canUpload}
+                    title={!canUpload ? "Requires manager or admin role" : undefined}
+                    onClick={openWizard}
+                    className="gap-2 px-8"
+                  >
+                    {isWizardUploading
+                      ? <><Loader2 className="w-5 h-5 animate-spin" /> {t("importWizard.importing")}</>
+                      : <><Upload className="w-5 h-5" /> {t("workspace.importDataButton")}</>
+                    }
+                  </Button>
                 </div>
-
-                <input
-                  id="file-upload-main"
-                  type="file"
-                  accept=".json,.csv,.txt,.mp3,.wav,.m4a"
-                  onChange={handleFileUpload}
-                  disabled={!canUpload}
-                  className="hidden"
-                />
+                <p className="text-xs text-center text-muted-foreground -mt-1">
+                  {t("workspace.importDataSupports")}
+                </p>
 
                 {/* Setup checklist */}
                 {canUpload && (
@@ -3430,6 +3438,27 @@ const DataLabelingWorkspace = () => {
                 <div className="space-y-6">
                   {viewMode === 'record' ? (
                     <>
+                    {/* ── Text Classification mode ─────────────────────────────── */}
+                    {projectAccess?.taskType === 'text_classification' && currentDataPoint ? (
+                      <TextClassificationView
+                        dataPoint={currentDataPoint}
+                        currentIndex={currentIndex}
+                        total={dataPoints.length}
+                        annotationConfig={annotationConfig}
+                        selectedLabel={
+                          // Prefer customFieldValues, fall back to humanAnnotation
+                          (Object.values(currentDataPoint.customFieldValues ?? {})[0] as string) ||
+                          currentDataPoint.humanAnnotation || ''
+                        }
+                        onSelectLabel={(label) => {
+                          handleHumanAnnotationChange(label, annotatorMeta);
+                          handleAcceptAnnotation(label, annotatorMeta);
+                          if (currentIndex < dataPoints.length - 1) handleNext();
+                        }}
+                        onNext={() => handleNext()}
+                        onPrev={() => handlePrevious()}
+                      />
+                    ) : (
                     <div className="flex gap-4">
                       {/* Main Content */}
                       <div className="flex-1">
@@ -3840,6 +3869,8 @@ const DataLabelingWorkspace = () => {
                         );
                       })()}
                     </div>
+                    )}
+                    {/* ── End of text-classification / default view ── */}
                     <Card className="p-6 mt-4 space-y-3">
                       <div className="flex items-center gap-2">
                         <MessageSquare className="w-4 h-4 text-blue-500" />
