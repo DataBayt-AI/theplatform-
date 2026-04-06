@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/contexts/AuthContext";
 import { modelManagementService } from "@/services/modelManagementService";
+import { generateId } from "@/lib/utils";
 import { projectService } from "@/services/projectService";
 import { AVAILABLE_PROVIDERS } from "@/services/aiProviders";
 import type { ModelProfile, Project, ProjectModelPolicy, ProviderConnection } from "@/types/data";
@@ -315,7 +316,7 @@ const ModelManagement = () => {
     }
     const now = Date.now();
     const connection: ProviderConnection = {
-      id: editingConnectionId ?? crypto.randomUUID(),
+      id: editingConnectionId ?? generateId(),
       providerId: connectionProviderId as ProviderConnection["providerId"],
       name: connectionName.trim(),
       apiKey: connectionApiKey.trim() || undefined,
@@ -350,7 +351,7 @@ const ModelManagement = () => {
     }
     const now = Date.now();
     const profile: ModelProfile = {
-      id: editingProfileId ?? crypto.randomUUID(),
+      id: editingProfileId ?? generateId(),
       providerConnectionId: profileConnectionId,
       modelId: profileModelId,
       displayName: profileDisplayName.trim(),

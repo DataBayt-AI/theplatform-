@@ -25,9 +25,15 @@ export function resetTutorial(userId: string): void {
 interface UseTutorialOptions {
   userId: string;
   steps: DriveStep[];
+  labels?: {
+    next?: string;
+    prev?: string;
+    done?: string;
+    stepOf?: string;
+  };
 }
 
-export function useTutorial({ userId, steps }: UseTutorialOptions) {
+export function useTutorial({ userId, steps, labels }: UseTutorialOptions) {
   const driverRef = useRef<ReturnType<typeof driver> | null>(null);
 
   const startTour = useCallback(() => {
@@ -41,10 +47,10 @@ export function useTutorial({ userId, steps }: UseTutorialOptions) {
       allowClose: true,
       overlayOpacity: 0.55,
       smoothScroll: true,
-      nextBtnText: "Next →",
-      prevBtnText: "← Prev",
-      doneBtnText: "✓ Done",
-      progressText: "Step {{current}} of {{total}}",
+      nextBtnText: labels?.next ?? "Next →",
+      prevBtnText: labels?.prev ?? "← Prev",
+      doneBtnText: labels?.done ?? "✓ Done",
+      progressText: labels?.stepOf ?? "Step {{current}} of {{total}}",
       steps,
       onDestroyStarted: () => {
         markTutorialSeen(userId);

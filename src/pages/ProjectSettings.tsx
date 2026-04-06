@@ -32,7 +32,8 @@ import { AnnotationFormPreview } from "@/components/AnnotationFormPreview";
 import { TemplatePickerModal } from "@/components/TemplatePickerModal";
 import { FormBuilder } from "@/components/FormBuilder";
 import { toast } from "@/components/ui/use-toast";
-import type { Project } from "@/types/data";
+import type { Project, TaskType } from "@/types/data";
+import { TASK_TYPE_LABELS } from "@/types/data";
 
 export default function ProjectSettings() {
     const { projectId } = useParams<{ projectId: string }>();
@@ -53,6 +54,7 @@ export default function ProjectSettings() {
     const [guidelines, setGuidelines] = useState("");
     const [xmlConfig, setXmlConfig] = useState("");
     const [xmlError, setXmlError] = useState("");
+    const [taskType, setTaskType] = useState<import('@/types/data').TaskType>('custom');
     const [iaaEnabled, setIaaEnabled] = useState(false);
     const [iaaPortion, setIaaPortion] = useState(20);
     const [iaaAnnotatorsPerItem, setIaaAnnotatorsPerItem] = useState(2);
@@ -84,6 +86,7 @@ export default function ProjectSettings() {
             setAnnotatorIds(proj.annotatorIds ?? []);
             setGuidelines(proj.guidelines || "");
             setXmlConfig(proj.xmlConfig || "");
+            setTaskType(proj.taskType ?? 'custom');
             setIaaEnabled(proj.iaaConfig?.enabled ?? false);
             setIaaPortion(proj.iaaConfig?.portionPercent ?? 20);
             setIaaAnnotatorsPerItem(proj.iaaConfig?.annotatorsPerIAAItem ?? 2);
@@ -94,8 +97,8 @@ export default function ProjectSettings() {
     const saveGeneral = async () => {
         if (!project) return;
         try {
-            await projectService.update({ ...project, name, description });
-            setProject(p => p ? { ...p, name, description } : p);
+            await projectService.update({ ...project, name, description, taskType });
+            setProject(p => p ? { ...p, name, description, taskType } : p);
             toast({ title: t("common.success"), description: t("projectSettings.savedDetails") });
         } catch {
             toast({ title: t("common.error"), description: t("projectSettings.failedSave"), variant: "destructive" });
@@ -240,6 +243,22 @@ export default function ProjectSettings() {
                         <div className="space-y-1.5">
                             <Label htmlFor="proj-desc">{t("projectSettings.description")}</Label>
                             <Textarea id="proj-desc" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="task-type">Annotation task type</Label>
+                            <Select value={taskType} onValueChange={v => setTaskType(v as TaskType)}>
+                                <SelectTrigger id="task-type">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {(Object.entries(TASK_TYPE_LABELS) as [TaskType, string][]).map(([key, label]) => (
+                                        <SelectItem key={key} value={key}>{label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                                Controls which annotation interface is shown to annotators.
+                            </p>
                         </div>
                         <div className="flex justify-end">
                             <Button size="sm" onClick={saveGeneral} disabled={!name.trim()}>

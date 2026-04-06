@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { attachUser, requireAuth } from './middleware/auth.js';
+import { errorHandler } from './middleware/errors.js';
 import { initDatabase } from './services/database.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { registerUserRoutes } from './routes/users.js';
@@ -35,7 +36,10 @@ app.use(helmet({
     contentSecurityPolicy: false       // set separately if needed; avoid breaking existing UI
 }));
 
-app.use(cors({ credentials: true, origin: true }));
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080'];
+app.use(cors({ credentials: true, origin: allowedOrigins }));
 
 app.use(cookieParser());
 app.use(express.json({ limit: '50mb' }));
@@ -399,6 +403,23 @@ app.post('/api/huggingface/datasets/import', requireAuth, async (req, res) => {
         const splitsResponse = await fetch(splitsUrl);
         const splitsPayload = await splitsResponse.json();
         if (!splitsResponse.ok) {
+            const splitsMsg = String(splitsPayload?.error || splitsPayload?.message || '').toLowerCase();
+            const isIndexingErr = (
+                splitsMsg.includes('job') ||
+                splitsMsg.includes('heartbeat') ||
+                splitsMsg.includes('generation') ||
+                splitsMsg.includes('not yet supported') ||
+                splitsMsg.includes('dataset is not supported') ||
+                splitsMsg.includes('no module named') ||
+                splitsMsg.includes('config not found') ||
+                splitsMsg.includes('failed to read') ||
+                splitsMsg.includes('cannot be loaded')
+            );
+            if (isIndexingErr) {
+                return res.status(422).json({
+                    error: "This dataset is not accessible via the Hugging Face Datasets Server. This usually means the dataset was never fully indexed (e.g. it uses a custom loading script, was recently uploaded, or is gated). Try a different dataset, or export your data as a CSV/JSON file and use the 'Local File' import option."
+                });
+            }
             return res.status(splitsResponse.status).json({
                 error: splitsPayload?.error || 'Failed to fetch dataset splits from Hugging Face'
             });
@@ -426,9 +447,38 @@ app.post('/api/huggingface/datasets/import', requireAuth, async (req, res) => {
             ? Math.max(1, Math.floor(parsedMaxRows))
             : Number.POSITIVE_INFINITY;
 
+        // ── Classify HuggingFace datasets-server errors ────────────────────────
+        const isHFIndexingError = (payload) => {
+            const msg = String(payload?.error || payload?.message || '').toLowerCase();
+            return (
+                msg.includes('job') ||
+                msg.includes('heartbeat') ||
+                msg.includes('generation') ||
+                msg.includes('not yet supported') ||
+                msg.includes('dataset is not supported') ||
+                msg.includes('no module named') ||
+                msg.includes('config not found') ||
+                msg.includes('failed to read') ||
+                msg.includes('cannot be loaded')
+            );
+        };
+
+        // ── Try parquet fallback via Hub API ───────────────────────────────────
+        const tryParquetFallback = async () => {
+            const parquetUrl = `https://huggingface.co/api/datasets/${datasetParam}/parquet/${encodeURIComponent(resolvedConfig)}/${encodeURIComponent(resolvedSplit)}`;
+            const parquetRes = await fetch(parquetUrl, { headers: { Accept: 'application/json' } });
+            if (!parquetRes.ok) return null;
+            const parquetData = await parquetRes.json();
+            // Returns array of { url, filename, size } objects
+            const files = Array.isArray(parquetData) ? parquetData : null;
+            if (!files || files.length === 0) return null;
+            return files; // caller handles download
+        };
+
         const chunkSize = 100;
         const rawRows = [];
         let offset = 0;
+        let rowsFetchError = null;
 
         while (rawRows.length < maxRows) {
             const remaining = Number.isFinite(maxRows) ? (maxRows - rawRows.length) : chunkSize;
@@ -436,23 +486,51 @@ app.post('/api/huggingface/datasets/import', requireAuth, async (req, res) => {
             const rowsUrl = `https://datasets-server.huggingface.co/rows?dataset=${datasetParam}&config=${encodeURIComponent(resolvedConfig)}&split=${encodeURIComponent(resolvedSplit)}&offset=${offset}&length=${length}`;
             const rowsResponse = await fetch(rowsUrl);
             const rowsPayload = await rowsResponse.json();
+
             if (!rowsResponse.ok) {
-                return res.status(rowsResponse.status).json({
-                    error: rowsPayload?.error || 'Failed to fetch dataset rows from Hugging Face'
-                });
+                rowsFetchError = rowsPayload;
+                break;
             }
 
             const chunkRows = Array.isArray(rowsPayload?.rows) ? rowsPayload.rows : [];
-            if (chunkRows.length === 0) {
-                break;
-            }
+            if (chunkRows.length === 0) break;
 
             rawRows.push(...chunkRows);
             offset += chunkRows.length;
+            if (chunkRows.length < length) break;
+        }
 
-            if (chunkRows.length < length) {
-                break;
+        // ── Handle fetch errors / empty result ────────────────────────────────
+        if (rowsFetchError || rawRows.length === 0) {
+            const hfError = String(rowsFetchError?.error || '');
+
+            if (isHFIndexingError(rowsFetchError)) {
+                // Try parquet fallback — just report file URLs so user knows they exist
+                let parquetHint = '';
+                try {
+                    const parquetFiles = await tryParquetFallback();
+                    if (parquetFiles && parquetFiles.length > 0) {
+                        parquetHint = ` The dataset has ${parquetFiles.length} parquet file(s) on the Hub but requires a token or direct download.`;
+                    }
+                } catch { /* ignore */ }
+
+                return res.status(422).json({
+                    error: `This dataset is not accessible via the Hugging Face Datasets Server. ` +
+                        `This usually means the dataset was never fully indexed (e.g. it uses a custom loading script, was recently uploaded, or is gated).` +
+                        parquetHint +
+                        ` Try a different dataset, or export your data as a CSV/JSON file and use the "Local File" import option.`,
+                    hfError,
+                    suggestion: 'use_local_file'
+                });
             }
+
+            if (rawRows.length === 0 && !rowsFetchError) {
+                return res.status(404).json({ error: `No rows found for split "${resolvedSplit}" in config "${resolvedConfig}".` });
+            }
+
+            return res.status(rowsFetchError ? 502 : 404).json({
+                error: hfError || 'Failed to fetch dataset rows from Hugging Face',
+            });
         }
 
         const encodeDatasetPath = (pathValue) => {
@@ -620,6 +698,9 @@ if (existsSync(distPath)) {
         res.send(injected);
     });
 }
+
+// Centralized error handler — must be registered after all routes
+app.use(errorHandler);
 
 app.listen(PORT, () => {
     console.log(`\n  DataBayt Platform running at http://localhost:${PORT}\n`);

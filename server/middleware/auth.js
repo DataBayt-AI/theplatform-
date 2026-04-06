@@ -4,11 +4,12 @@ import { getDatabase } from '../services/database.js';
 const JWT_SECRET = process.env.JWT_SECRET;
 
 if (!JWT_SECRET) {
-  console.warn('\n  ⚠️  WARNING: JWT_SECRET is not set in environment variables.');
-  console.warn('  Set JWT_SECRET to a random string of at least 32 characters.\n');
+  console.error('\n  FATAL: JWT_SECRET is not set in environment variables.');
+  console.error('  Set JWT_SECRET to a random string of at least 32 characters.\n');
+  process.exit(1);
 }
 
-const SECRET = JWT_SECRET || 'fallback-insecure-secret-please-set-JWT_SECRET-in-env';
+const SECRET = JWT_SECRET;
 
 export const generateToken = (user) => {
   return jwt.sign(

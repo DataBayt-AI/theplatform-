@@ -276,6 +276,7 @@ function createSchema() {
 
   // Migrations — add columns if they don't exist yet
   const migrations = [
+    `ALTER TABLE projects ADD COLUMN task_type TEXT DEFAULT 'custom'`,
     `ALTER TABLE data_points ADD COLUMN is_iaa INTEGER DEFAULT 0`,
     `ALTER TABLE data_points ADD COLUMN assignments TEXT DEFAULT '[]'`,
     `ALTER TABLE projects ADD COLUMN iaa_config TEXT`,
