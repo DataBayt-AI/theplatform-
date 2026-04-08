@@ -1,9 +1,17 @@
 // SDK imports removed to prevent client-side key exposure
-import { ModelProvider } from '@/types/data';
+import { ModelProvider, type AnnotationSchema } from '@/types/data';
+import { toAnthropicTool, toJsonSchema, toGeminiSchema } from './annotationSchema';
+
+const buildFetchHeaders = (jwtToken?: string): Record<string, string> => ({
+  'Content-Type': 'application/json',
+  ...(jwtToken ? { Authorization: `Bearer ${jwtToken}` } : {})
+});
 
 export interface AIRequestOptions {
   temperature?: number;
   maxTokens?: number;
+  jwtToken?: string;
+  annotationSchema?: AnnotationSchema;
 }
 
 export type AIInputType = 'text' | 'image' | 'audio';
@@ -11,8 +19,9 @@ export type AIInputType = 'text' | 'image' | 'audio';
 export interface AIProvider {
   id: string;
   name: string;
-  processText: (text: string, prompt?: string, apiKey?: string, modelId?: string, baseUrl?: string, type?: AIInputType, options?: AIRequestOptions) => Promise<string>;
-  processBatch?: (texts: string[], prompt?: string, apiKey?: string, modelId?: string, baseUrl?: string, type?: AIInputType, options?: AIRequestOptions) => Promise<string[]>;
+  // connectionId: the saved ProviderConnection.id — the server resolves the real API key from DB
+  processText: (text: string, prompt?: string, connectionId?: string, modelId?: string, baseUrl?: string, type?: AIInputType, options?: AIRequestOptions) => Promise<string>;
+  processBatch?: (texts: string[], prompt?: string, connectionId?: string, modelId?: string, baseUrl?: string, type?: AIInputType, options?: AIRequestOptions) => Promise<string[]>;
 }
 
 export const AVAILABLE_PROVIDERS: ModelProvider[] = [
@@ -125,8 +134,8 @@ class OpenAIProvider implements AIProvider {
   id = 'openai';
   name = 'OpenAI GPT';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
-    if (!apiKey) throw new Error('OpenAI API key is required');
+  async processText(text: string, prompt?: string, connectionId?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
+    if (!connectionId) throw new Error('OpenAI connection is required');
 
     const messages: any[] = [
       { role: "system", content: prompt || "You are a helpful data labeling assistant." }
@@ -145,18 +154,28 @@ class OpenAIProvider implements AIProvider {
       messages.push({ role: "user", content: text });
     }
 
-    const response = await fetch('/api/openai/chat', {
+    const openaiBody: Record<string, unknown> = {
+      model: modelId,
+      messages,
+      temperature: options?.temperature,
+      max_tokens: options?.maxTokens
+    };
+
+    if (options?.annotationSchema) {
+      openaiBody.response_format = {
+        type: 'json_schema',
+        json_schema: {
+          name: 'annotation',
+          strict: true,
+          schema: toJsonSchema(options.annotationSchema)
+        }
+      };
+    }
+
+    const response = await fetch(`/api/openai/chat?connectionId=${encodeURIComponent(connectionId)}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: modelId,
-        messages,
-        temperature: options?.temperature,
-        max_tokens: options?.maxTokens
-      })
+      headers: buildFetchHeaders(options?.jwtToken),
+      body: JSON.stringify(openaiBody)
     });
 
     if (!response.ok) {
@@ -168,8 +187,8 @@ class OpenAIProvider implements AIProvider {
     return data.choices[0].message.content || '';
   }
 
-  async processBatch(texts: string[], prompt?: string, apiKey?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string[]> {
-    const promises = texts.map(text => this.processText(text, prompt, apiKey, modelId, baseUrl, type, options));
+  async processBatch(texts: string[], prompt?: string, connectionId?: string, modelId: string = 'gpt-4o-mini', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string[]> {
+    const promises = texts.map(text => this.processText(text, prompt, connectionId, modelId, baseUrl, type, options));
     return Promise.all(promises);
   }
 }
@@ -178,8 +197,8 @@ class AnthropicProvider implements AIProvider {
   id = 'anthropic';
   name = 'Anthropic Claude';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'claude-3-5-sonnet-20240620', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
-    if (!apiKey) throw new Error('Anthropic API key is required');
+  async processText(text: string, prompt?: string, connectionId?: string, modelId: string = 'claude-3-5-sonnet-20240620', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
+    if (!connectionId) throw new Error('Anthropic connection is required');
 
     const messages: any[] = [];
 
@@ -234,19 +253,23 @@ class AnthropicProvider implements AIProvider {
       messages.push({ role: "user", content: text });
     }
 
-    const response = await fetch('/api/anthropic/message', {
+    const anthropicBody: Record<string, unknown> = {
+      model: modelId,
+      max_tokens: options?.maxTokens ?? 1024,
+      temperature: options?.temperature,
+      system: prompt || "You are a helpful data labeling assistant.",
+      messages
+    };
+
+    if (options?.annotationSchema) {
+      anthropicBody.tools = [toAnthropicTool(options.annotationSchema)];
+      anthropicBody.tool_choice = { type: 'tool', name: 'submit_annotation' };
+    }
+
+    const response = await fetch(`/api/anthropic/message?connectionId=${encodeURIComponent(connectionId)}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: modelId,
-        max_tokens: options?.maxTokens ?? 1024,
-        temperature: options?.temperature,
-        system: prompt || "You are a helpful data labeling assistant.",
-        messages
-      })
+      headers: buildFetchHeaders(options?.jwtToken),
+      body: JSON.stringify(anthropicBody)
     });
 
     if (!response.ok) {
@@ -255,6 +278,11 @@ class AnthropicProvider implements AIProvider {
     }
 
     const data = await response.json();
+
+    // When tool_use is forced, content[0] is { type: "tool_use", input: {...} }
+    if (options?.annotationSchema && data.content?.[0]?.type === 'tool_use') {
+      return JSON.stringify(data.content[0].input);
+    }
     return data.content[0].text || '';
   }
 }
@@ -263,8 +291,8 @@ class GeminiProvider implements AIProvider {
   id = 'gemini';
   name = 'Google Gemini';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'gemini-2.0-flash', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
-    if (!apiKey) throw new Error('Gemini API key is required');
+  async processText(text: string, prompt?: string, connectionId?: string, modelId: string = 'gemini-2.0-flash', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
+    if (!connectionId) throw new Error('Gemini connection is required');
 
     const parts: Array<Record<string, unknown>> = [];
     const userText = type === 'image'
@@ -287,6 +315,16 @@ class GeminiProvider implements AIProvider {
       });
     }
 
+    const generationConfig: Record<string, unknown> = {
+      temperature: options?.temperature,
+      maxOutputTokens: options?.maxTokens
+    };
+
+    if (options?.annotationSchema) {
+      generationConfig.response_mime_type = 'application/json';
+      generationConfig.response_schema = toGeminiSchema(options.annotationSchema);
+    }
+
     const body: Record<string, unknown> = {
       model: modelId,
       contents: [
@@ -295,10 +333,7 @@ class GeminiProvider implements AIProvider {
           parts
         }
       ],
-      generationConfig: {
-        temperature: options?.temperature,
-        maxOutputTokens: options?.maxTokens
-      }
+      generationConfig
     };
 
     if (prompt) {
@@ -307,12 +342,9 @@ class GeminiProvider implements AIProvider {
       };
     }
 
-    const response = await fetch('/api/gemini/generate', {
+    const response = await fetch(`/api/gemini/generate?connectionId=${encodeURIComponent(connectionId)}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
+      headers: buildFetchHeaders(options?.jwtToken),
       body: JSON.stringify(body)
     });
 
@@ -338,8 +370,8 @@ class SambaNovaProvider implements AIProvider {
   id = 'sambanova';
   name = 'SambaNova Cloud';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'Meta-Llama-3.1-70B-Instruct', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
-    if (!apiKey) throw new Error('SambaNova API key is required');
+  async processText(text: string, prompt?: string, connectionId?: string, modelId: string = 'Meta-Llama-3.1-70B-Instruct', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
+    if (!connectionId) throw new Error('SambaNova connection is required');
 
     if (type === 'image') {
       const imageUrl = await resolveImageContent(text);
@@ -356,19 +388,19 @@ class SambaNovaProvider implements AIProvider {
         ]
       });
 
-      const response = await fetch('/api/sambanova/chat', {
+      const sambaVisionBody: Record<string, unknown> = {
+        model: modelId,
+        messages,
+        temperature: options?.temperature ?? 0.1,
+        top_p: 0.1,
+        max_tokens: options?.maxTokens
+      };
+      if (options?.annotationSchema) sambaVisionBody.response_format = { type: 'json_object' };
+
+      const response = await fetch(`/api/sambanova/chat?connectionId=${encodeURIComponent(connectionId)}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: modelId,
-          messages,
-          temperature: options?.temperature ?? 0.1,
-          top_p: 0.1,
-          max_tokens: options?.maxTokens
-        })
+        headers: buildFetchHeaders(options?.jwtToken),
+        body: JSON.stringify(sambaVisionBody)
       });
 
       if (!response.ok) {
@@ -380,22 +412,25 @@ class SambaNovaProvider implements AIProvider {
       return data.choices[0].message.content || '';
     }
 
-    const response = await fetch('/api/sambanova/chat', {
+    const sambaBody: Record<string, unknown> = {
+      model: modelId,
+      messages: [
+        { role: "system", content: prompt || "You are a helpful data labeling assistant." },
+        { role: "user", content: text }
+      ],
+      temperature: options?.temperature ?? 0.1,
+      top_p: 0.1,
+      max_tokens: options?.maxTokens
+    };
+
+    if (options?.annotationSchema) {
+      sambaBody.response_format = { type: 'json_object' };
+    }
+
+    const response = await fetch(`/api/sambanova/chat?connectionId=${encodeURIComponent(connectionId)}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: modelId,
-        messages: [
-          { role: "system", content: prompt || "You are a helpful data labeling assistant." },
-          { role: "user", content: text }
-        ],
-        temperature: options?.temperature ?? 0.1,
-        top_p: 0.1,
-        max_tokens: options?.maxTokens
-      })
+      headers: buildFetchHeaders(options?.jwtToken),
+      body: JSON.stringify(sambaBody)
     });
 
     if (!response.ok) {
@@ -412,8 +447,8 @@ class OpenRouterProvider implements AIProvider {
   id = 'openrouter';
   name = 'OpenRouter';
 
-  async processText(text: string, prompt?: string, apiKey?: string, modelId: string = 'openai/gpt-4o-mini', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
-    if (!apiKey) throw new Error('OpenRouter API key is required');
+  async processText(text: string, prompt?: string, connectionId?: string, modelId: string = 'openai/gpt-4o-mini', baseUrl?: string, type: AIInputType = 'text', options?: AIRequestOptions): Promise<string> {
+    if (!connectionId) throw new Error('OpenRouter connection is required');
 
     const messages: any[] = [
       { role: "system", content: prompt || "You are a helpful data labeling assistant." }
@@ -432,18 +467,21 @@ class OpenRouterProvider implements AIProvider {
       messages.push({ role: "user", content: text });
     }
 
-    const response = await fetch('/api/openrouter/chat', {
+    const orBody: Record<string, unknown> = {
+      model: modelId,
+      messages,
+      temperature: options?.temperature,
+      max_tokens: options?.maxTokens
+    };
+
+    if (options?.annotationSchema) {
+      orBody.response_format = { type: 'json_object' };
+    }
+
+    const response = await fetch(`/api/openrouter/chat?connectionId=${encodeURIComponent(connectionId)}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: modelId,
-        messages,
-        temperature: options?.temperature,
-        max_tokens: options?.maxTokens
-      })
+      headers: buildFetchHeaders(options?.jwtToken),
+      body: JSON.stringify(orBody)
     });
 
     if (!response.ok) {
@@ -470,7 +508,8 @@ class LocalProvider implements AIProvider {
     const body: any = {
       model: modelId,
       stream: false,
-      options: {}
+      options: {},
+      ...(options?.annotationSchema ? { format: 'json' } : {})
     };
 
     if (type === 'image') {

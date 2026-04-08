@@ -10,7 +10,7 @@ import { dirname, join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { attachUser, requireAuth } from './middleware/auth.js';
 import { errorHandler } from './middleware/errors.js';
-import { initDatabase } from './services/database.js';
+import { initDatabase, getDatabase } from './services/database.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { registerUserRoutes } from './routes/users.js';
 import { registerModelRoutes } from './routes/models.js';
@@ -73,11 +73,15 @@ app.param('id', async (req, _res, next, _id) => {
     next();
 });
 
-// Helper to get API key (prefer header, fallback to env)
+// Helper to get API key — priority: ?connectionId DB lookup → env var
+// Never reads from the Authorization header for API keys (JWT lives there instead)
+let _apiKeyStmt = null;
 const getApiKey = (req, envVarName) => {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        return authHeader.split(' ')[1];
+    const connectionId = req.query?.connectionId;
+    if (connectionId) {
+        _apiKeyStmt ??= getDatabase().prepare('SELECT api_key FROM provider_connections WHERE id = ?');
+        const conn = _apiKeyStmt.get(connectionId);
+        if (conn?.api_key) return conn.api_key;
     }
     return process.env[envVarName];
 };
@@ -90,7 +94,10 @@ app.post('/api/openai/chat', requireAuth, async (req, res) => {
             return res.status(401).json({ error: 'OpenAI API key is required' });
         }
 
-        const { model, messages, temperature, top_p, max_tokens } = req.body;
+        const { model, messages, temperature, top_p, max_tokens, response_format } = req.body;
+
+        const openaiBody = { model, messages, temperature, top_p, max_tokens };
+        if (response_format !== undefined) openaiBody.response_format = response_format;
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -98,7 +105,7 @@ app.post('/api/openai/chat', requireAuth, async (req, res) => {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             },
-            body: JSON.stringify({ model, messages, temperature, top_p, max_tokens })
+            body: JSON.stringify(openaiBody)
         });
 
         const data = await response.json();
@@ -120,7 +127,12 @@ app.post('/api/anthropic/message', requireAuth, async (req, res) => {
             return res.status(401).json({ error: 'Anthropic API key is required' });
         }
 
-        const { model, messages, system, max_tokens } = req.body;
+        const { model, messages, system, max_tokens, temperature, tools, tool_choice } = req.body;
+
+        const anthropicBody = { model, messages, system, max_tokens };
+        if (temperature !== undefined) anthropicBody.temperature = temperature;
+        if (tools !== undefined)       anthropicBody.tools = tools;
+        if (tool_choice !== undefined) anthropicBody.tool_choice = tool_choice;
 
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
@@ -129,7 +141,7 @@ app.post('/api/anthropic/message', requireAuth, async (req, res) => {
                 'x-api-key': apiKey,
                 'anthropic-version': '2023-06-01'
             },
-            body: JSON.stringify({ model, messages, system, max_tokens })
+            body: JSON.stringify(anthropicBody)
         });
 
         const data = await response.json();
@@ -188,7 +200,10 @@ app.post('/api/sambanova/chat', requireAuth, async (req, res) => {
             return res.status(401).json({ error: 'SambaNova API key is required' });
         }
 
-        const { model, messages, temperature, top_p, max_tokens } = req.body;
+        const { model, messages, temperature, top_p, max_tokens, response_format } = req.body;
+
+        const sambaBody = { model, messages, temperature, top_p, max_tokens };
+        if (response_format !== undefined) sambaBody.response_format = response_format;
 
         const response = await fetch('https://api.sambanova.ai/v1/chat/completions', {
             method: 'POST',
@@ -196,7 +211,7 @@ app.post('/api/sambanova/chat', requireAuth, async (req, res) => {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             },
-            body: JSON.stringify({ model, messages, temperature, top_p, max_tokens })
+            body: JSON.stringify(sambaBody)
         });
 
         const data = await response.json();
@@ -218,7 +233,10 @@ app.post('/api/openrouter/chat', requireAuth, async (req, res) => {
             return res.status(401).json({ error: 'OpenRouter API key is required' });
         }
 
-        const { model, messages, temperature, top_p, max_tokens } = req.body;
+        const { model, messages, temperature, top_p, max_tokens, response_format } = req.body;
+
+        const orBody = { model, messages, temperature, top_p, max_tokens };
+        if (response_format !== undefined) orBody.response_format = response_format;
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -226,7 +244,7 @@ app.post('/api/openrouter/chat', requireAuth, async (req, res) => {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             },
-            body: JSON.stringify({ model, messages, temperature, top_p, max_tokens })
+            body: JSON.stringify(orBody)
         });
 
         const data = await response.json();
