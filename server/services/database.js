@@ -298,6 +298,7 @@ function createSchema() {
     // QA queue columns
     `ALTER TABLE data_points ADD COLUMN qa_status TEXT DEFAULT 'pending_review'`,
     `ALTER TABLE data_points ADD COLUMN qa_reviewer_id TEXT`,
+    `ALTER TABLE projects ADD COLUMN ai_instruction TEXT`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (_) { /* already exists */ }

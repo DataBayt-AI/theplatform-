@@ -99,6 +99,7 @@ export const projectService = {
             xmlConfig: project.xmlConfig,
             uploadPrompt: project.uploadPrompt,
             customFieldName: project.customFieldName,
+            aiInstruction: project.aiInstruction,
             dataPoints: project.dataPoints,
             stats: project.stats,
         });

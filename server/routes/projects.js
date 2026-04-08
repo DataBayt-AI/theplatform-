@@ -123,6 +123,7 @@ export function registerProjectRoutes(app) {
                 xmlConfig: p.xml_config,
                 uploadPrompt: p.upload_prompt,
                 customFieldName: p.custom_field_name,
+                aiInstruction: p.ai_instruction ?? '',
                 guidelines: p.guidelines ?? '',
                 isDemo: !!p.is_demo,
                 dataPoints: [],
@@ -279,6 +280,7 @@ export function registerProjectRoutes(app) {
             xmlConfig: project.xml_config,
             uploadPrompt: project.upload_prompt,
             customFieldName: project.custom_field_name,
+            aiInstruction: project.ai_instruction ?? '',
             guidelines: project.guidelines ?? '',
             iaaConfig: project.iaa_config ? JSON.parse(project.iaa_config) : null,
             createdAt: project.created_at,
@@ -338,7 +340,7 @@ export function registerProjectRoutes(app) {
     // Update project (PUT + PATCH share the same handler)
     const updateProject = asyncHandler((req, res) => {
         const { id } = req.params;
-        const { name, description, managerId, annotatorIds, taskType, xmlConfig, uploadPrompt, customFieldName, guidelines, iaaConfig, dataPoints, stats } = req.body;
+        const { name, description, managerId, annotatorIds, taskType, xmlConfig, uploadPrompt, customFieldName, guidelines, iaaConfig, aiInstruction, dataPoints, stats } = req.body;
 
         const existing = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
         if (!existing) throw new HttpError(404, 'Project not found');
@@ -351,9 +353,10 @@ export function registerProjectRoutes(app) {
               manager_id = COALESCE(?, manager_id), task_type = COALESCE(?, task_type),
               xml_config = COALESCE(?, xml_config),
               upload_prompt = COALESCE(?, upload_prompt), custom_field_name = COALESCE(?, custom_field_name),
-              guidelines = COALESCE(?, guidelines), iaa_config = COALESCE(?, iaa_config), updated_at = ?
+              guidelines = COALESCE(?, guidelines), iaa_config = COALESCE(?, iaa_config),
+              ai_instruction = COALESCE(?, ai_instruction), updated_at = ?
             WHERE id = ?
-        `).run(name, description, managerId, taskType ?? null, xmlConfig, uploadPrompt, customFieldName, guidelines ?? null, iaaConfig ? JSON.stringify(iaaConfig) : null, now, id);
+        `).run(name, description, managerId, taskType ?? null, xmlConfig, uploadPrompt, customFieldName, guidelines ?? null, iaaConfig ? JSON.stringify(iaaConfig) : null, aiInstruction ?? null, now, id);
 
         if (annotatorIds !== undefined) {
             const previousIds = db.prepare('SELECT user_id FROM project_annotators WHERE project_id = ?').all(id).map(r => r.user_id);
