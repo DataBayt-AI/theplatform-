@@ -16,6 +16,7 @@ interface DynamicAnnotationFormProps {
     onChange: (fieldId: string, value: string | boolean) => void;
     metadata?: Record<string, string>; // Data from current data point
     sourceText?: string; // Source text for NER annotation fields
+    readOnly?: boolean;
 }
 
 // Interpolate {{columnName}} with actual values from metadata
@@ -29,15 +30,17 @@ const interpolate = (text: string | undefined, metadata?: Record<string, string>
     return result;
 };
 
-export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sourceText }: DynamicAnnotationFormProps) => {
+const noop = () => {};
+
+export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sourceText, readOnly = false }: DynamicAnnotationFormProps) => {
     const { t } = useTranslation();
     return (
-        <div className="space-y-4">
+        <div className={`space-y-4 ${readOnly ? 'pointer-events-none select-none' : ''}`}>
             {fields.map((field) => (
                 <div key={field.id} className="space-y-2">
-                    <Label htmlFor={field.id}>
+                    <Label htmlFor={field.id} className={readOnly ? 'text-muted-foreground' : ''}>
                         {interpolate(field.label, metadata)}
-                        {field.required && <span className="text-red-500 ml-1">*</span>}
+                        {field.required && !readOnly && <span className="text-red-500 ml-1">*</span>}
                     </Label>
 
                     {field.type === 'textarea' && (
@@ -47,6 +50,8 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sour
                             value={(values[field.id] as string) || ''}
                             onChange={(e) => onChange(field.id, e.target.value)}
                             rows={3}
+                            readOnly={readOnly}
+                            className={readOnly ? 'bg-muted/40 cursor-default resize-none' : ''}
                         />
                     )}
 
@@ -57,15 +62,18 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sour
                             placeholder={interpolate(field.placeholder, metadata)}
                             value={(values[field.id] as string) || ''}
                             onChange={(e) => onChange(field.id, e.target.value)}
+                            readOnly={readOnly}
+                            className={readOnly ? 'bg-muted/40 cursor-default' : ''}
                         />
                     )}
 
                     {field.type === 'dropdown' && field.options && (
                         <Select
                             value={(values[field.id] as string) || ''}
-                            onValueChange={(value) => onChange(field.id, value)}
+                            onValueChange={readOnly ? noop : (value) => onChange(field.id, value)}
+                            disabled={readOnly}
                         >
-                            <SelectTrigger id={field.id}>
+                            <SelectTrigger id={field.id} className={readOnly ? 'bg-muted/40 cursor-default' : ''}>
                                 <SelectValue placeholder={interpolate(field.placeholder, metadata) || 'Select...'} />
                             </SelectTrigger>
                             <SelectContent>
@@ -83,9 +91,11 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sour
                             <Checkbox
                                 id={field.id}
                                 checked={(values[field.id] as boolean) || false}
-                                onCheckedChange={(checked) => onChange(field.id, !!checked)}
+                                onCheckedChange={readOnly ? noop : (checked) => onChange(field.id, !!checked)}
+                                disabled={readOnly}
+                                className={readOnly ? 'cursor-default' : ''}
                             />
-                            <label htmlFor={field.id} className="text-sm cursor-pointer">
+                            <label htmlFor={field.id} className={`text-sm ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}>
                                 {interpolate(field.placeholder, metadata) || interpolate(field.label, metadata)}
                             </label>
                         </div>
@@ -94,13 +104,14 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sour
                     {field.type === 'radio' && field.options && (
                         <RadioGroup
                             value={(values[field.id] as string) || ''}
-                            onValueChange={(value) => onChange(field.id, value)}
+                            onValueChange={readOnly ? noop : (value) => onChange(field.id, value)}
                             className="flex flex-wrap gap-4"
+                            disabled={readOnly}
                         >
                             {field.options.map((option) => (
                                 <div key={option.value} className="flex items-center space-x-2">
-                                    <RadioGroupItem value={option.value} id={`${field.id}-${option.value}`} />
-                                    <label htmlFor={`${field.id}-${option.value}`} className="text-sm cursor-pointer">
+                                    <RadioGroupItem value={option.value} id={`${field.id}-${option.value}`} disabled={readOnly} />
+                                    <label htmlFor={`${field.id}-${option.value}`} className={`text-sm ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}>
                                         {option.label}
                                     </label>
                                 </div>
@@ -112,7 +123,6 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sour
                         let entities: NEREntity[] = [];
                         try { entities = JSON.parse((values[field.id] as string) || '[]'); } catch { entities = []; }
 
-                        // Resolve source text: field.sourceField → metadata column, else prop
                         const resolvedText = field.sourceField && metadata?.[field.sourceField]
                             ? metadata[field.sourceField]
                             : sourceText || '';
@@ -121,9 +131,10 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sour
                             <NERAnnotator
                                 sourceText={resolvedText}
                                 entities={entities}
-                                onEntitiesChange={(next) => onChange(field.id, JSON.stringify(next))}
+                                onEntitiesChange={readOnly ? noop : (next) => onChange(field.id, JSON.stringify(next))}
                                 entityTypes={field.entityTypes}
                                 showConfidence={field.entityConfidence}
+                                readOnly={readOnly}
                             />
                         );
                     })()}
@@ -140,9 +151,10 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sour
                                             <button
                                                 key={val}
                                                 type="button"
-                                                onClick={() => onChange(field.id, String(val))}
-                                                className="p-0.5 rounded transition-colors hover:scale-110"
+                                                onClick={readOnly ? noop : () => onChange(field.id, String(val))}
+                                                className={`p-0.5 rounded transition-colors ${readOnly ? 'cursor-default' : 'hover:scale-110'}`}
                                                 aria-label={`Rate ${val}`}
+                                                disabled={readOnly}
                                             >
                                                 <Star
                                                     className={`w-6 h-6 transition-colors ${val <= current ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`}
@@ -152,8 +164,9 @@ export const DynamicAnnotationForm = ({ fields, values, onChange, metadata, sour
                                             <button
                                                 key={val}
                                                 type="button"
-                                                onClick={() => onChange(field.id, String(val))}
-                                                className={`w-9 h-9 rounded-md text-sm font-medium border transition-colors ${val === current ? 'bg-primary text-primary-foreground border-primary' : 'border-input hover:bg-muted'}`}
+                                                onClick={readOnly ? noop : () => onChange(field.id, String(val))}
+                                                disabled={readOnly}
+                                                className={`w-9 h-9 rounded-md text-sm font-medium border transition-colors ${val === current ? 'bg-primary text-primary-foreground border-primary' : 'border-input'} ${readOnly ? 'cursor-default opacity-80' : 'hover:bg-muted'}`}
                                             >
                                                 {val}
                                             </button>
