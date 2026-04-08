@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/contexts/AuthContext";
 import { modelManagementService } from "@/services/modelManagementService";
+import { getAuthToken } from "@/services/apiClient";
 import { generateId } from "@/lib/utils";
 import { projectService } from "@/services/projectService";
 import { AVAILABLE_PROVIDERS } from "@/services/aiProviders";
@@ -117,27 +118,23 @@ const ModelManagement = () => {
 
   const fetchOfficialModels = useCallback(async (connection: ProviderConnection, force = false) => {
     if (!isOfficialProvider(connection.providerId)) return;
-    if (!connection.apiKey) {
+    if (!connection.hasApiKey) {
       setRemoteModelsError("API key is required to load official provider models.");
       return;
     }
     if (!force && remoteModelsByConnection[connection.id]?.length) return;
 
-    const endpoint =
-      connection.providerId === "openai"
-        ? "/api/openai/models"
-        : connection.providerId === "anthropic"
-          ? "/api/anthropic/models"
-          : connection.providerId === "openrouter"
-            ? "/api/openrouter/models"
-            : "/api/gemini/models";
     setIsLoadingRemoteModels(true);
     setRemoteModelsError(null);
     try {
-      const response = await fetch(endpoint, {
-        headers: {
-          Authorization: `Bearer ${connection.apiKey}`
-        }
+      const providerEndpoint =
+        connection.providerId === "openai" ? "/api/openai/models" :
+        connection.providerId === "anthropic" ? "/api/anthropic/models" :
+        connection.providerId === "openrouter" ? "/api/openrouter/models" :
+        "/api/gemini/models";
+      const token = getAuthToken();
+      const response = await fetch(`${providerEndpoint}?connectionId=${encodeURIComponent(connection.id)}`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
@@ -221,7 +218,7 @@ const ModelManagement = () => {
       toast({ title: t("models.unknownProvider"), description: t("models.providerNotAvailable") });
       return;
     }
-    if (providerInfo.requiresApiKey && !connection.apiKey) {
+    if (providerInfo.requiresApiKey && !connection.hasApiKey) {
       toast({ title: t("models.missingApiKey"), description: t("models.addApiKeyFirst") });
       return;
     }
@@ -234,13 +231,14 @@ const ModelManagement = () => {
       const result = await provider.processText(
         "Say 'pong' if you can read this.",
         "Respond with a single word.",
-        connection.apiKey,
+        connection.id,
         profile.modelId,
         baseUrl,
         "text",
         {
           temperature: profile.temperature,
-          maxTokens: profile.maxTokens
+          maxTokens: profile.maxTokens,
+          jwtToken: getAuthToken() ?? undefined,
         }
       );
       toast({

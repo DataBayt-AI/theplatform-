@@ -30,6 +30,8 @@ import { GuidelinesSidebar } from "@/components/GuidelinesSidebar";
 import { DynamicAnnotationForm } from "@/components/DynamicAnnotationForm";
 import { AnnotationQualityDashboard } from "@/components/qa/AnnotationQualityDashboard";
 import { AnnotationConfig, loadDefaultAnnotationConfig, loadAnnotationConfigFromFile, parseAnnotationConfigXML } from "@/services/xmlConfigService";
+import { buildSchemaPrompt, mapFieldConfigType } from "@/services/annotationSchema";
+import type { AnnotationSchema } from "@/types/data";
 import { useAuth } from "@/contexts/AuthContext";
 import { UserMenu } from "@/components/UserMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -84,13 +86,37 @@ import {
 import { VersionHistory } from "@/components/VersionHistory";
 import { projectService } from "@/services/projectService";
 import { modelManagementService } from "@/services/modelManagementService";
-import apiClient from "@/services/apiClient";
+import apiClient, { getAuthToken } from "@/services/apiClient";
 import { useDataImport } from "@/hooks/useDataImport";
 import { ImportWizard } from "@/components/ImportWizard";
 import { TextClassificationView } from "@/components/annotation/TextClassificationView";
 
 type AnnotationStatusFilter = 'all' | 'has_final' | DataPoint['status'];
 const COMMENTS_PAGE_SIZE = 10;
+
+const parseAiSuggestionToFieldValues = (
+  suggestion: string,
+  fieldIds: Set<string>
+): Record<string, string | boolean> => {
+  try {
+    const parsed = JSON.parse(suggestion);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, string | boolean>;
+    }
+  } catch { /* not JSON */ }
+
+  const result: Record<string, string | boolean> = {};
+  for (const line of suggestion.split('\n')) {
+    const sep = line.indexOf(': ');
+    if (sep === -1) continue;
+    const key = line.slice(0, sep).trim();
+    const value = line.slice(sep + 2).trim();
+    if (fieldIds.has(key)) {
+      result[key] = value === 'true' ? true : value === 'false' ? false : value;
+    }
+  }
+  return result;
+};
 
 const DataLabelingWorkspace = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -147,6 +173,7 @@ const DataLabelingWorkspace = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showUploadPrompt, setShowUploadPrompt] = useState(false);
   const [projectAccess, setProjectAccess] = useState<Project | null>(null);
+  const [aiInstruction, setAiInstruction] = useState('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadPrompt, setUploadPrompt] = useState('');
@@ -188,6 +215,7 @@ const DataLabelingWorkspace = () => {
 
       const project = await projectService.getById(projectId);
       setProjectAccess(project ?? null);
+      setAiInstruction(project?.aiInstruction ?? '');
     };
     loadAccess();
   }, [projectId]);
@@ -444,12 +472,11 @@ const DataLabelingWorkspace = () => {
 
       await Promise.all(uniqueConnections.map(async connection => {
         try {
-          const response = await fetch('/api/openrouter/models', {
+          const token = getAuthToken();
+          const response = await fetch(`/api/openrouter/models?connectionId=${encodeURIComponent(connection.id)}`, {
             method: 'GET',
             signal: controller.signal,
-            headers: {
-              Authorization: `Bearer ${connection.apiKey}`
-            }
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
           });
           if (!response.ok) return;
           const payload = await response.json();
@@ -1603,22 +1630,41 @@ const DataLabelingWorkspace = () => {
     const { getAIProvider } = await import('@/services/aiProviders');
     const provider = getAIProvider(connection.providerId);
 
-    const promptSeed = dataPoint.uploadPrompt || profile.defaultPrompt || '';
+    const promptSeed = aiInstruction?.trim() || dataPoint.uploadPrompt || profile.defaultPrompt || '';
     const promptToUse = getInterpolatedPrompt(promptSeed, dataPoint.metadata);
 
-    const key = connection.apiKey?.trim() || '';
     const baseUrl = connection.baseUrl?.trim() || (connection.providerId === 'local' ? defaultLocalBaseUrl : undefined);
+
+    let annotationSchema: AnnotationSchema | undefined;
+    let finalPrompt = promptToUse;
+
+    if (annotationConfig && annotationConfig.fields.length > 0) {
+      annotationSchema = {
+        taskType: projectAccess?.taskType || 'custom',
+        fields: annotationConfig.fields.map(f => ({
+          name: f.id,
+          type: mapFieldConfigType(f.type),
+          options: f.options?.map(o => o.value),
+          required: f.required,
+        })),
+      };
+      finalPrompt = promptToUse
+        ? `${promptToUse}\n\n${buildSchemaPrompt(annotationSchema)}`
+        : buildSchemaPrompt(annotationSchema);
+    }
 
     return await provider.processText(
       dataPoint.content,
-      promptToUse,
-      key,
+      finalPrompt,
+      connection.id,
       profile.modelId,
       baseUrl,
       dataPoint.type,
       {
         temperature: profile.temperature,
-        maxTokens: profile.maxTokens
+        maxTokens: profile.maxTokens,
+        jwtToken: getAuthToken() ?? undefined,
+        annotationSchema,
       }
     );
   };
@@ -1645,7 +1691,7 @@ const DataLabelingWorkspace = () => {
         setUploadError(`Connection for ${profile.displayName} is missing or inactive`);
         return null;
       }
-      if (providerRequirements.get(connection.providerId) && !connection.apiKey) {
+      if (providerRequirements.get(connection.providerId) && !connection.hasApiKey) {
         setUploadError(`Missing API key for ${connection.name}`);
         return null;
       }
@@ -2747,6 +2793,51 @@ const DataLabelingWorkspace = () => {
                       </div>
 
                       {canProcessAI && (
+                        <div className="space-y-2">
+                          <Label className="mb-1 block">
+                            {t("workspace.aiInstructionsLabel")} <span className="text-muted-foreground font-normal text-xs">({t("common.optional").toLowerCase()})</span>
+                          </Label>
+                          <Textarea
+                            rows={5}
+                            className="font-mono text-xs"
+                            placeholder={t("workspace.aiInstructionsPlaceholder")}
+                            value={aiInstruction}
+                            onChange={e => setAiInstruction(e.target.value)}
+                            onBlur={async () => {
+                              if (!projectAccess) return;
+                              try {
+                                await projectService.update({ ...projectAccess, aiInstruction });
+                                setProjectAccess(p => p ? { ...p, aiInstruction } : p);
+                              } catch {
+                                toast({ title: t("common.error"), description: t("workspace.failedSave"), variant: "destructive" });
+                              }
+                            }}
+                          />
+                          {(() => {
+                            const cols = Array.from(new Set(dataPoints.flatMap(dp => Object.keys(dp.metadata ?? {}))));
+                            return cols.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                <span className="text-xs text-muted-foreground self-center">{t("workspace.insertColumn")}</span>
+                                {cols.map(col => (
+                                  <Badge
+                                    key={col}
+                                    variant="secondary"
+                                    className="cursor-pointer text-xs hover:bg-primary/20 transition-colors"
+                                    onClick={() => setAiInstruction(prev => prev + ` {{${col}}}`)}
+                                  >
+                                    {col}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : null;
+                          })()}
+                          <p className="text-xs text-muted-foreground">
+                            {t("workspace.aiInstructionsHelp")}
+                          </p>
+                        </div>
+                      )}
+
+                      {canProcessAI && (
                         <Button variant="outline" onClick={() => navigate('/model-management')}>
                           {t("workspace.manageModelProfiles")}
                         </Button>
@@ -3530,7 +3621,9 @@ const DataLabelingWorkspace = () => {
 
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {/* AI Provider Cards */}
-                                {Object.entries(currentDataPoint?.aiSuggestions || {}).map(([modelProfileId, suggestion]) => {
+                                {(() => {
+                                  const aiFormFieldIds = new Set((annotationConfig?.fields ?? []).map(f => f.id));
+                                  return Object.entries(currentDataPoint?.aiSuggestions || {}).map(([modelProfileId, suggestion]) => {
                                   const profile = profileById.get(modelProfileId);
                                   const connection = profile ? connectionById.get(profile.providerConnectionId) : null;
                                   const provider = connection ? availableProviders.find(p => p.id === connection.providerId) : null;
@@ -3571,7 +3664,20 @@ const DataLabelingWorkspace = () => {
                                           </Button>
                                         </div>
                                       </div>
-                                      <p className="text-sm text-foreground whitespace-pre-wrap mb-3">{suggestion}</p>
+                                      {annotationConfig && annotationConfig.fields.length > 0 ? (
+                                        <div className="mb-3">
+                                          <DynamicAnnotationForm
+                                            fields={annotationConfig.fields}
+                                            values={parseAiSuggestionToFieldValues(suggestion, aiFormFieldIds)}
+                                            onChange={() => {}}
+                                            metadata={currentDataPoint?.metadata}
+                                            sourceText={currentDataPoint?.content}
+                                            readOnly
+                                          />
+                                        </div>
+                                      ) : (
+                                        <p className="text-sm text-foreground whitespace-pre-wrap mb-3">{suggestion}</p>
+                                      )}
 
                                       {/* Star Rating */}
                                       <div className="flex items-center gap-2 pt-2 border-t border-purple-200 dark:border-purple-800">
@@ -3595,7 +3701,8 @@ const DataLabelingWorkspace = () => {
                                       </div>
                                     </Card>
                                   );
-                                })}
+                                });
+                                })()}
 
                                 {/* Human Annotation Card - Now using Dynamic Form */}
                                 <Card className="p-4 border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/10 transition-all hover:shadow-md">

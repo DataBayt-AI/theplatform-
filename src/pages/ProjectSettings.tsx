@@ -475,7 +475,7 @@ export default function ProjectSettings() {
                     </CardContent>
                 </Card>
 
-                {/* 6 — IAA */}
+                {/* 6 — IAA (was 7) */}
                 <Card>
                     <CardHeader>
                         <CardTitle>{t("projectSettings.iaaTitle")}</CardTitle>

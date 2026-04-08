@@ -67,7 +67,8 @@ export interface ProviderConnection {
     id: string;
     providerId: ModelProvider['id'];
     name: string;
-    apiKey?: string;
+    apiKey?: string;       // masked on GET responses — never send as a header
+    hasApiKey?: boolean;   // true when a real key is stored server-side
     baseUrl?: string;
     isActive: boolean;
     createdAt: number;
@@ -144,6 +145,7 @@ export interface Project {
     xmlConfig?: string;
     uploadPrompt?: string;
     customFieldName?: string;
+    aiInstruction?: string;
     auditLog?: ProjectAuditEntry[];
     iaaConfig?: ProjectIAAConfig;
     isDemo?: boolean;
@@ -208,6 +210,38 @@ export interface IAAStats {
     items: IAAItemScore[];
 }
 
+
+// ── Annotation Schema (AI structured output) ──────────────────────────────
+
+export interface CustomField {
+    name: string;
+    type: 'string' | 'number' | 'boolean' | 'choice';
+    options?: string[];   // for choice type
+    required?: boolean;
+}
+
+export interface AnnotationSchema {
+    taskType: TaskType;
+    labels?: string[];       // for classification / sequence_labeling
+    fields?: CustomField[];  // for custom task type
+}
+
+export interface AnnotationSpan {
+    start: number;
+    end: number;
+    label: string;
+    text: string;
+}
+
+export interface AnnotationResult {
+    taskType: TaskType;
+    label?: string;
+    confidence?: number;
+    spans?: AnnotationSpan[];
+    text?: string;
+    fields?: Record<string, string | boolean | number>;
+    raw: string;
+}
 
 export interface TaskTemplate {
     id: string;
