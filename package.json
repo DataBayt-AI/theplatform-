@@ -1,6 +1,6 @@
 {
   "name": "databayt-ai-studio",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Self-hosted, team-based data annotation platform with AI-assisted labeling, role-based access control, model management, and guided onboarding.",
   "type": "module",
   "license": "AGPL-3.0-only",

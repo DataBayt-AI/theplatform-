@@ -5,6 +5,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and vers
 
 ---
 
+## [1.4.0] — 2026-04-09
+
+### Added
+- **Per-project AI instructions** — custom system-level instructions per project, sent to the AI provider during annotation assistance
+- **Structured AI output** — provider-native JSON schema enforcement (OpenAI `response_format`, Anthropic tool-use) for reliable structured annotation results
+- **Redesigned import wizard** — three-source import flow (tabular file, multi-file folder, HuggingFace dataset) replacing the previous single-dialog upload
+- **TextClassificationView** — dedicated annotation interface for `text_classification` task type with label-button mode
+- **Task type system** — projects now carry a `task_type` field (`text_classification`, `sequence_labeling`, `text_generation`, `image_classification`, `audio_transcription`, `custom`) surfaced in the Dashboard create dialog and Project Settings
+
+### Changed
+- **Provider API key resolution** — API keys are now resolved server-side using the stored `connectionId`; the frontend never transmits raw keys
+- **Server routes** — 636 lines removed via shared `asyncHandler`, centralized error middleware, and consolidated helpers
+- **Import wizard i18n** — all import wizard labels and tutorial controls translated to Arabic
+
+### Fixed
+- **HuggingFace import** — user-friendly error message shown for datasets that are not yet indexed (instead of a raw 404)
+- **ID generation** — replaced `crypto.randomUUID()` with a `generateId()` fallback for environments that do not expose the Web Crypto API
+- **Image/audio type inference** — corrected media-type detection for HuggingFace dataset rows containing image or audio columns
+
+### Security
+- Resolved critical and high npm dependency vulnerabilities before release
+- Provider API keys no longer travel over the wire from the frontend
+
+### Tests
+- Added 66-test regression suite covering auth, users, and projects endpoints (`server/__tests__/`)
+
+---
+
 ## [1.3.0] — 2026-03-27
 
 ### Added
