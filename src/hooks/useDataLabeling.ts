@@ -590,6 +590,27 @@ export const useDataLabeling = (projectId?: string) => {
                     }
                 }).catch(console.error);
             }
+        },
+
+        // Bulk-replace all custom field values at once (e.g. copy from AI suggestion)
+        handleSetCustomFieldValues: (values: Record<string, string | boolean>) => {
+            if (!currentDataPoint) return;
+            const updated = [...dataPoints];
+            updated[currentIndex] = {
+                ...currentDataPoint,
+                customFieldValues: values
+            };
+
+            setWorkspaceState({
+                dataPoints: updated,
+                currentIndex
+            });
+
+            if (projectId) {
+                projectService.updateDataPoint(projectId, currentDataPoint.id, {
+                    customFieldValues: values
+                }).catch(console.error);
+            }
         }
     };
 };

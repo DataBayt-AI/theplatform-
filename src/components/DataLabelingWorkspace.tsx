@@ -101,7 +101,12 @@ const parseAiSuggestionToFieldValues = (
   try {
     const parsed = JSON.parse(suggestion);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, string | boolean>;
+      const result: Record<string, string | boolean> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        // Stringify arrays (e.g. entity-list) so DynamicAnnotationForm can JSON.parse them
+        result[k] = Array.isArray(v) ? JSON.stringify(v) : v as string | boolean;
+      }
+      return result;
     }
   } catch { /* not JSON */ }
 
@@ -160,6 +165,7 @@ const DataLabelingWorkspace = () => {
     handleRateModel,
     handleHumanAnnotationChange,
     handleCustomFieldValueChange,
+    handleSetCustomFieldValues,
     undo,
     redo,
     canUndo,
@@ -349,7 +355,7 @@ const DataLabelingWorkspace = () => {
 
   // Dynamic Labels
   const [annotationLabel, setAnnotationLabel] = useState(() => t('workspace.originalAnnotation'));
-  const [promptLabel, setPromptLabel] = useState('Upload Instructions');
+  const [promptLabel, setPromptLabel] = useState(() => t('workspace.uploadInstructions'));
   const [isPublishing, setIsPublishing] = useState(false);
 
   // Import providers list
@@ -361,6 +367,7 @@ const DataLabelingWorkspace = () => {
 
 
   const dataPointsRef = useRef<DataPoint[]>(dataPoints);
+  const humanFormRef = useRef<HTMLDivElement>(null);
   const inflightRef = useRef(0);
   const inflightQueueRef = useRef<Array<() => void>>([]);
   const maxInflightRef = useRef(12);
@@ -1640,11 +1647,12 @@ const DataLabelingWorkspace = () => {
 
     if (annotationConfig && annotationConfig.fields.length > 0) {
       annotationSchema = {
-        taskType: projectAccess?.taskType || 'custom',
+        taskType: 'custom', // always use custom when XML form fields are present
         fields: annotationConfig.fields.map(f => ({
           name: f.id,
           type: mapFieldConfigType(f.type),
           options: f.options?.map(o => o.value),
+          entityTypes: f.entityTypes?.map(et => et.value),
           required: f.required,
         })),
       };
@@ -3647,7 +3655,17 @@ const DataLabelingWorkspace = () => {
                                             size="sm"
                                             variant="secondary"
                                             className="h-7 text-xs"
-                                            onClick={() => handleEditAnnotation(suggestion)}
+                                            onClick={() => {
+                                              if (annotationConfig && annotationConfig.fields.length > 0) {
+                                                // Copy AI values into the human form fields, then scroll to it
+                                                handleSetCustomFieldValues(
+                                                  parseAiSuggestionToFieldValues(suggestion, aiFormFieldIds)
+                                                );
+                                                humanFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                              } else {
+                                                handleEditAnnotation(suggestion);
+                                              }
+                                            }}
                                             disabled={!canAnnotateCurrent}
                                           >
                                             <Edit3 className="w-3 h-3 mr-1" />
@@ -3705,7 +3723,7 @@ const DataLabelingWorkspace = () => {
                                 })()}
 
                                 {/* Human Annotation Card - Now using Dynamic Form */}
-                                <Card className="p-4 border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/10 transition-all hover:shadow-md">
+                                <Card ref={humanFormRef} className="p-4 border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/10 transition-all hover:shadow-md">
                                   <div className="flex items-center justify-between mb-3">
                                     <Badge variant="outline" className="bg-background flex items-center gap-1">
                                       <User className="w-3 h-3" />

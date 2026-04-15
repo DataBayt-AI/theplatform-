@@ -187,6 +187,7 @@
     "availableModelProfiles": "Available Model Profiles",
     "noModelProfiles": "No model profiles assigned to this project yet.",
     "manageModelProfiles": "Manage Model Profiles",
+    "uploadInstructions": "Upload Instructions",
     "aiInstructionsLabel": "AI Instructions",
     "aiInstructionsPlaceholder": "You are a precise annotation assistant.\nClassify each item using the provided labels.\nRespond with a single label only.",
     "aiInstructionsHelp": "Used as the system prompt for AI-assisted labeling. Leave blank to use the model profile's default. Changes are saved automatically.",
