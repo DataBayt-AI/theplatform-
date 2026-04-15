@@ -215,8 +215,9 @@ export interface IAAStats {
 
 export interface CustomField {
     name: string;
-    type: 'string' | 'number' | 'boolean' | 'choice';
-    options?: string[];   // for choice type
+    type: 'string' | 'number' | 'boolean' | 'choice' | 'entity-list';
+    options?: string[];       // for choice type
+    entityTypes?: string[];   // for entity-list type: allowed entity type values
     required?: boolean;
 }
 
