@@ -1,20 +1,20 @@
 import jwt from 'jsonwebtoken';
 import { getDatabase } from '../services/database.js';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-  console.error('\n  FATAL: JWT_SECRET is not set in environment variables.');
-  console.error('  Set JWT_SECRET to a random string of at least 32 characters.\n');
-  process.exit(1);
+function getSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.error('\n  FATAL: JWT_SECRET is not set in environment variables.');
+    console.error('  Set JWT_SECRET to a random string of at least 32 characters.\n');
+    process.exit(1);
+  }
+  return secret;
 }
-
-const SECRET = JWT_SECRET;
 
 export const generateToken = (user) => {
   return jwt.sign(
     { id: user.id, username: user.username, roles: user.roles },
-    SECRET,
+    getSecret(),
     { expiresIn: '8h' }
   );
 };
@@ -25,7 +25,7 @@ export const attachUser = (req, _res, next) => {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
     try {
-      const decoded = jwt.verify(token, SECRET);
+      const decoded = jwt.verify(token, getSecret());
       const db = getDatabase();
       const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
       if (user) {
