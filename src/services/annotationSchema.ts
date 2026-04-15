@@ -7,12 +7,13 @@ const buildLabelSchema = (labels?: string[]): Record<string, unknown> =>
     labels && labels.length > 0 ? { type: 'string', enum: labels } : { type: 'string' };
 
 /** Maps a FieldConfig.type to the AnnotationSchema field type used in JSON Schema generation. */
-export function mapFieldConfigType(type: FieldConfig['type']): 'boolean' | 'choice' | 'number' | 'string' {
+export function mapFieldConfigType(type: FieldConfig['type']): 'boolean' | 'choice' | 'number' | 'string' | 'entity-list' {
     switch (type) {
         case 'checkbox':     return 'boolean';
         case 'radio':
         case 'dropdown':     return 'choice';
         case 'rating-scale': return 'number';
+        case 'entity-list':  return 'entity-list';
         default:             return 'string';
     }
 }
@@ -80,7 +81,25 @@ export function toJsonSchema(schema: AnnotationSchema): Record<string, unknown> 
             const properties: Record<string, unknown> = {};
             const required: string[] = [];
             for (const field of schema.fields) {
-                if (field.type === 'choice' && field.options && field.options.length > 0) {
+                if (field.type === 'entity-list') {
+                    const typeSchema = field.entityTypes && field.entityTypes.length > 0
+                        ? { type: 'string', enum: field.entityTypes }
+                        : { type: 'string' };
+                    properties[field.name] = {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                text:  { type: 'string' },
+                                type:  typeSchema,
+                                start: { type: 'integer', minimum: 0 },
+                                end:   { type: 'integer', minimum: 0 },
+                            },
+                            required: ['text', 'type', 'start', 'end'],
+                            additionalProperties: false,
+                        }
+                    };
+                } else if (field.type === 'choice' && field.options && field.options.length > 0) {
                     properties[field.name] = { type: 'string', enum: field.options };
                 } else if (field.type === 'boolean') {
                     properties[field.name] = { type: 'boolean' };
