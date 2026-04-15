@@ -52,6 +52,7 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "dev:all": "concurrently -k -n \"SERVER,CLIENT\" -c \"blue,magenta\" \"npm start\" \"npm run dev\"",
+    "seed:arabic-ner": "node server/scripts/seedArabicNER.js",
     "prepublishOnly": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
