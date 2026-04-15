@@ -43,6 +43,55 @@ function getColor(entityTypes: EntityTypeOption[], typeValue: string) {
     return ENTITY_COLORS[(idx >= 0 ? idx : 0) % ENTITY_COLORS.length];
 }
 
+// ── Re-anchor AI-provided offsets to actual positions in sourceText ──────────
+// LLMs often get entity text right but offsets wrong. For each entity, we
+// search sourceText for the entity text and pick the occurrence closest to the
+// AI's suggested start, then rewrite start/end from that match.
+
+/** Find the occurrence of `needle` in `haystack` closest to `hint`, returning its start index or -1. */
+function closestIndexOf(haystack: string, needle: string, hint: number): number {
+    let bestStart = -1;
+    let bestDist = Infinity;
+    let pos = 0;
+    while (true) {
+        const idx = haystack.indexOf(needle, pos);
+        if (idx === -1) break;
+        const dist = Math.abs(idx - hint);
+        if (dist < bestDist) { bestDist = dist; bestStart = idx; }
+        pos = idx + 1;
+    }
+    return bestStart;
+}
+
+function normalizeEntityPositions(entities: NEREntity[], sourceText: string): NEREntity[] {
+    return entities.map(ent => {
+        if (!ent.text) return ent;
+        const hint = ent.start ?? 0;
+
+        // 1. Exact match
+        if (sourceText.slice(ent.start, ent.end) === ent.text) return ent;
+
+        let idx = closestIndexOf(sourceText, ent.text, hint);
+        if (idx !== -1) return { ...ent, start: idx, end: idx + ent.text.length };
+
+        // 2. Arabic definite-article elision: ل/ب/ك/و/ف + ال → drop the alef (ا U+0627)
+        //    e.g. entity "الربع الثالث" appears as "لربع الثالث" inside "للربع الثالث"
+        if (ent.text.startsWith('\u0627\u0644')) {  // starts with "ال"
+            const stripped = ent.text.slice(1);     // drop the alef, keep the lam
+            idx = closestIndexOf(sourceText, stripped, hint);
+            if (idx !== -1) return { ...ent, start: idx, end: idx + stripped.length };
+        }
+
+        // 3. Case-insensitive fallback (Latin / mixed text)
+        const lower    = sourceText.toLowerCase();
+        const entLower = ent.text.toLowerCase();
+        idx = closestIndexOf(lower, entLower, hint);
+        if (idx !== -1) return { ...ent, start: idx, end: idx + ent.text.length };
+
+        return ent; // keep original as last resort
+    });
+}
+
 // ── Segment builder (handles overlapping spans) ──────────────────────────────
 
 interface Segment {
@@ -203,9 +252,14 @@ export function NERAnnotator({
         onEntitiesChange(next);
     }, [entities, onEntitiesChange]);
 
-    // ── Build segments ──────────────────────────────────────────────────────
+    // ── Normalize AI offsets then build segments ────────────────────────────
 
-    const segments = useMemo(() => buildSegments(sourceText, entities), [sourceText, entities]);
+    const normalizedEntities = useMemo(
+        () => normalizeEntityPositions(entities, sourceText),
+        [entities, sourceText]
+    );
+
+    const segments = useMemo(() => buildSegments(sourceText, normalizedEntities), [sourceText, normalizedEntities]);
 
     // ── Grouped entities by type (for the entity list) ──────────────────────
 
@@ -287,10 +341,10 @@ export function NERAnnotator({
                     // Use the topmost (last added) entity for primary color
                     const primary = seg.entities[seg.entities.length - 1];
                     const color = getColor(entityTypes, primary.type);
-                    const entityIndex = entities.indexOf(primary);
-                    const isHovered = hoveredEntity !== null && seg.entities.some((_, idx) => {
-                        const eIdx = entities.indexOf(seg.entities[idx]);
-                        return eIdx === hoveredEntity;
+                    // normalizedEntities and entities share the same order, so index is stable
+                    const entityIndex = normalizedEntities.indexOf(primary);
+                    const isHovered = hoveredEntity !== null && seg.entities.some(e => {
+                        return normalizedEntities.indexOf(e) === hoveredEntity;
                     });
 
                     return (
